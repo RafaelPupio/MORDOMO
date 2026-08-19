@@ -1,0 +1,14 @@
+# Secrets — this repo is public; nothing sensitive ever enters it
+.env
+.env.*
+!.env.example
+
+# Dependencies & build
+node_modules/
+.next/
+.vercel/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+.obsidian/
