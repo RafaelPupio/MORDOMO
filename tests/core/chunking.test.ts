@@ -28,4 +28,43 @@ describe('chunkMarkdown', () => {
     const doc = '## A\n\nx.\n\n## B\n\ny.';
     expect(chunkMarkdown(doc).map((c) => c.seq)).toEqual([0, 1]);
   });
+
+  it('hard-splits a single paragraph longer than the max under a heading', () => {
+    const doc = '## Seção\n\n' + 'x'.repeat(2000);
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(1);
+    for (const c of out) {
+      expect(c.content.length).toBeLessThanOrEqual(1500);
+      expect(c.content.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps the section heading on every chunk of an oversized section', () => {
+    const para = 'palavra '.repeat(100).trim(); // ~800 chars
+    const doc = `## Grande\n\n${para}\n\n${para}\n\n${para}`;
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(1);
+    for (const c of out) expect(c.content).toContain('Grande');
+  });
+
+  it('chunks a very long unbroken run of text with no blank lines, losing nothing', () => {
+    const words = Array.from({ length: 400 }, (_, i) => `palavra${i}`);
+    const doc = words.join(' '); // no h2, no blank lines, ~4700 chars
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(1);
+    for (const c of out) {
+      expect(c.content.length).toBeLessThanOrEqual(1500);
+      expect(c.content.trim().length).toBeGreaterThan(0);
+    }
+    // Every word from the source survives, in order, across the chunks.
+    const rebuiltWords = out.flatMap((c) => c.content.split(/\s+/));
+    expect(rebuiltWords).toEqual(words);
+  });
+
+  it('never emits an empty or whitespace-only chunk for oversized inputs', () => {
+    const para = 'x'.repeat(3000);
+    const doc = `## Título\n\n${para}`;
+    const out = chunkMarkdown(doc);
+    for (const c of out) expect(c.content.trim()).not.toBe('');
+  });
 });
