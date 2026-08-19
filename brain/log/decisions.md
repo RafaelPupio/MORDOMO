@@ -36,3 +36,21 @@ Append-only. Newest at the bottom of each day, newest day at the top.
   personal-repos-private convention, deliberate.
 - **Pricing & competitor comparison deferred.** Build first, then price with real usage
   numbers from the ledger.
+
+## 2026-08-19 — planning decisions
+
+- **Spec approved; build decomposed into 4 plans**, each ending in working software:
+  (1) foundation + chat slice, (2) ingest pipeline, (3) staff operations, (4) reporting
+  + portfolio shell. One plan = one implementation cycle; Plan 1 creates all tables so
+  migrations stay linear.
+- **Embeddings: `openai/text-embedding-3-small` (1536 dims) via AI Gateway** — cheap
+  ($0.02/M tokens), good multilingual-enough quality for pt-BR at demo scale. No vector
+  index yet: exact scan is fine for hundreds of chunks.
+- **Tests run on PGlite + pgvector in-memory**, injected via a driver-agnostic `Db`
+  type; dev/prod use Neon (dev on the default branch, prod on a `production` branch of
+  the same Neon project). Fast, free, no Docker.
+- **Model pricing constants are assumptions** (Sonnet $3/$15, Haiku $1/$5 per M) until
+  real gateway invoices are observed; single source of truth in `src/ai/pricing.ts`.
+- **Deterministic `HashEmbedder`** (bag-of-words, unit-normalized) stands in for the
+  real embedder in tests and offline seeding, so retrieval tests assert real ranking
+  behavior without an API key.
