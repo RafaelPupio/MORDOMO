@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type SourceOut = { documentTitle: string; excerpt: string };
 
@@ -44,7 +44,7 @@ function classifyError(error: Error): ErrorKind {
   return 'other';
 }
 
-function ErrorNotice({ error }: { error: Error }) {
+function ErrorNotice({ error, onRetry }: { error: Error; onRetry: () => void }) {
   const kind = classifyError(error);
   const copy: Record<ErrorKind, string> = {
     budget:
@@ -55,9 +55,18 @@ function ErrorNotice({ error }: { error: Error }) {
       'Algo deu errado ao enviar sua mensagem. Tente novamente em instantes. · Something went wrong sending your message. Please try again shortly.',
   };
   return (
-    <p className="text-sm text-amber-700" role="alert">
-      {copy[kind]}
-    </p>
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2">
+      <p className="text-sm text-amber-700" role="alert">
+        {copy[kind]}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 rounded-lg border border-amber-300 px-2 py-1 text-xs font-medium whitespace-nowrap text-amber-800 hover:bg-amber-100"
+      >
+        Tentar novamente · Try again
+      </button>
+    </div>
   );
 }
 
@@ -67,14 +76,33 @@ export default function Chat() {
     () => new DefaultChatTransport({ api: '/api/chat', body: { conversationId } }),
     [conversationId],
   );
-  const { messages, sendMessage, status, error } = useChat({ transport });
+  const { messages, sendMessage, regenerate, status, error, clearError } = useChat({ transport });
   const [input, setInput] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // A request is genuinely in flight only while submitted/streaming — that's the only time
+  // the form should be locked. 'error' must stay interactive so the visitor can retry, and
+  // clearError() (below) is what actually flips status back to 'ready'.
+  const busy = status === 'submitted' || status === 'streaming';
+
+  // Focus the input on mount, and again whenever a send settles (success -> 'ready', or
+  // failure -> 'error') so follow-up turns don't require a manual click. This also covers
+  // the initial mount, since status starts at 'ready'.
+  useEffect(() => {
+    if (!busy) inputRef.current?.focus();
+  }, [busy]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || status !== 'ready') return;
+    if (!input.trim() || busy) return;
+    if (status === 'error') clearError();
     sendMessage({ text: input });
     setInput('');
+  };
+
+  const retry = () => {
+    clearError();
+    regenerate();
   };
 
   return (
@@ -113,21 +141,22 @@ export default function Chat() {
             …
           </p>
         )}
-        {error && <ErrorNotice error={error} />}
+        {error && <ErrorNotice error={error} onRetry={retry} />}
       </div>
 
       <form onSubmit={submit} className="flex gap-2 border-t pt-3">
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Escreva sua mensagem…"
-          disabled={status !== 'ready'}
+          disabled={busy}
           aria-label="Mensagem"
           className="flex-1 rounded-xl border px-4 py-2 text-sm outline-none focus:border-neutral-400 disabled:opacity-50"
         />
         <button
           type="submit"
-          disabled={status !== 'ready'}
+          disabled={busy}
           className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           Enviar
