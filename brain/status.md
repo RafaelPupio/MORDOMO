@@ -9,6 +9,12 @@ folder, git, brain, CLAUDE.md, public GitHub repo. Implementation decomposed int
 **2026-08-20** — **Plan 1 code complete** on branch `feat/plan-1-foundation-chat-slice`
 (26 commits, 75 tests green, typecheck + lint clean). Not yet merged, not yet deployed.
 
+**2026-08-20** — **Plan 2 code complete** on branch `feat/plan-2-ingest-pipeline` (135
+tests green, typecheck + lint clean). Document ingest pipeline — parse → chunk → embed →
+extract → verify → publish — proven end to end: a freshly ingested bulletin becomes
+retrievable and cited by the secretary, and its verified event lands on the calendar the
+agent reads (`tests/e2e/ingest-to-answer.test.ts`). Not yet merged, not yet deployed.
+
 ## What runs today
 
 The whole chat path exists and is tested end to end against an in-memory Postgres:
@@ -28,26 +34,45 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
 - Cost controls: `usage_ledger` on every LLM/embedding call, per-tenant monthly budget
   (fails closed), atomic per-visitor rate limit, request-size bounds.
 - Chat UI at `/chat` with source chips, bilingual disclaimer, and error recovery.
+- **Document ingest pipeline** (`runIngest`, Plan 2): upload → parse → chunk → embed →
+  extract → verify → publish, driving each document through an explicit `ingest_status`
+  state machine (`uploaded → parsing → extracting → verifying → published`, `failed`
+  reachable from any non-terminal state, `published` terminal so a served document is
+  never silently pulled back into the pipeline). An extractor agent pulls candidate
+  calendar events out of the document text; a separate verifier agent — a distinct model
+  call, prompted to disprove each candidate rather than confirm it — audits every
+  candidate against the source before anything reaches the calendar. The pipeline fails
+  closed throughout: a verification-call outage rejects that candidate instead of
+  publishing it unchecked, and any unhandled failure parks the document at `failed` with
+  the error recorded rather than leaving it stuck mid-run. `POST /api/ingest` runs this
+  inline (`maxDuration = 300`, no queue yet) behind a placeholder bearer-token gate
+  (`Authorization: Bearer <INGEST_TOKEN>`) that fails closed — an unset or empty token
+  rejects every request rather than admitting one. **`INGEST_TOKEN` must be set in
+  production** before this endpoint is usable there. Proven end to end in
+  `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin is retrievable via the
+  secretary's `searchKnowledge` tool, cited to the right document, and its verified event
+  shows up in `getCalendar`.
 
 ## Blocked — needs Rafael
 
-**Deployment (plan Task 13) cannot proceed without an authenticated Vercel CLI.** The
-device-login flow needs a browser and times out unattended. Once Rafael runs
-`vercel login`, the remaining steps are: provision Neon via
-`vercel integration add neon`, `npm run db:migrate`, `npm run seed` (with the REAL
-embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
-`BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` against that real seed to confirm
-retrieval quality holds with real embeddings (not just the offline HashEmbedder number),
-`vercel deploy --prod`.
+**Deployment (plan Task 13) is blocked on Neon Marketplace terms-of-service acceptance,
+which needs a browser.** Provisioning the production database via
+`vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
+interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
+accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
+the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY` and
+`INGEST_TOKEN`, `BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` against that real
+seed to confirm retrieval quality holds with real embeddings (not just the offline
+HashEmbedder number), `vercel deploy --prod`.
 
 Nothing has been deployed and no cloud resource has been created.
 
 ## Next
 
-1. Rafael authenticates Vercel → finish Task 13 (provision, migrate, seed, benchmark
-   against the real embedder, deploy, verify).
-2. Merge Plan 1.
-3. Plan 2 — document ingest pipeline (multi-agent extract → verify).
+1. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
+   migrate, seed, benchmark against the real embedder, deploy, verify).
+2. Merge Plan 1 and Plan 2.
+3. Plan 3 — staff operations (dashboard, real staff auth retiring `INGEST_TOKEN`).
 
 ## Open questions
 

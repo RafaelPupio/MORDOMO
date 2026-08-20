@@ -115,3 +115,87 @@ Append-only. Newest at the bottom of each day, newest day at the top.
   read into memory) → rate limit (10/church/hour) → budget** — the same shape as the chat
   channel's gates in `src/channels/web.ts`, so a request that will be rejected anyway never
   consumes a rate-limit slot or a budget check it shouldn't.
+
+## 2026-08-20 — Plan 2
+
+Proven end to end by `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin
+becomes retrievable and cited by the secretary, and its verified event lands on the
+calendar the agent reads. That test also settles the shape of the whole pipeline, so this
+entry records the design decisions it depends on and why each one is the shape it is —
+not just the Task 6 gate already logged above.
+
+- **The verifier is a separate model call with a disprove-it prompt, not a second pass by
+  the extractor.** An extractor asked to re-check its own output tends to agree with
+  itself — it already committed to the candidate once, and a self-review shares the same
+  blind spots that produced the hallucination in the first place. The verifier instead
+  gets a narrower, adversarial framing: "treat the candidate as a claim to be disproved,
+  not a summary to be agreed with," with its own system prompt and its own call per
+  candidate. Two independent passes over the same evidence catch more than one pass
+  asked to grade itself, for the price of one extra cheap (`FAST_MODEL`) call per
+  candidate — a few tenths of a cent per bulletin even with five events.
+- **The pipeline fails closed on verification failure.** If the verifier's model call
+  throws (gateway outage, malformed output), `verifyEvents` catches it per-candidate and
+  returns `decision: 'rejected'` with a note explaining the automatic check failed — it
+  never lets the exception propagate into an unreviewed "confirmed". An event that could
+  not be checked is exactly as untrustworthy as one that failed the check; the visible
+  cost is a real event missing from the calendar until the next ingest run, which is
+  recoverable, versus the alternative of quietly publishing something nobody actually
+  verified, which is not.
+- **Deterministic quote and date guards run in the extractor, before any candidate reaches
+  the verifier.** Checking that `sourceQuote` actually occurs in the document text and
+  that `startsAt` parses to a real date costs nothing (`Date.parse` and a string search)
+  next to a model call, and it catches the two most common hallucination shapes —
+  invented text, invented dates — without spending a verifier call, or model judgment, on
+  a candidate that was never going to survive review anyway. The verifier's job is then
+  narrower and better-focused: adjudicate candidates that are at least structurally real,
+  not reject garbage.
+- **The quote guard tolerates typography drift but not invented content.** A model
+  "copying" a quote verbatim commonly still retypes an em dash as a hyphen, straightens a
+  curly apostrophe, or drops an accent — none of which mean the model invented anything.
+  `normalizeForQuoteMatch` folds exactly those variants (dash forms, quote forms,
+  diacritics) before comparing, but the check is still a full substring test on the
+  normalized strings, not a fuzzy or partial match — an empty, whitespace-only, or
+  genuinely absent quote is still rejected. Widening the tolerance to catch benign
+  retyping without also learning to accept plausible-sounding invention was worth getting
+  precisely right; `tests/agent/extractor.test.ts` pins both directions (drift accepted,
+  invention rejected) so the boundary can't drift by accident later.
+- **Re-ingest replaces rather than appends.** A document's chunks and any events sourced
+  from it are deleted and reinserted on every `runIngest` call, keyed by
+  `(churchId, documentId)`. A bulletin gets corrected and re-uploaded under the same
+  `documentId` more often than it gets uploaded once and never touched again; if ingest
+  appended, every correction would leave the stale chunks and the stale (now-wrong, or
+  duplicate) event sitting alongside the new ones, silently degrading retrieval and the
+  calendar in a way nothing would ever surface. Replace makes the document's ingested
+  state always match its latest content — there is exactly one live version.
+- **The delete is ordered late, after the new content is fully computed, because
+  `neon-http` has no transaction support.** Production connects through `neon-http` (see
+  `src/db/client.ts`), which throws "No transactions support in neon-http driver" on
+  `db.transaction` — so nothing wraps the delete-then-insert in a rollback-on-failure
+  boundary. `runIngest` compensates by ordering the work instead: parse, chunk, and embed
+  the new content — all of which can fail on their own (a transient embedding-API outage
+  is the realistic case) — complete *before* the old chunks are touched, and the delete
+  and the insert that follows it have nothing awaitable between them. A failure anywhere
+  before that point leaves the previous, already-published chunks (and events) exactly as
+  they were, still serving answers; a failure can now only land in the narrow window
+  between delete and insert, not across the whole pipeline. (PGlite, the test driver,
+  does support `db.transaction` — but wrapping only the test path would verify a safety
+  property production doesn't actually have, so the ordering, not a transaction, is what's
+  used everywhere.)
+- **`published` is terminal in the `ingest_status` state machine, with one narrow,
+  documented bypass in `beginIngestRun`.** `canTransition('published', 'parsing')` is
+  `false` and is tested: an automatic transition must never pull a document that is
+  already serving answers back into the pipeline out from under a caller who didn't ask
+  for that. Re-ingesting a published document is a different thing — an explicit,
+  caller-initiated action — so `beginIngestRun` special-cases exactly that one starting
+  status to land on `parsing`, while every other starting status (`uploaded`, `failed`)
+  still goes through the ordinary, machine-checked `setIngestStatus`. The bypass is scoped
+  to a single named function with its reasoning written on it, specifically so it can't be
+  mistaken for a general "just set the status" escape hatch by a future caller.
+- **The ingest endpoint is token-gated as a placeholder for Plan 3's auth, and the token
+  should be retired, not stacked, when real auth lands.** This is the fuller context for
+  the Task 6 entry above: `INGEST_TOKEN` exists only because Plan 1 shipped with no staff
+  authentication and a public deployment cannot leave metered LLM/embedding work open to
+  anyone who finds the URL. It is scaffolding, not a security layer meant to compound —
+  when Plan 3 ships real staff auth, the correct move is to delete the bearer-token check
+  and the env var, not leave both bolted on underneath the new auth as a second gate
+  nobody remembers the purpose of.
