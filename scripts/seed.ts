@@ -20,6 +20,10 @@ const DOC_KINDS: Record<string, string> = {
 async function main() {
   const db = getDb();
   const embedder: Embedder = process.env.SEED_FAKE_EMBEDDER ? new HashEmbedder() : new GatewayEmbedder();
+  if (process.env.SEED_FAKE_EMBEDDER) {
+    console.warn('WARNING: SEED_FAKE_EMBEDDER is set — using the offline HashEmbedder (word-overlap vectors, not semantic).');
+    console.warn('This is for tests and local development only. NEVER use it to seed the public demo.');
+  }
   console.log(`Seeding with ${embedder.model}`);
 
   // Wipe the demo tenant only, children first (idempotent re-seed).

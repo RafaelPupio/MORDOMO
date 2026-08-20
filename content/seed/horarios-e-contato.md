@@ -4,27 +4,35 @@
 
 ## Cultos e reuniões
 
-- **Culto de Celebração**: domingos às 10h e às 18h30.
-- **Culto de Oração**: quartas-feiras às 20h.
-- **Escola Bíblica**: domingos às 9h, salas por faixa etária.
-- **Santa Ceia**: primeiro domingo do mês, nos dois cultos.
+**Que horas é o culto de domingo?** O Culto de Celebração acontece aos domingos às 10h e
+às 18h30.
+
+**Tem culto durante a semana?** Sim: o Culto de Oração reúne a igreja durante a semana,
+toda quarta-feira às 20h.
+
+A Escola Bíblica acontece aos domingos às 9h, com salas por faixa etária, e a Santa Ceia é
+celebrada no primeiro domingo do mês, nos dois cultos.
 
 ## Endereço
 
-Rua das Palmeiras, 123 — Jardim Esperança, São Paulo/SP, CEP 04000-000.
-Estacionamento gratuito no local, com vagas acessíveis. A entrada principal tem rampa.
+**Qual o endereço da igreja?** Rua das Palmeiras, 123 — Jardim Esperança, São Paulo/SP,
+CEP 04000-000 (endereço fictício).
+
+Estacionamento gratuito no local, com vagas acessíveis, e rampa de acesso na entrada
+principal.
 
 ## Contato
 
-- Telefone e WhatsApp da secretaria: (11) 90000-0000 (fictício)
+**Qual o telefone da secretaria?** (11) 90000-0000 — mesmo número do WhatsApp (fictício).
+
 - E-mail: contato@igrejadacolina.example
-- Horário da secretaria: terça a sexta, das 9h às 17h.
+- Horário de atendimento da secretaria: terça a sexta, das 9h às 17h.
 
 ## Ofertas e dízimos
 
-Contribuições podem ser entregues nos gazofilácios durante os cultos ou por PIX na chave
-fictícia pix@igrejadacolina.example. A igreja publica relatório financeiro trimestral aos
-membros.
+**Como faço para contribuir com o dízimo?** Você pode entregar dízimos e ofertas nos
+gazofilácios durante os cultos, ou contribuir pelo PIX (chave fictícia)
+pix@igrejadacolina.example. A igreja publica relatório financeiro trimestral aos membros.
 
 ## Perguntas frequentes
 
