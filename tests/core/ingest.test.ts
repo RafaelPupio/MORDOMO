@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
-import { runIngest } from '@/core/ingest';
+import { MAX_EXTRACTION_CHARS, runIngest } from '@/core/ingest';
 import { createDocument, getDocument } from '@/db/repo/documents';
 import { listUpcomingEvents } from '@/db/repo/events';
 import { chunks, documents, events, usageLedger } from '@/db/schema';
@@ -261,5 +261,88 @@ describe('runIngest', () => {
     expect(after.ingestStatus).toBe('archived');
     expect(result.status).not.toBe('failed');
     expect(result.status).toBe(after.ingestStatus);
+  });
+
+  // F2 (part b): the outer crash-recovery catch's OWN write must never fail. This
+  // reproduces the exact chain from the review: a downstream failure whose error message
+  // itself carries a raw NUL byte (well-formed UTF-16, but a Postgres text column refuses
+  // to store it). Without sanitizing the message first, `forceIngestFailed`'s write would
+  // fail for the SAME reason the original write did, leaving the document stuck at a
+  // non-terminal status (`parsing`, here) forever instead of ever reaching 'failed'.
+  it('sanitizes an error message that itself contains unstorable bytes, so the recovery write cannot fail the same way the original write did', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+
+    const throwingEmbedder: Embedder = {
+      model: 'throwing-embedder',
+      embed: async () => {
+        throw new Error(`embedding API unavailable ${String.fromCharCode(0)} nul byte inside`);
+      },
+    };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await runIngest(
+      { db, embedder: throwingEmbedder },
+      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+    );
+    errSpy.mockRestore();
+
+    expect(result.status).toBe('failed');
+    const after = await getDocument(db, church.id, doc.id);
+    expect(after.ingestStatus).toBe('failed');
+    expect(after.ingestError).toContain('embedding API unavailable');
+    expect(after.ingestError).not.toContain(String.fromCharCode(0));
+  });
+
+  // F3: extractEvents/verifyEvents pass whatever text they're given straight into the model
+  // prompt with no truncation of their own — bounding it is runIngest's job. This proves the
+  // bound is real (captured via a mock model, not just trusted from reading the code), that
+  // the result signals truncation happened, and that chunking still covers the WHOLE
+  // document even though the agent stages only saw the first MAX_EXTRACTION_CHARS of it.
+  it('bounds the text handed to the extractor when the document exceeds MAX_EXTRACTION_CHARS, while chunking still covers the whole document', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim Longo', kind: 'bulletin' });
+
+    const filler = 'lorem ipsum dolor sit amet consectetur adipiscing elit ';
+    const paragraphs = Array.from({ length: 250 }, (_, i) => `Paragrafo ${i}: ${filler.repeat(6)}`);
+    const marker = 'MARCADOR_FINAL_QUE_NAO_DEVE_CHEGAR_AO_EXTRATOR';
+    paragraphs.push(marker);
+    const longText = paragraphs.join('\n\n');
+    expect(longText.length).toBeGreaterThan(MAX_EXTRACTION_CHARS);
+
+    const { MockLanguageModelV3 } = await import('ai/test');
+    const capturingModel = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 5, text: 5, reasoning: undefined },
+        },
+        content: [{ type: 'text', text: JSON.stringify({ events: [] }) }],
+        warnings: [],
+      }),
+    });
+
+    const result = await runIngest(
+      { db, embedder: new HashEmbedder(), extractorModel: capturingModel },
+      { churchId: church.id, documentId: doc.id, bytes: new TextEncoder().encode(longText), mimeType: 'text/markdown' },
+    );
+
+    expect(result.status).toBe('published');
+    expect(result.truncatedForExtraction).toBe(true);
+
+    // The extractor never saw the tail of the document (where `marker` lives) — proof the
+    // bound was actually applied to what got sent, not just computed and ignored.
+    expect(capturingModel.doGenerateCalls).toHaveLength(1);
+    const sentToModel = JSON.stringify(capturingModel.doGenerateCalls[0].prompt);
+    expect(sentToModel.length).toBeLessThan(longText.length);
+    expect(sentToModel).not.toContain(marker);
+
+    // Chunking/embedding still ran over the WHOLE document — the last chunk (by seq) still
+    // carries the marker that was cut from the extractor's view.
+    const storedChunks = await db.select().from(chunks).orderBy(chunks.seq);
+    expect(storedChunks.length).toBeGreaterThan(0);
+    expect(storedChunks[storedChunks.length - 1].content).toContain(marker);
   });
 });

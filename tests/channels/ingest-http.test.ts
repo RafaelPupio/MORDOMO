@@ -1,8 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
 import { handleIngestRequest, INGEST_LIMIT } from '@/channels/ingest-http';
 import { budgets, chunks, churches, documents } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
+
+// parseDocument is mocked at the module level, by default delegating to the real
+// implementation (same pattern as tests/agent/extractor.test.ts's `generateObjectMock`), so
+// every test except the lone-surrogate one below still exercises the actual parser. That
+// one test overrides it for a single call via mockImplementationOnce, to reach a text shape
+// (an unpaired UTF-16 surrogate) that a real file upload cannot actually produce here: both
+// the Blob/File API's own UTF-8 encoding step and the WHATWG-conformant TextDecoder that
+// parseDocument uses for text uploads replace an unpaired surrogate with U+FFFD before it
+// could ever reach this guard. It IS reachable in production via a malicious PDF's
+// font/CMap text extraction (unpdf/pdf.js resolves glyphs to arbitrary Unicode code points,
+// not via UTF-8 decoding) — mocking the parse result exercises the guard the same way that
+// path would, without depending on a hand-built PDF fixture.
+const parseDocumentMock = vi.hoisted(() => vi.fn());
+vi.mock('@/core/parse-document', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/core/parse-document')>();
+  parseDocumentMock.mockImplementation(actual.parseDocument);
+  return { ...actual, parseDocument: parseDocumentMock };
+});
 
 const TOKEN = 'test-ingest-token';
 
@@ -102,5 +120,135 @@ describe('handleIngestRequest', () => {
       last = await handleIngestRequest(deps(db), ingestReq(form(`# Doc ${i}\n\nTexto ${i}.`)));
     }
     expect(last!.status).toBe(429);
+  });
+
+  // F1: the church lookup, the rate-limit write, and the budget check all run before the
+  // handler's try/catch used to start — a thrown DB error at any of the three used to
+  // escape the function entirely instead of producing a Response, violating the declared
+  // `Promise<Response>` contract. Each of the next three tests forces exactly one of those
+  // three gates to throw (simulating a realistic Neon cold-start "connection terminated
+  // unexpectedly") and asserts the handler still returns a controlled 500 with nothing
+  // leaked, and that no document row was created.
+  describe('DB failures at each pre-flight gate return a controlled 500, never a thrown rejection', () => {
+    it('church lookup fails', async () => {
+      const { db } = await setupDemo();
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const selectSpy = vi.spyOn(db, 'select').mockImplementation(() => {
+        throw new Error('connection terminated unexpectedly');
+      });
+
+      const res = await handleIngestRequest(deps(db), ingestReq(form('# Doc\n\nTexto.')));
+
+      selectSpy.mockRestore();
+      errSpy.mockRestore();
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ code: 'internal_error' });
+      expect(await db.select().from(documents)).toHaveLength(0);
+    });
+
+    it('rate-limit write fails', async () => {
+      const { db } = await setupDemo();
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // getChurchBySlug uses db.select (must succeed to reach checkRateLimit); checkRateLimit
+      // is the only db.insert call reached before the handler would otherwise return.
+      const insertSpy = vi.spyOn(db, 'insert').mockImplementation(() => {
+        throw new Error('connection terminated unexpectedly');
+      });
+
+      const res = await handleIngestRequest(deps(db), ingestReq(form('# Doc\n\nTexto.')));
+
+      insertSpy.mockRestore();
+      errSpy.mockRestore();
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ code: 'internal_error' });
+      expect(await db.select().from(documents)).toHaveLength(0);
+    });
+
+    it('budget check fails', async () => {
+      const { db } = await setupDemo();
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // Call 1 is getChurchBySlug's own select, which must succeed so the flow actually
+      // reaches checkBudget; call 2 is checkBudget's first select, which is the one made to
+      // fail here. (checkRateLimit, in between, uses db.insert, not db.select.)
+      const originalSelect = db.select.bind(db);
+      let selectCalls = 0;
+      const selectSpy = vi.spyOn(db, 'select').mockImplementation(((...args: unknown[]) => {
+        selectCalls += 1;
+        if (selectCalls === 2) throw new Error('connection terminated unexpectedly');
+        return (originalSelect as (...a: unknown[]) => unknown)(...args);
+      }) as typeof db.select);
+
+      const res = await handleIngestRequest(deps(db), ingestReq(form('# Doc\n\nTexto.')));
+
+      selectSpy.mockRestore();
+      errSpy.mockRestore();
+      expect(res.status).toBe(500);
+      expect(await res.json()).toEqual({ code: 'internal_error' });
+      expect(await db.select().from(documents)).toHaveLength(0);
+    });
+  });
+
+  // F2: a NUL byte (well-formed UTF-16, but a Postgres text/jsonb column refuses to store
+  // it) used to sail through as a normal 201, leaving a `documents` row stuck at the
+  // non-terminal `parsing` status once the chunk insert failed downstream. Rejecting it here
+  // — before any row exists — matches src/channels/web.ts's guard on chat message text.
+  it('rejects a file containing a NUL byte, persisting no document row', async () => {
+    const { db } = await setupDemo();
+    const withNul = `# Boletim\n\nTexto ${String.fromCharCode(0)} com byte nulo.`;
+    const res = await handleIngestRequest(deps(db), ingestReq(form(withNul)));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ code: 'bad_request' });
+    expect(await db.select().from(documents)).toHaveLength(0);
+  });
+
+  it('rejects text containing a lone UTF-16 surrogate, persisting no document row', async () => {
+    const { db } = await setupDemo();
+    parseDocumentMock.mockImplementationOnce(async () => ({
+      text: `Boletim ${String.fromCharCode(0xd800)} evento`,
+      pageCount: 1,
+    }));
+
+    const res = await handleIngestRequest(
+      deps(db), ingestReq(form('conteudo irrelevante — parseDocument is mocked for this call', 'x.pdf', 'application/pdf')),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ code: 'bad_request' });
+    expect(await db.select().from(documents)).toHaveLength(0);
+  });
+
+  // M4: a 1 MB title used to be accepted and persisted as-is.
+  it('rejects a title over the length bound with 400, persisting nothing', async () => {
+    const { db } = await setupDemo();
+    const hugeTitle = 'A'.repeat(400);
+    const res = await handleIngestRequest(
+      deps(db), ingestReq(form('# Doc\n\nTexto.', 'boletim.md', 'text/markdown', hugeTitle)),
+    );
+    expect(res.status).toBe(400);
+    expect(await db.select().from(documents)).toHaveLength(0);
+  });
+
+  // M1: `.replace(/^Bearer\s+/i, '')` on a header with no "Bearer " prefix is a no-op, not a
+  // rejection — a bare `Authorization: <token>` used to authenticate successfully.
+  it('rejects a bare token with no "Bearer" prefix', async () => {
+    const { db } = await setupDemo();
+    const headers = new Headers({ authorization: TOKEN });
+    const res = await handleIngestRequest(
+      deps(db),
+      new Request('http://test/api/ingest', { method: 'POST', headers, body: form('# Doc\n\nTexto.') }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('still accepts a lowercase "bearer" prefix', async () => {
+    const { db } = await setupDemo();
+    const headers = new Headers({ authorization: `bearer ${TOKEN}` });
+    const res = await handleIngestRequest(
+      deps(db),
+      new Request('http://test/api/ingest', {
+        method: 'POST', headers, body: form('# Boletim\n\n## Culto\n\nDomingo às 10h.'),
+      }),
+    );
+    expect(res.status).toBe(201);
   });
 });

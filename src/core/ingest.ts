@@ -37,7 +37,51 @@ export type IngestResult = {
   extracted: number;
   published: number;
   rejected: number;
+  /** True when the source text was longer than MAX_EXTRACTION_CHARS and the extractor /
+   *  verifier only saw the first MAX_EXTRACTION_CHARS of it (chunking/embedding still
+   *  covered the whole document — see the comment on MAX_EXTRACTION_CHARS). */
+  truncatedForExtraction: boolean;
 };
+
+// `extractEvents` and `verifyEvents` (src/agent/extractor.ts, src/agent/verifier.ts) pass
+// whatever text they're given straight into the model prompt with no truncation of their
+// own — bounding it is this orchestration layer's job, not theirs, because only here do we
+// know the FULL parsed text before deciding how much of it the agent stages actually need.
+//
+// Per-request cost without this bound is effectively unlimited relative to the monthly
+// budget cap: MAX_UPLOAD_BYTES (src/channels/ingest-http.ts) allows a 5 MiB upload, which
+// for typical prose is roughly 5,000,000 / 4 ≈ 1,250,000 tokens (a rough ~4 chars/token
+// estimate). At FAST_MODEL's $1/M input price (src/ai/pricing.ts) that's about $1.25 in
+// ONE extractor call, plus a comparable amount again per candidate event in the verifier —
+// and the endpoint permits 10 such requests/hour (INGEST_LIMIT). checkBudget() only checks
+// the cap BEFORE a request runs, so nothing stops one oversized upload from blowing well
+// past a tenant's entire monthly budget before the spend it caused is ever recorded.
+//
+// 40,000 characters (~10,000 tokens) keeps a single ingest's extractor + verifier cost to a
+// small fraction of a cent — 10,000 tokens * $1/M ≈ $0.01 for the extractor call, and the
+// verifier's per-candidate prompts are the same order of magnitude — while leaving far more
+// text than a real bulletin or schedule ever contains. Chunking and embedding
+// (EMBEDDING_MODEL is ~50x cheaper per token than FAST_MODEL, per src/ai/pricing.ts) still
+// run over the FULL, untruncated text, so retrieval quality — what a visitor's question can
+// actually surface — is unaffected; only the agent stages that decide what reaches the
+// calendar are bounded.
+export const MAX_EXTRACTION_CHARS = 40_000;
+
+// A crashed run's recovery write must itself never fail. `error.message` can carry
+// arbitrary bytes from wherever the run actually broke — including, in the exact scenario
+// this exists to guard against, a raw NUL byte or a lone UTF-16 surrogate that made its way
+// into a Postgres error message after a chunk/event insert rejected unstorable text (see
+// F2 in the ingest security review; src/channels/ingest-http.ts now rejects that text
+// before a document row even exists, but this stays as defense in depth for any other path
+// that can reach this catch, e.g. `runIngest` called directly rather than through the HTTP
+// channel). Writing that message straight into `documents.ingest_error` — itself a
+// Postgres text column — would fail for the SAME reason the original write failed,
+// and `forceIngestFailed`'s whole reason for existing is to be a recovery write that
+// cannot itself throw. `toWellFormed()` (ES2024) replaces any lone surrogate with U+FFFD.
+function sanitizeForStorage(message: string): string {
+  const NUL = String.fromCharCode(0);
+  return message.split(NUL).join('').toWellFormed();
+}
 
 /**
  * Runs one document through the pipeline. Deterministic stages (parse → chunk → embed)
@@ -63,7 +107,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
 
   const result: IngestResult = {
     documentId, status: doc.ingestStatus as IngestStatus,
-    chunkCount: 0, extracted: 0, published: 0, rejected: 0,
+    chunkCount: 0, extracted: 0, published: 0, rejected: 0, truncatedForExtraction: false,
   };
 
   try {
@@ -116,11 +160,24 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     await setIngestStatus(db, churchId, documentId, 'extracting');
     result.status = 'extracting';
 
+    // Bound what the agent stages see — see the comment on MAX_EXTRACTION_CHARS above for
+    // the cost math. Chunking/embedding above already ran over the full `parsed.text`; only
+    // the extractor/verifier prompts are capped here.
+    result.truncatedForExtraction = parsed.text.length > MAX_EXTRACTION_CHARS;
+    if (result.truncatedForExtraction) {
+      console.error('ingest: text truncated before extraction/verification', {
+        churchId, documentId, fullLength: parsed.text.length, truncatedTo: MAX_EXTRACTION_CHARS,
+      });
+    }
+    const extractionText = result.truncatedForExtraction
+      ? parsed.text.slice(0, MAX_EXTRACTION_CHARS)
+      : parsed.text;
+
     const referenceDate = input.referenceDate ?? new Date().toISOString().slice(0, 10);
     const candidates = deps.extractorModel
       ? await extractEvents(
           { db, model: deps.extractorModel },
-          { churchId, documentId, text: parsed.text, referenceDate },
+          { churchId, documentId, text: extractionText, referenceDate },
         )
       : [];
     result.extracted = candidates.length;
@@ -131,7 +188,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     const verified = candidates.length
       ? await verifyEvents(
           { db, model: deps.verifierModel },
-          { churchId, documentId, text: parsed.text, events: candidates },
+          { churchId, documentId, text: extractionText, events: candidates },
         )
       : [];
 
@@ -174,8 +231,10 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
         // that status is itself corrupted/unknown, this catch's own recovery write
         // would throw `UnknownIngestStatusError` again — leaving the document stuck
         // forever with no diagnostic. `forceIngestFailed` bypasses the state machine
-        // on purpose, for exactly this one caller.
-        await forceIngestFailed(db, churchId, documentId, message);
+        // on purpose, for exactly this one caller. `message` is sanitized first (see
+        // `sanitizeForStorage` above) so THIS write cannot fail for the same reason the
+        // original one did.
+        await forceIngestFailed(db, churchId, documentId, sanitizeForStorage(message));
         result.status = 'failed';
       }
     } catch (statusError) {
