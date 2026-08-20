@@ -67,4 +67,66 @@ describe('chunkMarkdown', () => {
     const out = chunkMarkdown(doc);
     for (const c of out) expect(c.content.trim()).not.toBe('');
   });
+
+  it('never exceeds the cap when a heading is long enough to squeeze the budget', () => {
+    const doc = '## ' + 'H'.repeat(1495) + '\n\nword';
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(0);
+    for (const c of out) expect(c.content.length).toBeLessThanOrEqual(1500);
+  });
+
+  it('never exceeds the cap for an extremely long heading', () => {
+    const doc = '## ' + 'H'.repeat(2997) + '\n\nword';
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(0);
+    for (const c of out) expect(c.content.length).toBeLessThanOrEqual(1500);
+  });
+
+  it('emits a heading-only oversized section instead of dropping it', () => {
+    const doc = '## ' + 'H'.repeat(1498);
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(0);
+    const rebuilt = out.map((c) => c.content).join('');
+    expect(rebuilt).toContain('H'.repeat(100));
+  });
+
+  it('never silently drops a malformed oversized section among normal ones', () => {
+    // Joined with '' (not a separator) so a contiguous run that got hard-split
+    // across a chunk boundary can still be found as one contiguous substring --
+    // this is checking content survival, not chunk-by-chunk shape.
+    const avisoBody = 'AVISO' + 'z'.repeat(2000);
+    const doc = [
+      '# Igreja',
+      '## Horários',
+      'Domingo 10h.',
+      `## ${avisoBody}`,
+      '## Endereço',
+      'Rua X, 123.',
+    ].join('\n\n');
+    const out = chunkMarkdown(doc);
+    const rebuilt = out.map((c) => c.content).join('');
+    expect(rebuilt).toContain('Horários');
+    expect(rebuilt).toContain('Domingo 10h.');
+    expect(rebuilt).toContain(avisoBody);
+    expect(rebuilt).toContain('Endereço');
+    expect(rebuilt).toContain('Rua X, 123.');
+  });
+
+  it('property check: every chunk of a mixed multi-section document is within cap and non-empty', () => {
+    const longSection = '## Longa\n\n' + Array.from({ length: 300 }, (_, i) => `palavra${i}`).join(' ');
+    const doc = [
+      '# Doc',
+      '## Curta',
+      'Texto curto.',
+      longSection,
+      '## Outra',
+      'Mais um texto curto.',
+    ].join('\n\n');
+    const out = chunkMarkdown(doc);
+    expect(out.length).toBeGreaterThan(0);
+    for (const c of out) {
+      expect(c.content.length).toBeLessThanOrEqual(1500);
+      expect(c.content.trim().length).toBeGreaterThan(0);
+    }
+  });
 });
