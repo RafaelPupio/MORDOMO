@@ -7,8 +7,13 @@
 node_modules/
 .next/
 .vercel/
+out/
 *.tsbuildinfo
+next-env.d.ts
 
 # OS / editor
 .DS_Store
 .obsidian/
+
+# SDD scratch
+.superpowers/
