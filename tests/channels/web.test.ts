@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
 import { handleChatRequest } from '@/channels/web';
-import { budgets, churches, messages, usageLedger } from '@/db/schema';
+import { budgets, churches, conversations, messages, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
 const VISITOR_COOKIE = 'ccb_visitor';
@@ -257,6 +257,153 @@ describe('handleChatRequest', () => {
         chatReq({ messages: huge, conversationId: crypto.randomUUID() }),
       );
       expect(res.status).toBe(400);
+    });
+  });
+
+  // F4/F5 (round 2): a reviewer found the original `totalMessageChars` only summed `text`
+  // fields, so a non-text part payload — a tool-output part, a `file` part's `data:` URL,
+  // or a stray passthrough field — bypassed the cap by roughly 400x while still reaching
+  // the model and being persisted into `messages.parts`. F5 covers a separate defect: NUL
+  // and lone-surrogate characters passed shape validation but crashed the Postgres jsonb
+  // write with a 500 after a `conversations` row had already been inserted.
+  describe('F4/F5 (round 2): serialized-size cap and malformed-UTF-8 rejection', () => {
+    it('rejects a single message whose non-text tool-output payload is huge, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      const bypass = [
+        {
+          id: 'a',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-searchKnowledge',
+              toolCallId: 'c1',
+              state: 'output-available',
+              input: { query: 'oi' },
+              output: { sources: [{ excerpt: 'A'.repeat(2_000_000) }] },
+            },
+          ],
+        },
+      ];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: bypass, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('rejects many individually-small messages whose serialized total exceeds the cap', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      // 40 messages, each carrying a modest ~780-byte tool-output part (well under any
+      // per-message threshold), summing to well over MAX_TOTAL_CHARS (24,000).
+      const manySmall = Array.from({ length: 40 }, (_, i) => ({
+        id: `m${i}`,
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-searchKnowledge',
+            toolCallId: `c${i}`,
+            state: 'output-available',
+            output: { sources: [{ excerpt: 'z'.repeat(700) }] },
+          },
+        ],
+      }));
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: manySmall, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('rejects a file part with a large data: URL, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      const dataUrl = `data:image/png;base64,${'A'.repeat(2_000_000)}`;
+      const withHugeFile = [
+        { id: 'f1', role: 'user', parts: [{ type: 'file', mediaType: 'image/png', data: dataUrl }] },
+      ];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: withHugeFile, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('still returns 200 for a normal, realistic multi-turn conversation well under the cap', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const conversationId = crypto.randomUUID();
+      // A realistic exchange, including one assistant message carrying a genuine small
+      // tool-output part alongside its reply text — the shape the cap must not punish.
+      const realistic = [
+        { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Oi, vocês têm culto de jovens?' }] },
+        {
+          id: 'a1',
+          role: 'assistant',
+          parts: [
+            {
+              type: 'tool-searchKnowledge',
+              toolCallId: 'c1',
+              state: 'output-available',
+              input: { query: 'culto de jovens' },
+              output: { sources: [{ excerpt: 'O culto de jovens acontece aos sábados às 19h.' }] },
+            },
+            { type: 'text', text: 'Sim! O culto de jovens acontece aos sábados às 19h.' },
+          ],
+        },
+        { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'Perfeito, obrigado!' }] },
+      ];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: realistic, conversationId }),
+      );
+      expect(res.status).toBe(200);
+      await res.text(); // drain so onEnd persistence runs
+      const saved = await db.select().from(messages);
+      expect(saved.length).toBeGreaterThan(0);
+    });
+
+    it('rejects text containing a NUL character, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      const withNul = [
+        { id: 'n1', role: 'user', parts: [{ type: 'text', text: `a${String.fromCharCode(0)}b` }] },
+      ];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: withNul, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('rejects text containing a lone UTF-16 surrogate, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      const withLoneSurrogate = [
+        { id: 'l1', role: 'user', parts: [{ type: 'text', text: `a${String.fromCharCode(0xd800)}b` }] },
+      ];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: withLoneSurrogate, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
     });
   });
 });

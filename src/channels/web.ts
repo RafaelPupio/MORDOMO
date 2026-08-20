@@ -32,15 +32,45 @@ const messageSchema = z.object({
   parts: z.array(messagePartSchema),
 }).passthrough();
 
-function totalMessageChars(messages: readonly z.infer<typeof messageSchema>[]): number {
-  let total = 0;
-  for (const message of messages) {
-    for (const part of message.parts) {
-      const text = (part as { text?: unknown }).text;
-      if (typeof text === 'string') total += text.length;
-    }
+// F4 (round 2): the original cap only summed `part.text` when a part happened to carry a
+// string `text` field, so any other part shape — a tool-call/tool-result part, a `file`
+// part with a `data:` URL, or even a stray passthrough field sitting next to a real `text`
+// field — was invisible to the budget while still reaching the model *and* being persisted
+// verbatim into the `messages.parts` jsonb column (saveMessage stores the parsed `parts`
+// array as-is). `messages.parts` is exactly what gets serialized to jsonb, so the real cap
+// has to be on the SERIALIZED size of each message, not its text fields alone.
+// `MAX_TOTAL_CHARS` keeps its original value: it was already generous for realistic
+// conversation text, and the JSON wrapper overhead this now also counts (field names,
+// braces, quotes — a few dozen extra characters per message) is a small fraction of a
+// 24,000-character budget for any conversation that isn't already trying to abuse it.
+//
+// F5: a message whose serialized text contains a raw NUL character or an unpaired ("lone")
+// UTF-16 surrogate is syntactically valid JSON but Postgres refuses to store either in a
+// jsonb column. Previously that rejection surfaced as an uncaught 500 *after*
+// `ensureConversation` had already written a `conversations` row for the request. Both
+// checks are folded into the one per-message `JSON.stringify` pass below (via its replacer
+// callback) so a request is never serialized twice just to validate it.
+function inspectMessages(
+  msgs: readonly z.infer<typeof messageSchema>[],
+): { totalChars: number; hasInvalidChars: boolean } {
+  let totalChars = 0;
+  let hasInvalidChars = false;
+  for (const message of msgs) {
+    const serialized = JSON.stringify(message, (_key, value) => {
+      // `String.prototype.isWellFormed()` (ES2024) is false exactly for strings holding an
+      // unpaired surrogate. NUL is well-formed UTF-16 but still unstorable, so it needs its
+      // own check.
+      if (typeof value === 'string' && (value.includes('\u0000') || !value.isWellFormed())) {
+        hasInvalidChars = true;
+      }
+      return value;
+    });
+    totalChars += serialized.length;
+    // Already over budget: the request is rejected regardless of what's left, so there's
+    // no need to keep serializing the remaining messages.
+    if (totalChars > MAX_TOTAL_CHARS) break;
   }
-  return total;
+  return { totalChars, hasInvalidChars };
 }
 
 const bodySchema = z
@@ -48,9 +78,13 @@ const bodySchema = z
     messages: z.array(messageSchema).min(1).max(MAX_MESSAGES),
     conversationId: z.uuid(),
   })
-  .refine((body) => totalMessageChars(body.messages) <= MAX_TOTAL_CHARS, {
-    message: 'history exceeds the character budget',
-  });
+  .refine(
+    (body) => {
+      const { totalChars, hasInvalidChars } = inspectMessages(body.messages);
+      return totalChars <= MAX_TOTAL_CHARS && !hasInvalidChars;
+    },
+    { message: 'history exceeds the character budget or contains invalid characters' },
+  );
 
 const CHAT_LIMIT = { limit: 20, windowSeconds: 600 };
 
