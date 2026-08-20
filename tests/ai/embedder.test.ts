@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { HashEmbedder } from '@/ai/embedder';
+import { recordUsage } from '@/ai/usage';
+import { usageLedger } from '@/db/schema';
+import { createTestDb, seedChurch } from '../helpers/db';
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
@@ -25,5 +29,32 @@ describe('HashEmbedder', () => {
       'receita de bolo de cenoura',
     ]);
     expect(cosine(embeddings[0], embeddings[1])).toBeGreaterThan(cosine(embeddings[0], embeddings[2]));
+  });
+
+  it('normalizes decomposed and precomposed accented Portuguese to identical embeddings', async () => {
+    const e = new HashEmbedder();
+    const nfc = 'café'; // precomposed é
+    const nfd = 'café'.normalize('NFD'); // decomposed e + combining acute
+    const { embeddings } = await e.embed([nfc, nfd]);
+    expect(cosine(embeddings[0], embeddings[1])).toBeCloseTo(1);
+  });
+});
+
+describe('recordUsage with HashEmbedder', () => {
+  it('does not throw and records zero cost with the test embedder', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const embedder = new HashEmbedder();
+
+    await recordUsage(db, {
+      churchId: church.id,
+      feature: 'embed',
+      model: embedder.model,
+      inputTokens: 100,
+      outputTokens: 0,
+    });
+
+    const [row] = await db.select({ costUsd: usageLedger.costUsd }).from(usageLedger).where(eq(usageLedger.churchId, church.id));
+    expect(row.costUsd).toBe(0);
   });
 });
