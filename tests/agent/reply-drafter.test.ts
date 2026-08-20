@@ -167,4 +167,30 @@ describe('draftReply', () => {
     // Should be trimmed to exactly 'Olá!' with content preserved
     expect(out.reply).toBe('Olá!');
   });
+
+  it('does not record a retrieval row when the embedder throws', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const throwingEmbedder = {
+      model: 'test-embedder',
+      embed: async () => { throw new Error('embedder failed'); },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await draftReply(
+      { db, embedder: throwingEmbedder, model: await textModel('Não encontrei essa informação; vou verificar e retorno.') },
+      { churchId: church.id, churchName: church.name, ticketId: crypto.randomUUID(), topic: 'batismo' },
+    );
+
+    // Should still return a draft with empty sources
+    expect(out.reply).toContain('verificar');
+    expect(out.sources).toEqual([]);
+
+    // Should NOT have written a support.retrieval row, only support.draft
+    const ledger = await db.select().from(usageLedger);
+    const retrievalRows = ledger.filter((u) => u.feature === 'support.retrieval');
+    expect(retrievalRows.length).toBe(0);
+    expect(ledger.some((u) => u.feature === 'support.draft')).toBe(true);
+
+    spy.mockRestore();
+  });
 });

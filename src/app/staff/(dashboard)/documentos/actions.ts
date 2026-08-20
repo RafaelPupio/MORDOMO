@@ -57,17 +57,27 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     return { error: 'Não foi possível ler o arquivo.' };
   }
 
-  const doc = await createDocument(db, { churchId, title, kind: 'upload', sourcePath: file.name });
-  const result = await runIngest(
-    { db, embedder: new GatewayEmbedder(), extractorModel: FAST_MODEL, verifierModel: FAST_MODEL },
-    { churchId, documentId: doc.id, bytes, mimeType },
-  );
+  // Everything below can throw on a DB failure (e.g., Neon scale-to-zero cold start) or
+  // an unexpected pipeline failure. Wrap in try/catch to guarantee a controlled error
+  // response instead of an uncaught rejection, matching src/channels/ingest-http.ts's
+  // posture. Log the real error server-side; the staff member only sees a Portuguese
+  // message, never a stack trace.
+  try {
+    const doc = await createDocument(db, { churchId, title, kind: 'upload', sourcePath: file.name });
+    const result = await runIngest(
+      { db, embedder: new GatewayEmbedder(), extractorModel: FAST_MODEL, verifierModel: FAST_MODEL },
+      { churchId, documentId: doc.id, bytes, mimeType },
+    );
 
-  revalidatePath('/staff/documentos');
-  revalidatePath('/staff/agenda');
+    revalidatePath('/staff/documentos');
+    revalidatePath('/staff/agenda');
 
-  if (result.status === 'failed') return { error: 'A leitura do documento falhou. Veja o status na lista.' };
-  return {
-    ok: `Documento processado: ${result.chunkCount} trechos, ${result.published} evento(s) publicado(s).`,
-  };
+    if (result.status === 'failed') return { error: 'A leitura do documento falhou. Veja o status na lista.' };
+    return {
+      ok: `Documento processado: ${result.chunkCount} trechos, ${result.published} evento(s) publicado(s).`,
+    };
+  } catch (error) {
+    console.error('uploadDocument: unexpected failure', { churchId, fileName: file.name, error });
+    return { error: 'Não foi possível processar o documento. Tente novamente.' };
+  }
 }

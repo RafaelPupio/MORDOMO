@@ -35,23 +35,29 @@ export async function draftReply(
   // blocks the inbox. The failure is logged for monitoring and debugging.
   let sources: Source[] = [];
   let embeddingTokens = 0;
+  let retrievalSucceeded = true;
   try {
     ({ sources, embeddingTokens } = await searchKnowledgeBase(
       deps.db, deps.embedder, input.churchId, input.topic,
     ));
   } catch (error) {
+    retrievalSucceeded = false;
     console.error('support.retrieval failed; continuing with empty grounding', {
       churchId: input.churchId, ticketId: input.ticketId, error,
     });
   }
 
-  try {
-    await recordUsage(deps.db, {
-      churchId: input.churchId, feature: 'support.retrieval',
-      model: deps.embedder.model, inputTokens: embeddingTokens, outputTokens: 0,
-    });
-  } catch (error) {
-    console.error('support.retrieval usage not recorded', { ticketId: input.ticketId, error });
+  // Record retrieval only if it actually ran (even if it found nothing, we still record).
+  // A failed retrieval must not write a phantom $0 row to usage_ledger.
+  if (retrievalSucceeded) {
+    try {
+      await recordUsage(deps.db, {
+        churchId: input.churchId, feature: 'support.retrieval',
+        model: deps.embedder.model, inputTokens: embeddingTokens, outputTokens: 0,
+      });
+    } catch (error) {
+      console.error('support.retrieval usage not recorded', { ticketId: input.ticketId, error });
+    }
   }
 
   const grounding = sources.length
