@@ -89,4 +89,82 @@ describe('draftReply', () => {
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
+
+  it('does not throw when the embedder fails synchronously; continues with empty grounding and logs', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    // Embedder that throws synchronously
+    const throwingEmbedder = {
+      model: 'test-embedder',
+      embed: () => { throw new Error('embedder crashed'); },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await draftReply(
+      { db, embedder: throwingEmbedder, model: await textModel('Não encontrei essa informação; vou verificar e retorno.') },
+      { churchId: church.id, churchName: church.name, ticketId: crypto.randomUUID(), topic: 'batismo' },
+    );
+    // Should return a draft (not throw) with empty sources because the embedder failed
+    expect(out.reply).toContain('verificar');
+    expect(out.sources).toEqual([]);
+    // Should log the retrieval failure
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('support.retrieval failed'),
+      expect.objectContaining({
+        churchId: church.id,
+        ticketId: expect.any(String),
+        error: expect.any(Error),
+      }),
+    );
+    spy.mockRestore();
+  });
+
+  it('does not throw when the embedder fails asynchronously; continues with empty grounding and logs', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    // Embedder that rejects asynchronously
+    const throwingEmbedder = {
+      model: 'test-embedder',
+      embed: async () => { throw new Error('network timeout'); },
+    };
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await draftReply(
+      { db, embedder: throwingEmbedder, model: await textModel('Não encontrei essa informação; vou verificar e retorno.') },
+      { churchId: church.id, churchName: church.name, ticketId: crypto.randomUUID(), topic: 'batismo' },
+    );
+    // Should return a draft (not throw) with empty sources because the embedder failed
+    expect(out.reply).toContain('verificar');
+    expect(out.sources).toEqual([]);
+    // Should log the retrieval failure
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('support.retrieval failed'),
+      expect.objectContaining({
+        churchId: church.id,
+        ticketId: expect.any(String),
+        error: expect.any(Error),
+      }),
+    );
+    spy.mockRestore();
+  });
+
+  it('treats whitespace-only model output as empty', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const out = await draftReply(
+      { db, embedder: new HashEmbedder(), model: await textModel('   \n\t  ') },
+      { churchId: church.id, churchName: church.name, ticketId: crypto.randomUUID(), topic: 'batismo' },
+    );
+    // Whitespace-only should be trimmed to empty string
+    expect(out.reply).toBe('');
+  });
+
+  it('trims leading and trailing whitespace from model output while preserving content', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const out = await draftReply(
+      { db, embedder: new HashEmbedder(), model: await textModel('  \n  Olá!  \n  ') },
+      { churchId: church.id, churchName: church.name, ticketId: crypto.randomUUID(), topic: 'batismo' },
+    );
+    // Should be trimmed to exactly 'Olá!' with content preserved
+    expect(out.reply).toBe('Olá!');
+  });
 });

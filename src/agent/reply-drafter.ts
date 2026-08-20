@@ -25,9 +25,25 @@ export async function draftReply(
   deps: ReplyDrafterDeps,
   input: ReplyDrafterInput,
 ): Promise<{ reply: string; sources: Source[] }> {
-  const { sources, embeddingTokens } = await searchKnowledgeBase(
-    deps.db, deps.embedder, input.churchId, input.topic,
-  );
+  // Hoist model selection so it's computed once
+  const model = deps.model ?? FAST_MODEL;
+
+  // Wrap retrieval in its own try/catch. If the embedder fails (network, timeout, etc.),
+  // we log it but continue with an empty grounding. The model prompt already instructs
+  // the model to say "I'll check and get back to you" when given no information, so the
+  // staff member gets a sensible draft to work from rather than a complete failure that
+  // blocks the inbox. The failure is logged for monitoring and debugging.
+  let sources: Source[] = [];
+  let embeddingTokens = 0;
+  try {
+    ({ sources, embeddingTokens } = await searchKnowledgeBase(
+      deps.db, deps.embedder, input.churchId, input.topic,
+    ));
+  } catch (error) {
+    console.error('support.retrieval failed; continuing with empty grounding', {
+      churchId: input.churchId, ticketId: input.ticketId, error,
+    });
+  }
 
   try {
     await recordUsage(deps.db, {
@@ -44,12 +60,13 @@ export async function draftReply(
 
   try {
     const { text, usage } = await generateText({
-      model: deps.model ?? FAST_MODEL,
+      model,
       system: [
         `You draft replies for the secretary of ${input.churchName}, a Brazilian church.`,
         'Write in Brazilian Portuguese, warm and brief — two or three sentences.',
         'Use ONLY the church information provided below. If it does not answer the question, say plainly that you will check and get back to them; never invent a fact.',
         'This is a DRAFT a staff member will read, edit, and send. Do not sign it, and do not promise anything the church has not stated.',
+        'Reply with the message text only — no preamble, labels, or meta-commentary.',
       ].join('\n'),
       prompt: [
         `ASSUNTO: ${input.topic}`,
@@ -61,14 +78,16 @@ export async function draftReply(
     try {
       await recordUsage(deps.db, {
         churchId: input.churchId, feature: 'support.draft',
-        model: priceableModelId(deps.model ?? FAST_MODEL, FAST_MODEL),
+        model: priceableModelId(model, FAST_MODEL),
         inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0,
       });
     } catch (error) {
       console.error('support.draft usage not recorded', { ticketId: input.ticketId, error });
     }
 
-    return { reply: text, sources };
+    // Trim the reply and treat whitespace-only output as empty.
+    const trimmedReply = text.trim();
+    return { reply: trimmedReply, sources };
   } catch (error) {
     console.error('support.draft failed; returning an empty draft', {
       churchId: input.churchId, ticketId: input.ticketId, error,
