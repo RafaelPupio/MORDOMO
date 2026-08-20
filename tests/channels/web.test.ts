@@ -331,26 +331,27 @@ describe('handleChatRequest', () => {
       expect(res.status).toBe(400);
     });
 
-    // (Round 3) This used to assert 400: a single message just over the old MAX_TOTAL_CHARS
-    // (24,000) was treated as abuse. That was the regression itself — a single honest,
-    // long message is nowhere near abusive, and it's also the newest (only) message, which
-    // trimHistoryForModel must never drop. It is now well under HISTORY_ABUSE_MAX_CHARS
-    // (256,000), so it is accepted and reaches the model whole, unstrimmed, even though it
-    // is over MODEL_HISTORY_CHARS on its own.
-    it('still returns 200 for a single huge newest user message under the abuse bound (not trimmed away)', async () => {
+    // (Round 3) This used to assert 200: a single message well under HISTORY_ABUSE_MAX_CHARS
+    // (256,000) but over MODEL_HISTORY_CHARS (24,000) reached the model whole, unstrimmed,
+    // because trimHistoryForModel never drops the newest message no matter its size. That
+    // was itself a gap (round 4): a public endpoint whose cost protection is a pre-request
+    // budget check must never let a single request hand the model more than the model-history
+    // budget. A legitimate chat turn is a message, not a document, so this is now a 400
+    // instead of a silent pass-through — see the F4 (round 4) group below for the full
+    // boundary coverage this test used to be the only proxy for.
+    it('rejects a single huge newest user message that alone exceeds MODEL_HISTORY_CHARS, persisting nothing', async () => {
       const { db } = await setupDemo();
-      const { model, prompts } = await mockModelCapturingPrompts();
       const bigText = `MARK_ONLY ${'x'.repeat(100_000)}`;
       const huge = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: bigText }] }];
       const res = await handleChatRequest(
-        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
         chatReq({ messages: huge, conversationId: crypto.randomUUID() }),
       );
-      expect(res.status).toBe(200);
-      await res.text();
-      // The message reached the model whole — trimming never drops the newest message, no
-      // matter how far over MODEL_HISTORY_CHARS it is on its own.
-      expect(JSON.stringify(prompts[0])).toContain('MARK_ONLY');
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
     });
   });
 
@@ -615,6 +616,88 @@ describe('handleChatRequest', () => {
 
     it('MODEL_HISTORY_CHARS stays well under HISTORY_ABUSE_MAX_CHARS (the two bounds do not contradict each other)', () => {
       expect(MODEL_HISTORY_CHARS).toBeLessThan(HISTORY_ABUSE_MAX_CHARS);
+    });
+  });
+
+  // F4 (round 4): trimHistoryForModel always keeps the newest message whole (correct — the
+  // user's current turn must never be trimmed away), but that meant a single oversized
+  // newest message bypassed MODEL_HISTORY_CHARS entirely and reached the model at up to
+  // HISTORY_ABUSE_MAX_CHARS. This group proves the new rule: a single message over
+  // MODEL_HISTORY_CHARS is now a 400, the boundary itself is exact (not off-by-one in the
+  // rejecting direction), and the round-3 fix (trim, don't reject, when the TOTAL is large
+  // but every individual message is small) still holds.
+  describe('F4 (round 4): a single message over MODEL_HISTORY_CHARS is rejected, not silently sent to the model', () => {
+    // Builds a message whose JSON.stringify(...).length is exactly `targetChars`, so the
+    // boundary tests below can target MODEL_HISTORY_CHARS +/- 1 precisely instead of an
+    // approximate fixture size. Padding with plain ASCII 'x' characters adds exactly
+    // `padLen` to the serialized length — no JSON escaping changes the count.
+    function messageOfSerializedSize(id: string, role: 'user' | 'assistant', targetChars: number) {
+      const base = { id, role, parts: [{ type: 'text', text: '' }] };
+      const baseLen = JSON.stringify(base).length;
+      const padLen = targetChars - baseLen;
+      if (padLen < 0) {
+        throw new Error(`targetChars ${targetChars} is smaller than the empty-message overhead ${baseLen}`);
+      }
+      return { id, role, parts: [{ type: 'text', text: 'x'.repeat(padLen) }] };
+    }
+
+    it('rejects a single message just over MODEL_HISTORY_CHARS with 400, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      const oversized = [messageOfSerializedSize('m1', 'user', MODEL_HISTORY_CHARS + 1)];
+      expect(JSON.stringify(oversized[0]).length).toBe(MODEL_HISTORY_CHARS + 1); // fixture sanity check
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: oversized, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('accepts a single message exactly at MODEL_HISTORY_CHARS with 200 (boundary is not off-by-one in the rejecting direction)', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const conversationId = crypto.randomUUID();
+      const atBoundary = [messageOfSerializedSize('m1', 'user', MODEL_HISTORY_CHARS)];
+      expect(JSON.stringify(atBoundary[0]).length).toBe(MODEL_HISTORY_CHARS); // fixture sanity check
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: atBoundary, conversationId }),
+      );
+      expect(res.status).toBe(200);
+      await res.text();
+      expect(await db.select().from(messages)).not.toHaveLength(0);
+    });
+
+    // Regression guard: the new per-message cap must not resurrect the round-3 bug, where an
+    // honest, long conversation got hard-rejected once its TOTAL crossed the character cap.
+    // Every individual message here stays well under MODEL_HISTORY_CHARS; only the running
+    // total across the whole conversation grows past it. That must still be 200 with the
+    // model-side history trimmed, never a 400 — a per-message cap is not a reintroduced
+    // total-history cap.
+    it('still returns 200 for a long honest conversation whose TOTAL exceeds MODEL_HISTORY_CHARS but whose every individual message is small', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const turnCount = 20;
+      const history = buildGroundedHistory(turnCount);
+
+      // Fixture sanity check: every individual message is small, but the total is not — this
+      // is the exact shape the regression guard is about.
+      const sizes = history.map((m) => JSON.stringify(m).length);
+      for (const size of sizes) expect(size).toBeLessThan(MODEL_HISTORY_CHARS);
+      const total = sizes.reduce((a, b) => a + b, 0);
+      expect(total).toBeGreaterThan(MODEL_HISTORY_CHARS);
+      expect(total).toBeLessThan(HISTORY_ABUSE_MAX_CHARS);
+
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: history, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(200); // trimmed for the model, not rejected
+      await res.text();
     });
   });
 });

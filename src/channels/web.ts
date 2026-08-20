@@ -32,6 +32,24 @@ const VISITOR_COOKIE_NAME = 'ccb_visitor';
 //   still gets a normal 200 and a reply; only the model's context loses old turns. This is
 //   what a real product does: forget old history, don't break the conversation.
 //
+// F4 (round 4): trimHistoryForModel deliberately always keeps the newest message whole —
+// the user's current turn must never be trimmed away. That correctness rule has a cost hole:
+// a single oversized newest message walks straight past MODEL_HISTORY_CHARS and reaches the
+// model at up to HISTORY_ABUSE_MAX_CHARS, more than ten times the budget the trimming step
+// exists to enforce. The fix is a validation rule, not a trimming rule: `inspectMessages`
+// (below) also tracks the largest single message's serialized size, and `bodySchema`'s
+// `.refine()` rejects the request with 400 when that alone exceeds MODEL_HISTORY_CHARS —
+// before any database write, alongside the other bounds. A legitimate chat turn is a
+// message, not a document; a single turn larger than the entire model-history budget is
+// abuse, and silently truncating a user's own current message would be worse than rejecting
+// it outright.
+//
+// Put together, these three bounds guarantee the model can never receive more than
+// ~MODEL_HISTORY_CHARS of history in one request:
+//   - one message > MODEL_HISTORY_CHARS               -> 400 (new, round 4)
+//   - whole request > HISTORY_ABUSE_MAX_CHARS          -> 400 (unchanged)
+//   - otherwise: history is silently trimmed down to MODEL_HISTORY_CHARS, request proceeds 200
+//
 // MAX_MESSAGES is a coarse, cheap pre-filter on message *count* (checked by zod before any
 // serialization happens), so an absurdly long messages array can't force the server to pay
 // JSON.stringify cost on all of it. It must stay comfortably above the message count a
@@ -76,14 +94,26 @@ const messageSchema = z.object({
 // checks are folded into the one per-message `JSON.stringify` pass below (via its replacer
 // callback) so a request is never serialized twice just to validate it.
 //
-// This function is used ONLY against HISTORY_ABUSE_MAX_CHARS (the hard 400 bound) — never
-// against MODEL_HISTORY_CHARS, which is a silent trimming target, not a rejection rule. See
-// the comment above the constants for why the two are kept separate.
+// F4 (round 4): also returns `maxMessageChars`, the largest single message's serialized
+// size seen so far, so `bodySchema`'s `.refine()` can reject a request whose newest (or any)
+// message alone exceeds MODEL_HISTORY_CHARS — the one case `trimHistoryForModel`'s "always
+// keep the newest message whole" rule cannot protect against, since it never rejects. This
+// is the ONE place MODEL_HISTORY_CHARS is used as a rejection bound; the aggregate
+// multi-message case (many small messages whose TOTAL exceeds MODEL_HISTORY_CHARS) is still
+// handled by silent trimming, never rejection. See the comment above the constants for how
+// the three bounds fit together.
+//
+// `maxMessageChars` is updated for each message BEFORE the early-break check below, so the
+// message that pushes `totalChars` over HISTORY_ABUSE_MAX_CHARS still has its own size
+// recorded — it cannot "escape" the per-message check just because the loop exits right
+// after it. (Messages after the break are never inspected, but that's fine: the request is
+// already rejected via `totalChars`, regardless of what `maxMessageChars` would have been.)
 function inspectMessages(
   msgs: readonly z.infer<typeof messageSchema>[],
-): { totalChars: number; hasInvalidChars: boolean } {
+): { totalChars: number; hasInvalidChars: boolean; maxMessageChars: number } {
   let totalChars = 0;
   let hasInvalidChars = false;
+  let maxMessageChars = 0;
   for (const message of msgs) {
     const serialized = JSON.stringify(message, (_key, value) => {
       // `String.prototype.isWellFormed()` (ES2024) is false exactly for strings holding an
@@ -95,11 +125,12 @@ function inspectMessages(
       return value;
     });
     totalChars += serialized.length;
+    if (serialized.length > maxMessageChars) maxMessageChars = serialized.length;
     // Already over budget: the request is rejected regardless of what's left, so there's
     // no need to keep serializing the remaining messages.
     if (totalChars > HISTORY_ABUSE_MAX_CHARS) break;
   }
-  return { totalChars, hasInvalidChars };
+  return { totalChars, hasInvalidChars, maxMessageChars };
 }
 
 // Trims the history that actually gets sent to the model down to `maxChars`, per
@@ -110,6 +141,11 @@ function inspectMessages(
 //   - older messages are added back, oldest-dropped-first, only while they still fit;
 //   - the result is always a contiguous suffix of `msgs` — nothing is ever dropped from the
 //     middle.
+// F4 (round 4): by the time this function runs, `bodySchema`'s `.refine()` has already
+// guaranteed no single message exceeds MODEL_HISTORY_CHARS on its own (a request violating
+// that is rejected with 400 before this ever executes) — so "even alone it exceeds
+// `maxChars`" above no longer happens for the newest message in practice. The invariant is
+// still enforced here defensively, independent of that upstream guarantee.
 // Persistence is unaffected by this: callers must derive what they save from the ORIGINAL,
 // untrimmed `body.messages`, not from this function's return value.
 function trimHistoryForModel(
@@ -135,10 +171,16 @@ const bodySchema = z
   })
   .refine(
     (body) => {
-      const { totalChars, hasInvalidChars } = inspectMessages(body.messages);
-      return totalChars <= HISTORY_ABUSE_MAX_CHARS && !hasInvalidChars;
+      const { totalChars, hasInvalidChars, maxMessageChars } = inspectMessages(body.messages);
+      // F4 (round 4): a single message over MODEL_HISTORY_CHARS is rejected here — the same
+      // 400 path as the other two checks — rather than silently truncated. See the comment
+      // block above MAX_MESSAGES/HISTORY_ABUSE_MAX_CHARS/MODEL_HISTORY_CHARS for why.
+      return totalChars <= HISTORY_ABUSE_MAX_CHARS && !hasInvalidChars && maxMessageChars <= MODEL_HISTORY_CHARS;
     },
-    { message: 'history exceeds the character budget or contains invalid characters' },
+    {
+      message:
+        'history exceeds the character budget, a single message exceeds the model history budget, or contains invalid characters',
+    },
   );
 
 const CHAT_LIMIT = { limit: 20, windowSeconds: 600 };
