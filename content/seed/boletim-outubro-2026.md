@@ -8,7 +8,7 @@
 
 ## Encontro de jovens OTB — 10/10 (sábado)
 
-**Quando é o encontro de jovens?** No dia 10/10 (sábado), às 19h, na quadra coberta.
+O encontro de jovens acontece no dia 10/10 (sábado), às 19h, na quadra coberta.
 Tema: "Fé e vocação".
 
 ## Mutirão de doação de alimentos — 17/10 (sábado)
