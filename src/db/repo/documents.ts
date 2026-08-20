@@ -88,3 +88,32 @@ export async function beginIngestRun(db: Db, churchId: string, documentId: strin
 
   await setIngestStatus(db, churchId, documentId, 'parsing');
 }
+
+/**
+ * Forces a document straight to `failed`, bypassing `assertTransition` entirely.
+ *
+ * This exists ONLY for `runIngest`'s outer crash-recovery catch (see
+ * `src/core/ingest.ts`). That recovery write must succeed no matter what status the
+ * document is currently sitting in — including a status that isn't a real
+ * `IngestStatus` at all (a hand-edited or stale row; see `UnknownIngestStatusError`).
+ * The ordinary, machine-checked `setIngestStatus` cannot be used there: it re-reads
+ * the current status and re-checks `assertTransition`, so a corrupted status makes
+ * the *recovery* write throw the same error the pipeline is trying to recover from —
+ * and that second throw would leave the document stuck forever, with no diagnostic
+ * and no way to ever retry it into a known state.
+ *
+ * Every other caller must keep going through `setIngestStatus`/`beginIngestRun` so
+ * the state machine keeps deciding what is legal. Do not reach for this function as a
+ * general-purpose "just set the status" shortcut — it is a one-caller escape hatch.
+ */
+export async function forceIngestFailed(
+  db: Db,
+  churchId: string,
+  documentId: string,
+  error: string,
+): Promise<void> {
+  await db
+    .update(documents)
+    .set({ ingestStatus: 'failed', ingestError: error })
+    .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
+}

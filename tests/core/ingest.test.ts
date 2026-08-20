@@ -1,9 +1,11 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
+import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
 import { runIngest } from '@/core/ingest';
 import { createDocument, getDocument } from '@/db/repo/documents';
 import { listUpcomingEvents } from '@/db/repo/events';
-import { chunks, events, usageLedger } from '@/db/schema';
+import { chunks, documents, events, usageLedger } from '@/db/schema';
 import { createTestDb, seedChurch } from '../helpers/db';
 
 const DOC = [
@@ -162,6 +164,39 @@ describe('runIngest', () => {
     expect((await db.select().from(chunks)).length).toBe(second.chunkCount);
   });
 
+  it('a failed re-ingest does not destroy the document’s existing, previously published chunks', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+
+    // First ingest succeeds and publishes with real, retrievable chunks.
+    const first = await runIngest({ db, embedder: new HashEmbedder() }, input);
+    expect(first.status).toBe('published');
+    expect(first.chunkCount).toBeGreaterThan(0);
+    const chunksBefore = await db.select().from(chunks).orderBy(chunks.seq);
+    expect(chunksBefore.length).toBe(first.chunkCount);
+
+    // Re-ingest hits a transient embedding-API outage.
+    const throwingEmbedder: Embedder = {
+      model: 'throwing-embedder',
+      embed: async () => { throw new Error('embedding API unavailable'); },
+    };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const second = await runIngest({ db, embedder: throwingEmbedder }, input);
+    errSpy.mockRestore();
+
+    expect(second.status).toBe('failed');
+    const after = await getDocument(db, church.id, doc.id);
+    expect(after.ingestStatus).toBe('failed');
+    expect(after.ingestError).toMatch(/embedding API unavailable/);
+
+    // The ORIGINAL chunks must still be present: a failed re-ingest must never leave a
+    // previously published document with zero retrievable chunks.
+    const chunksAfter = await db.select().from(chunks).orderBy(chunks.seq);
+    expect(chunksAfter.map((c) => c.content)).toEqual(chunksBefore.map((c) => c.content));
+  });
+
   it('never touches another tenant’s data', async () => {
     const db = await createTestDb();
     const a = await seedChurch(db, 'A');
@@ -172,5 +207,59 @@ describe('runIngest', () => {
       runIngest({ db, embedder: new HashEmbedder() },
         { churchId: a.id, documentId: docB.id, bytes: bytes(), mimeType: 'text/markdown' }),
     ).rejects.toThrow(/not found/i);
+  });
+
+  it('a corrupted ingest_status is parked in failed, with a diagnostic, instead of stuck forever', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+
+    // Simulate a hand-edited or stale row: a value outside the known IngestStatus set.
+    await db.update(documents).set({ ingestStatus: 'archived' }).where(eq(documents.id, doc.id));
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await runIngest(
+      { db, embedder: new HashEmbedder() },
+      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+    );
+    errSpy.mockRestore();
+
+    const after = await getDocument(db, church.id, doc.id);
+    expect(after.ingestStatus).toBe('failed');
+    expect(after.ingestError).toBeTruthy();
+    // The returned status must match what was actually persisted.
+    expect(result.status).toBe(after.ingestStatus);
+  });
+
+  it('does not falsely claim failed when the forced recovery write itself fails', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+
+    // Corrupt the status first (this write must succeed)...
+    await db.update(documents).set({ ingestStatus: 'archived' }).where(eq(documents.id, doc.id));
+
+    // ...then make every subsequent write fail, simulating the DB going unreachable
+    // right as the pipeline tries to park the document in `failed`. Nothing in the
+    // reachable code path calls `db.update` before the recovery write for this
+    // scenario: `beginIngestRun` throws `UnknownIngestStatusError` before it ever
+    // reaches the database.
+    const updateSpy = vi.spyOn(db, 'update').mockImplementation(() => {
+      throw new Error('db unreachable');
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await runIngest(
+      { db, embedder: new HashEmbedder() },
+      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+    );
+    errSpy.mockRestore();
+    updateSpy.mockRestore();
+
+    // The DB still holds the original (corrupted) status — the caller must not be told
+    // 'failed' when the database does not actually hold that state.
+    const after = await getDocument(db, church.id, doc.id);
+    expect(after.ingestStatus).toBe('archived');
+    expect(result.status).not.toBe('failed');
+    expect(result.status).toBe(after.ingestStatus);
   });
 });
