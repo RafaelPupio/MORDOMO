@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { assertTransition, canTransition, INGEST_STATUSES } from '@/core/ingest-status';
+import {
+  assertTransition, canTransition, INGEST_STATUSES, UnknownIngestStatusError,
+} from '@/core/ingest-status';
+import type { IngestStatus } from '@/core/ingest-status';
 
 describe('ingest status machine', () => {
   it('lists every status', () => {
@@ -35,5 +38,16 @@ describe('ingest status machine', () => {
   it('assertTransition throws with both states named', () => {
     expect(() => assertTransition('uploaded', 'published')).toThrow(/uploaded.*published/);
     expect(() => assertTransition('uploaded', 'parsing')).not.toThrow();
+  });
+
+  it('rejects a stale or corrupted status with a clear, named error instead of a TypeError', () => {
+    // `documents.ingest_status` is an untyped text column: a value read back from the
+    // database is not guaranteed to be a real IngestStatus even though callers cast it.
+    const corrupted = 'archived' as IngestStatus;
+
+    expect(() => canTransition(corrupted, 'parsing')).toThrow(UnknownIngestStatusError);
+    expect(() => canTransition(corrupted, 'parsing')).toThrow(/archived/);
+    expect(() => canTransition('uploaded', corrupted)).toThrow(UnknownIngestStatusError);
+    expect(() => assertTransition(corrupted, 'parsing')).toThrow(UnknownIngestStatusError);
   });
 });
