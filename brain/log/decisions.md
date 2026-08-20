@@ -92,3 +92,26 @@ Append-only. Newest at the bottom of each day, newest day at the top.
 - **AI SDK reality checks (ai@7.0.68):** `convertToModelMessages` is async, so
   `runSecretary` is async; plain gateway model strings work for embeddings; provider-level
   usage/finishReason shapes differ from the SDK-level ones the app consumes.
+
+## 2026-08-20 — Plan 2, Task 6: `POST /api/ingest` gated by a placeholder shared secret
+
+- **`INGEST_TOKEN` is a deliberate placeholder, not real staff auth.** Plan 1 shipped with
+  no staff authentication, and Plan 3 owns the dashboard and its real auth. Without
+  *some* gate, a public deployment's ingest pipeline (parse → embed → extract → verify,
+  metered LLM/embedding calls) would be free document processing for any stranger who
+  found the URL. Until Plan 3 lands, `POST /api/ingest` requires
+  `Authorization: Bearer <INGEST_TOKEN>`, checked with a constant-time comparison
+  (`node:crypto`'s `timingSafeEqual`). **Fails closed**: an unset or empty `INGEST_TOKEN`
+  rejects every request with 401 — it can never degrade into "everyone may ingest" the way
+  a naive `if (!token || token === expected)` inversion could. This must be revisited when
+  Plan 3 ships real staff auth; the env var and this gate should be retired then, not
+  layered under the new auth.
+- **Unsupported-media-type is parsed and rejected *before* `createDocument` runs**, so a
+  bad upload (e.g. an image) never leaves an orphan `documents` row. `runIngest`'s own
+  first pipeline stage parses the same bytes again — a deliberate double-parse, cheap at
+  demo scale, that keeps "no orphan row on rejection" simple instead of threading a
+  pre-parsed result through `runIngest`'s public contract.
+- **Gate order is auth → body validation → size (`file.size`, checked before the body is
+  read into memory) → rate limit (10/church/hour) → budget** — the same shape as the chat
+  channel's gates in `src/channels/web.ts`, so a request that will be rejected anyway never
+  consumes a rate-limit slot or a budget check it shouldn't.
