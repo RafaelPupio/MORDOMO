@@ -27,17 +27,32 @@ describe('repos', () => {
     expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
   });
 
-  it('lists only future events for the tenant, soonest first', async () => {
+  it('lists only future, verified events for the tenant, soonest first', async () => {
     const db = await createTestDb();
     const a = await seedChurch(db, 'A');
     const b = await seedChurch(db, 'B');
     const now = new Date('2026-09-01T00:00:00Z');
-    await createEvent(db, { churchId: a.id, title: 'Passado', startsAt: new Date('2026-08-01T10:00:00Z') });
-    await createEvent(db, { churchId: a.id, title: 'Culto', startsAt: new Date('2026-09-06T10:00:00Z') });
-    await createEvent(db, { churchId: a.id, title: 'Retiro', startsAt: new Date('2026-10-10T08:00:00Z') });
-    await createEvent(db, { churchId: b.id, title: 'De outra igreja', startsAt: new Date('2026-09-02T10:00:00Z') });
+    await createEvent(db, { churchId: a.id, title: 'Passado', startsAt: new Date('2026-08-01T10:00:00Z'), verified: true });
+    await createEvent(db, { churchId: a.id, title: 'Culto', startsAt: new Date('2026-09-06T10:00:00Z'), verified: true });
+    await createEvent(db, { churchId: a.id, title: 'Retiro', startsAt: new Date('2026-10-10T08:00:00Z'), verified: true });
+    await createEvent(db, { churchId: b.id, title: 'De outra igreja', startsAt: new Date('2026-09-02T10:00:00Z'), verified: true });
     const list = await listUpcomingEvents(db, a.id, 10, now);
     expect(list.map((e) => e.title)).toEqual(['Culto', 'Retiro']);
+  });
+
+  // I4: `events.verified` was written by the verifier but never enforced at read time —
+  // `listUpcomingEvents` returned every future event regardless, so the verifier's whole
+  // guarantee had no read-time backing. `createEvent` defaults `verified` to the schema's
+  // own default (`false`) when the caller doesn't say otherwise, so an unverified event
+  // must never appear here.
+  it('never returns an unverified event, even when it is otherwise a perfectly good future event', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const now = new Date('2026-09-01T00:00:00Z');
+    await createEvent(db, { churchId: church.id, title: 'Não verificado', startsAt: new Date('2026-09-10T10:00:00Z') });
+    await createEvent(db, { churchId: church.id, title: 'Verificado', startsAt: new Date('2026-09-11T10:00:00Z'), verified: true });
+    const list = await listUpcomingEvents(db, church.id, 10, now);
+    expect(list.map((e) => e.title)).toEqual(['Verificado']);
   });
 
   it('creates and lists prayer requests and tickets per tenant', async () => {

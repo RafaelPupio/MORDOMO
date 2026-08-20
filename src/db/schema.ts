@@ -15,7 +15,13 @@ export const documents = pgTable('documents', {
   title: text('title').notNull(),
   kind: text('kind').notNull(), // 'schedule' | 'bulletin' | 'ministry' | 'statute' | 'faq' | 'upload'
   sourcePath: text('source_path'),
-  ingestStatus: text('ingest_status').notNull().default('published'), // Plan 2 adds the pipeline states
+  // Plan 2 adds the pipeline states (uploaded/parsing/extracting/verifying/published/failed
+  // — src/core/ingest-status.ts). Deliberately NOT used to gate what src/core/retrieval.ts
+  // serves: a document's chunks go live at the `extracting` transition (as soon as they're
+  // written — src/core/ingest.ts), not at `published`, so search stays correct through a
+  // later stage failing. See the comment on `searchKnowledgeBase` for the full reasoning.
+  ingestStatus: text('ingest_status').notNull().default('published'),
+  ingestError: text('ingest_error'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -38,6 +44,9 @@ export const events = pgTable('events', {
   description: text('description'),
   verified: boolean('verified').notNull().default(false), // Plan 2: verifier agent flips this
   sourceDocumentId: uuid('source_document_id').references(() => documents.id),
+  extractionConfidence: real('extraction_confidence'),
+  verificationNote: text('verification_note'),
+  sourceQuote: text('source_quote'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
