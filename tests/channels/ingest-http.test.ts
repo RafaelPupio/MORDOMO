@@ -1,6 +1,9 @@
+import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
+import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
 import { handleIngestRequest, INGEST_LIMIT } from '@/channels/ingest-http';
+import { createDocument } from '@/db/repo/documents';
 import { budgets, chunks, churches, documents } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
@@ -42,10 +45,11 @@ function ingestReq(body: FormData, opts: { token?: string | null } = {}) {
   return new Request('http://test/api/ingest', { method: 'POST', headers, body });
 }
 
-function form(text: string, name = 'boletim.md', type = 'text/markdown', title = 'Boletim') {
+function form(text: string, name = 'boletim.md', type = 'text/markdown', title = 'Boletim', documentId?: string) {
   const fd = new FormData();
   fd.set('file', new File([text], name, { type }));
   fd.set('title', title);
+  if (documentId !== undefined) fd.set('documentId', documentId);
   return fd;
 }
 
@@ -250,5 +254,86 @@ describe('handleIngestRequest', () => {
       }),
     );
     expect(res.status).toBe(201);
+  });
+
+  // I1: `runIngest` never throws — it fails closed internally and returns a normal
+  // IngestResult with `status: 'failed'` (see src/core/ingest.ts). Before the fix, this
+  // handler returned 201 unconditionally, so a run that produced zero chunks and zero
+  // events still read as success to any caller checking only the HTTP status.
+  it('returns a non-201 status when the run itself fails, not 201 (I1)', async () => {
+    const { db } = await setupDemo();
+    const throwingEmbedder: Embedder = {
+      model: 'throwing-embedder',
+      embed: async () => { throw new Error('embedding API unavailable'); },
+    };
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await handleIngestRequest(
+      deps(db, { embedder: throwingEmbedder }), ingestReq(form('# Boletim\n\n## Culto\n\nDomingo às 10h.')),
+    );
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.status).toBe('failed');
+    expect(body.chunkCount).toBe(0);
+  });
+
+  // C2: the only shipped entry point always called `createDocument`, so a bulletin
+  // uploaded twice always got two documents and two sets of chunks — the "re-ingest
+  // replaces rather than appends" design (src/core/ingest.ts) had no caller. An optional
+  // `documentId` field is how a caller now expresses "re-ingest this document".
+  describe('re-ingest via an optional documentId field (C2)', () => {
+    it('re-ingest with a valid documentId replaces rather than duplicates', async () => {
+      const { db } = await setupDemo();
+      const first = await handleIngestRequest(
+        deps(db), ingestReq(form('# Boletim\n\n## Culto\n\nDomingo às 10h.')),
+      );
+      expect(first.status).toBe(201);
+      const firstBody = await first.json();
+      const documentId = firstBody.documentId as string;
+
+      const second = await handleIngestRequest(
+        deps(db),
+        ingestReq(form('# Boletim\n\n## Culto (horário atualizado)\n\nDomingo às 11h.', 'boletim.md', 'text/markdown', 'Boletim', documentId)),
+      );
+      expect(second.status).toBe(201);
+      const secondBody = await second.json();
+      expect(secondBody.documentId).toBe(documentId);
+
+      const docs = await db.select().from(documents);
+      expect(docs).toHaveLength(1); // still exactly one document, not two
+      expect(docs[0].id).toBe(documentId);
+      const storedChunks = await db.select().from(chunks);
+      expect(storedChunks.length).toBe(secondBody.chunkCount); // no accumulation from the first run
+      expect(storedChunks.some((c) => c.content.includes('11h'))).toBe(true);
+      expect(storedChunks.some((c) => c.content.includes('10h'))).toBe(false);
+    });
+
+    it('a documentId belonging to another church is rejected with 404 and nothing is written', async () => {
+      const { db, church } = await setupDemo();
+      const [otherChurch] = await db.insert(churches).values({ slug: 'outra-igreja', name: 'Outra Igreja' }).returning();
+      const otherDoc = await createDocument(db, { churchId: otherChurch.id, title: 'Documento de outra igreja', kind: 'upload' });
+
+      const res = await handleIngestRequest(
+        deps(db), ingestReq(form('# Boletim\n\nTexto.', 'boletim.md', 'text/markdown', 'Boletim', otherDoc.id)),
+      );
+
+      expect(res.status).toBe(404);
+      // Nothing was written for the demo church, and the other church's document is untouched.
+      expect(await db.select().from(documents).where(eq(documents.churchId, church.id))).toHaveLength(0);
+      const otherAfter = await db.select().from(documents).where(eq(documents.id, otherDoc.id));
+      expect(otherAfter).toHaveLength(1);
+      expect(otherAfter[0].ingestStatus).toBe(otherDoc.ingestStatus);
+    });
+
+    it('a malformed documentId is rejected with 400, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const res = await handleIngestRequest(
+        deps(db), ingestReq(form('# Boletim\n\nTexto.', 'boletim.md', 'text/markdown', 'Boletim', 'not-a-uuid')),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ code: 'bad_request' });
+      expect(await db.select().from(documents)).toHaveLength(0);
+    });
   });
 });

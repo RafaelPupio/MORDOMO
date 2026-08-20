@@ -77,6 +77,18 @@ export function selectExcerpt(content: string, query: string): string {
   return `${prefixEllipsis ? '…' : ''}${windowText}${suffixEllipsis ? '…' : ''}`;
 }
 
+// Deliberately does NOT filter on `documents.ingest_status` (e.g. to `published` only).
+// `runIngest` (src/core/ingest.ts) writes a document's chunks as soon as they're computed
+// — at the `extracting` transition — well before the agent stages that decide `published`
+// even run, on purpose: a document's retrievability must not depend on whether its
+// extractor/verifier stages later succeed. Filtering here would ALSO hide a previously
+// published document's still-good chunks the moment a later re-ingest attempt fails and
+// parks it at `failed` — exactly the chunks C1's delete-ordering fix (see the comment on
+// the chunks delete in `runIngest`) exists to keep serving. A `parsing`/`extracting`/
+// `verifying` document briefly has no chunks yet (nothing to filter), and a `failed`
+// document's chunks are either its still-valid previous version or none at all — there is
+// no state where filtering on this column would hide something bad without also hiding
+// something good.
 export async function searchKnowledgeBase(
   db: Db,
   embedder: Embedder,

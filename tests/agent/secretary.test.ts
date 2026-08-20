@@ -93,11 +93,19 @@ describe('secretaryTools', () => {
     await expect(tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)).rejects.toThrow('embedder unavailable');
   });
 
-  it('getCalendar lists upcoming events', async () => {
+  it('getCalendar lists upcoming, verified events', async () => {
     const { db, church, tools } = await setup();
-    await db.insert(events).values({ churchId: church.id, title: 'Retiro', startsAt: new Date(Date.now() + 86_400_000) });
+    await db.insert(events).values({
+      churchId: church.id, title: 'Retiro', startsAt: new Date(Date.now() + 86_400_000), verified: true,
+    });
+    // An unverified event (the schema default) must never show up here — events.verified
+    // is the verifier's whole guarantee; see tests/db/repos.test.ts for the dedicated test.
+    await db.insert(events).values({
+      churchId: church.id, title: 'Nao verificado', startsAt: new Date(Date.now() + 86_400_000),
+    });
     const out = (await tools.getCalendar.execute!({}, {} as never)) as ToolOutput<typeof tools.getCalendar.execute>;
     expect(out.events.map((e: { title: string }) => e.title)).toContain('Retiro');
+    expect(out.events.map((e: { title: string }) => e.title)).not.toContain('Nao verificado');
   });
 
   it('createPrayerRequest persists with the conversation id', async () => {

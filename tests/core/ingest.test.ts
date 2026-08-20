@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it, vi } from 'vitest';
 import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
-import { MAX_EXTRACTION_CHARS, runIngest } from '@/core/ingest';
+import { MAX_CANDIDATES, MAX_EXTRACTION_CHARS, runIngest } from '@/core/ingest';
 import { createDocument, getDocument } from '@/db/repo/documents';
 import { listUpcomingEvents } from '@/db/repo/events';
 import { chunks, documents, events, usageLedger } from '@/db/schema';
@@ -43,6 +43,23 @@ async function objectModel(payloads: unknown[]) {
     }),
   });
 }
+
+// Simulates a total agent-call outage (e.g. a gateway 503) — `doGenerate` itself throws,
+// rather than resolving with an error-shaped payload, matching how `generateObject` sees
+// a real network/gateway failure.
+async function throwingModel(message: string) {
+  const { MockLanguageModelV3 } = await import('ai/test');
+  return new MockLanguageModelV3({
+    doGenerate: async () => { throw new Error(message); },
+  });
+}
+
+const ONE_CONFIRMED = {
+  events: [
+    { title: 'Encontro de jovens OTB', startsAt: '2026-10-10T22:00:00Z', location: 'Quadra coberta',
+      description: null, confidence: 0.9, sourceQuote: 'Encontro de jovens OTB — 10/10 (sábado)' },
+  ],
+};
 
 const TWO_CANDIDATES = {
   events: [
@@ -91,11 +108,12 @@ describe('runIngest', () => {
     expect(storedChunks.length).toBe(result.chunkCount);
     expect(storedChunks.every((c) => c.churchId === church.id)).toBe(true);
 
-    // The document ends in a terminal state with its parsed text retained.
+    // The document ends in a terminal state.
     const after = await getDocument(db, church.id, doc.id);
     expect(after.ingestStatus).toBe('published');
-    expect(after.sourceText).toContain('Encontro de jovens');
     expect(after.ingestError).toBeNull();
+    expect(result.eventsReplaced).toBe(true);
+    expect(result.extractionFailed).toBe(false);
 
     // Both agent stages were metered.
     const ledger = await db.select().from(usageLedger);
@@ -344,5 +362,187 @@ describe('runIngest', () => {
     const storedChunks = await db.select().from(chunks).orderBy(chunks.seq);
     expect(storedChunks.length).toBeGreaterThan(0);
     expect(storedChunks[storedChunks.length - 1].content).toContain(marker);
+  });
+
+  // C1: a swallowed extractor failure must not be indistinguishable from "this document
+  // genuinely has no events" — before the fix, `extractEvents` returning `[]` on ANY
+  // `generateObject` failure meant the events delete+insert ran anyway, wiping the
+  // document's previously verified events and reporting success.
+  it('an extraction outage leaves the document’s previously published events untouched (C1)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+
+    const first = await runIngest(
+      {
+        db, embedder: new HashEmbedder(),
+        extractorModel: await objectModel([ONE_CONFIRMED]),
+        verifierModel: await objectModel([{ decision: 'confirmed', note: 'Confere.' }]),
+      },
+      input,
+    );
+    expect(first.status).toBe('published');
+    expect(first.published).toBe(1);
+    const eventsBefore = await db.select().from(events);
+    expect(eventsBefore).toHaveLength(1);
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const second = await runIngest(
+      {
+        db, embedder: new HashEmbedder(),
+        extractorModel: await throwingModel('gateway 503'),
+        verifierModel: await objectModel([{ decision: 'confirmed', note: 'Confere.' }]),
+      },
+      input,
+    );
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+
+    // The run still reports success — chunks re-published fine — but must be honest that
+    // nothing about events was actually decided this time.
+    expect(second.status).toBe('published');
+    expect(second.extractionFailed).toBe(true);
+    expect(second.eventsReplaced).toBe(false);
+    expect(second.extracted).toBe(0);
+    expect(second.published).toBe(0);
+    expect(second.rejected).toBe(0);
+
+    const eventsAfter = await db.select().from(events);
+    expect(eventsAfter).toHaveLength(1);
+    expect(eventsAfter[0].title).toBe(eventsBefore[0].title);
+  });
+
+  // C1's other reproduction: extraction succeeds, but verification is entirely
+  // unavailable, so every candidate comes back `rejected` for an outage reason (correct,
+  // fail-closed) — the bug was that this STILL replaced the previous events with an empty
+  // set, destroying a previously verified event on the strength of "we couldn't check",
+  // not "the document doesn't support it".
+  it('a verification outage leaves previously published events untouched even though every candidate is (correctly) rejected (C1)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+
+    const first = await runIngest(
+      {
+        db, embedder: new HashEmbedder(),
+        extractorModel: await objectModel([ONE_CONFIRMED]),
+        verifierModel: await objectModel([{ decision: 'confirmed', note: 'Confere.' }]),
+      },
+      input,
+    );
+    expect(first.published).toBe(1);
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const second = await runIngest(
+      {
+        db, embedder: new HashEmbedder(),
+        extractorModel: await objectModel([ONE_CONFIRMED]),
+        verifierModel: await throwingModel('gateway down'),
+      },
+      input,
+    );
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+
+    expect(second.status).toBe('published');
+    expect(second.extractionFailed).toBe(false);
+    expect(second.extracted).toBe(1);
+    expect(second.rejected).toBe(1); // correctly rejected — but for an outage, not a verdict
+    expect(second.published).toBe(0);
+    expect(second.eventsReplaced).toBe(false);
+
+    const eventsAfter = await db.select().from(events);
+    expect(eventsAfter).toHaveLength(1);
+  });
+
+  // I2: omitting `verifierModel` while `extractorModel` IS set (and finds real candidates)
+  // must not fall through to `verifyEvents`'s own `deps.model ?? FAST_MODEL` default,
+  // which would resolve a bare model-id string against the real, billed AI Gateway. It
+  // must also, per C1, not destroy previously published events on the strength of a
+  // verification stage that never ran.
+  it('omitting verifierModel while candidates exist rejects them as an outage instead of making a live gateway call (I2)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+
+    const first = await runIngest(
+      {
+        db, embedder: new HashEmbedder(),
+        extractorModel: await objectModel([ONE_CONFIRMED]),
+        verifierModel: await objectModel([{ decision: 'confirmed', note: 'Confere.' }]),
+      },
+      input,
+    );
+    expect(first.published).toBe(1);
+
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // verifierModel deliberately omitted. If this reached a live gateway call, the test
+    // would either hang, fail on missing credentials, or make a real network request —
+    // none of which this asserts directly, but the point is it must never get the chance:
+    // deps.verifierModel gates the call entirely (mirrors deps.extractorModel's gate).
+    const second = await runIngest(
+      { db, embedder: new HashEmbedder(), extractorModel: await objectModel([ONE_CONFIRMED]) },
+      input,
+    );
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+
+    expect(second.extracted).toBe(1);
+    expect(second.rejected).toBe(1);
+    expect(second.published).toBe(0);
+    expect(second.eventsReplaced).toBe(false);
+
+    const eventsAfter = await db.select().from(events);
+    expect(eventsAfter).toHaveLength(1); // untouched — neither wiped nor silently confirmed
+  });
+
+  // I3: an unbounded verifier fan-out means cost scales with however many candidates the
+  // extractor's output claims. MAX_CANDIDATES caps how many of them ever reach the
+  // verifier, regardless of how many the extractor returned.
+  it('bounds candidate fan-out into the verifier at MAX_CANDIDATES, however many the extractor returns (I3)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+
+    const manyCandidates = {
+      events: Array.from({ length: MAX_CANDIDATES + 5 }, (_, i) => ({
+        title: `Evento ${i}`, startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+        confidence: 0.9, sourceQuote: 'Encontro de jovens OTB — 10/10 (sábado)',
+      })),
+    };
+
+    const { MockLanguageModelV3 } = await import('ai/test');
+    let verifyCalls = 0;
+    const verifierModel = new MockLanguageModelV3({
+      doGenerate: async () => {
+        verifyCalls += 1;
+        return {
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: {
+            inputTokens: { total: 50, noCache: 50, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 10, text: 10, reasoning: undefined },
+          },
+          content: [{ type: 'text', text: JSON.stringify({ decision: 'confirmed', note: 'Confere.' }) }],
+          warnings: [],
+        };
+      },
+    });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runIngest(
+      { db, embedder: new HashEmbedder(), extractorModel: await objectModel([manyCandidates]), verifierModel },
+      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+    );
+    warnSpy.mockRestore();
+
+    expect(result.extracted).toBe(MAX_CANDIDATES + 5); // the extractor really did return that many
+    expect(verifyCalls).toBe(MAX_CANDIDATES); // only MAX_CANDIDATES were ever sent to the verifier
+    expect(result.published + result.rejected).toBe(MAX_CANDIDATES);
   });
 });

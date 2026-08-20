@@ -7,7 +7,7 @@ import { parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document'
 import { checkRateLimit } from '@/core/rate-limit';
 import type { Db } from '@/db/client';
 import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
-import { createDocument } from '@/db/repo/documents';
+import { createDocument, getDocument } from '@/db/repo/documents';
 
 export type IngestChannelDeps = {
   db: Db;
@@ -24,6 +24,11 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 // needs more than a short label, so this is deliberately generous for any real title while
 // still ruling out someone using the field to stash arbitrary payload.
 const MAX_TITLE_CHARS = 300;
+// `documents.id` is a Postgres `uuid` column — a malformed value passed straight to a
+// query would surface as a raw driver error deep inside `getDocument`, which would fall
+// into this handler's generic 500 catch instead of the 400 a client-supplied bad value
+// deserves. Checked at the door instead, before any DB round trip.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Exported so tests can assert against the actual value instead of duplicating a magic
 // number that could silently drift out of sync with this file (same pattern as
 // src/channels/web.ts's CHAT_LIMIT).
@@ -91,6 +96,19 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
     return Response.json({ code: 'file_too_large' }, { status: 413 });
   }
 
+  // Optional `documentId` field: its presence is how a caller expresses "re-ingest this
+  // document" rather than "upload a new one" — the only way to reach that path, since
+  // `createDocument` otherwise always inserts a fresh row (see the church-scoped ownership
+  // check below for the other half of this fix). Malformed input is rejected here, before
+  // any DB round trip; ownership is checked after the church is resolved below.
+  const documentIdRaw = form.get('documentId');
+  const documentId = typeof documentIdRaw === 'string' && documentIdRaw.trim() !== ''
+    ? documentIdRaw.trim()
+    : undefined;
+  if (documentId !== undefined && !UUID_RE.test(documentId)) {
+    return Response.json({ code: 'bad_request' }, { status: 400 });
+  }
+
   // Everything below can throw on a DB failure — a realistic Neon path is a scale-to-zero
   // cold start surfacing as "connection terminated unexpectedly" mid-query — or on an
   // unexpected pipeline failure. This one try/catch, matching src/channels/web.ts's
@@ -103,6 +121,17 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
     const church = await getChurchBySlug(deps.db, DEMO_CHURCH_SLUG);
     if (!church) return Response.json({ code: 'not_seeded' }, { status: 500 });
     churchId = church.id;
+
+    // A re-ingest target must belong to THIS church. `getDocument` already scopes its
+    // query by churchId, so a documentId that exists but belongs to another tenant comes
+    // back exactly the same as one that doesn't exist at all — undefined either way —
+    // and gets the same 404, never distinguishing the two. Checked before the rate limit
+    // and budget gates, same reasoning as those gates' own ordering: a request that will
+    // be rejected anyway should not consume either.
+    if (documentId !== undefined) {
+      const existing = await getDocument(deps.db, church.id, documentId);
+      if (!existing) return Response.json({ code: 'not_found' }, { status: 404 });
+    }
 
     const rate = await checkRateLimit(deps.db, `ingest:${church.id}`, INGEST_LIMIT);
     if (!rate.allowed) return Response.json({ code: 'rate_limited' }, { status: 429 });
@@ -144,19 +173,31 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
       return Response.json({ code: 'bad_request' }, { status: 400 });
     }
 
-    const doc = await createDocument(deps.db, {
+    // `documentId` present (and already confirmed to belong to this church, above) means
+    // re-ingest: reuse it instead of `createDocument`, which would otherwise insert a
+    // fresh row every time — the ONLY caller of `runIngest` reachable over HTTP, so
+    // without this branch, re-uploading the same bulletin always duplicated it instead of
+    // replacing it, no matter how carefully `runIngest` itself implements replace.
+    const targetDocumentId = documentId ?? (await createDocument(deps.db, {
       churchId: church.id, title, kind: 'upload', sourcePath: file.name,
-    });
+    })).id;
 
     const result = await runIngest(
       {
         db: deps.db, embedder: deps.embedder,
         extractorModel: deps.extractorModel, verifierModel: deps.verifierModel,
       },
-      { churchId: church.id, documentId: doc.id, bytes, mimeType },
+      { churchId: church.id, documentId: targetDocumentId, bytes, mimeType },
     );
 
-    return Response.json(result, { status: 201 });
+    // `runIngest` never throws — it fails closed internally and returns a normal
+    // IngestResult with `status: 'failed'` instead (see src/core/ingest.ts). Returning
+    // 201 unconditionally would tell a caller a failed run — zero chunks, zero events,
+    // nothing published — succeeded. 500 for `failed`, matching this handler's other
+    // internal-failure responses; the body still carries the full IngestResult so a
+    // caller that wants the detail (which stage failed, whether previous events survived)
+    // still gets it, just under a status code that doesn't claim success.
+    return Response.json(result, { status: result.status === 'failed' ? 500 : 201 });
   } catch (error) {
     // runIngest itself already fails closed internally (it parks the document as
     // `failed` and returns a normal IngestResult rather than throwing) — this catch is

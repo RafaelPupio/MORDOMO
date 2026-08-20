@@ -1,8 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ExtractedEvent } from '@/agent/extractor';
-import { verifyEvents } from '@/agent/verifier';
+import { verifyEvents, VERIFY_CONCURRENCY } from '@/agent/verifier';
+import { CHAT_MODEL } from '@/ai/pricing';
 import { usageLedger } from '@/db/schema';
 import { createTestDb, seedChurch } from '../helpers/db';
+
+// generateObject is mocked at the module level, by default delegating to the real
+// implementation (same pattern as tests/agent/extractor.test.ts's `generateObjectMock`),
+// so every other test in this file still exercises the actual generateObject path via
+// MockLanguageModelV3. The one override below (mockResolvedValueOnce) reaches a path a
+// mock LanguageModel can't: a plain *string* deps.model, which resolves through the AI
+// SDK's global gateway provider (real network) if routed through generateObject for real.
+const generateObjectMock = vi.hoisted(() => vi.fn());
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('ai')>();
+  generateObjectMock.mockImplementation(actual.generateObject);
+  return { ...actual, generateObject: generateObjectMock };
+});
 
 async function verdictModel(verdicts: { decision: string; note: string }[]) {
   const { MockLanguageModelV3 } = await import('ai/test');
@@ -79,7 +93,11 @@ describe('verifyEvents', () => {
     expect(called).toBe(false);
   });
 
-  it('rejects — never silently confirms — an event whose verification call fails', async () => {
+  // C1 depends on this outage marker to tell "the document doesn't support this
+  // candidate" apart from "we couldn't check it at all" — see src/core/ingest.ts, which
+  // uses `outage: true` on every verified candidate to decide whether it's still safe to
+  // replace a document's previously verified events.
+  it('rejects — never silently confirms — an event whose verification call fails, and marks it as an outage', async () => {
     const db = await createTestDb();
     const church = await seedChurch(db);
     const { MockLanguageModelV3 } = await import('ai/test');
@@ -93,6 +111,77 @@ describe('verifyEvents', () => {
     expect(out).toHaveLength(1);
     expect(out[0].verdict.decision).toBe('rejected');
     expect(out[0].verdict.note).toMatch(/falhou|failed/i);
+    expect(out[0].verdict.outage).toBe(true);
     spy.mockRestore();
+  });
+
+  // A genuine, model-produced rejection (the document really doesn't support the
+  // candidate) must NOT carry the outage marker — only the catch-block path does.
+  it('does not mark a genuine model-produced rejection as an outage', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await verdictModel([{ decision: 'rejected', note: 'O documento nao menciona este evento.' }]);
+    const out = await verifyEvents({ db, model }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
+    });
+    expect(out[0].verdict.decision).toBe('rejected');
+    expect(out[0].verdict.outage).toBeUndefined();
+  });
+
+  // I5: `recordUsage` used to hardcode `model: FAST_MODEL` regardless of the model
+  // actually used via deps.model, mirroring the same bug already fixed in the extractor
+  // (tests/agent/extractor.test.ts). A string deps.model resolves through the AI SDK's
+  // global gateway provider (real network), so this bypasses generateObject's model
+  // resolution via the module mock instead of routing a string through a live call.
+  it('prices the ledger row under the actual string model id passed via deps.model, not a hardcoded FAST_MODEL', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    generateObjectMock.mockResolvedValueOnce({
+      object: { decision: 'confirmed', note: 'Confere.' },
+      usage: { inputTokens: 55, outputTokens: 9 },
+    });
+    const out = await verifyEvents({ db, model: CHAT_MODEL }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
+    });
+    expect(out[0].verdict.decision).toBe('confirmed');
+    const ledger = await db.select().from(usageLedger);
+    const row = ledger.find((u) => u.feature === 'ingest.verify');
+    expect(row?.model).toBe(CHAT_MODEL);
+  });
+
+  // I3: verifyEvents must bound how many calls run at once instead of firing every
+  // candidate's call simultaneously via a bare Promise.all.
+  it('never runs more than VERIFY_CONCURRENCY verifier calls at the same time', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const { MockLanguageModelV3 } = await import('ai/test');
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return {
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: {
+            inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 5, text: 5, reasoning: undefined },
+          },
+          content: [{ type: 'text', text: JSON.stringify({ decision: 'confirmed', note: 'ok' }) }],
+          warnings: [],
+        };
+      },
+    });
+    const manyEvents = Array.from({ length: VERIFY_CONCURRENCY * 3 }, (_, i) => candidate({ title: `Evento ${i}` }));
+
+    const out = await verifyEvents({ db, model }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: manyEvents,
+    });
+
+    expect(out).toHaveLength(manyEvents.length);
+    expect(maxInFlight).toBeLessThanOrEqual(VERIFY_CONCURRENCY);
+    expect(maxInFlight).toBeGreaterThan(1); // still genuinely concurrent, not serialized to 1
   });
 });

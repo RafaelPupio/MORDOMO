@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { LanguageModel } from 'ai';
-import { extractEvents } from '@/agent/extractor';
-import { verifyEvents } from '@/agent/verifier';
+import { extractEvents, type ExtractedEvent } from '@/agent/extractor';
+import { verifyEvents, type Verdict, type VerifiedEvent } from '@/agent/verifier';
 import type { Embedder } from '@/ai/embedder';
 import { recordUsage } from '@/ai/usage';
 import { chunkMarkdown } from '@/core/chunking';
@@ -9,7 +9,7 @@ import type { IngestStatus } from '@/core/ingest-status';
 import { parseDocument } from '@/core/parse-document';
 import type { Db } from '@/db/client';
 import {
-  beginIngestRun, forceIngestFailed, getDocument, saveSourceText, setIngestStatus,
+  beginIngestRun, forceIngestFailed, getDocument, setIngestStatus,
 } from '@/db/repo/documents';
 import { chunks, events } from '@/db/schema';
 
@@ -41,6 +41,19 @@ export type IngestResult = {
    *  verifier only saw the first MAX_EXTRACTION_CHARS of it (chunking/embedding still
    *  covered the whole document — see the comment on MAX_EXTRACTION_CHARS). */
   truncatedForExtraction: boolean;
+  /** True when the extractor's `generateObject` call failed outright (network error,
+   *  unrepairable output) rather than cleanly finding zero events. When this is true,
+   *  `extracted`/`published`/`rejected` are all 0 for lack of anything to report, but
+   *  that 0 does NOT mean "this document has no events" — see `eventsReplaced`. */
+  extractionFailed: boolean;
+  /** True when this run's events delete+insert actually ran, replacing the document's
+   *  previous events with this run's outcome (even if that outcome is zero confirmed
+   *  events — a clean, real "no events" result is still a replace). False means the
+   *  previous events were left untouched because this run could not produce a
+   *  trustworthy verdict at all: either extraction failed outright, or every candidate
+   *  was rejected because verification itself was unavailable (an outage, or no
+   *  `verifierModel` configured) rather than because the document didn't support them. */
+  eventsReplaced: boolean;
 };
 
 // `extractEvents` and `verifyEvents` (src/agent/extractor.ts, src/agent/verifier.ts) pass
@@ -57,15 +70,37 @@ export type IngestResult = {
 // the cap BEFORE a request runs, so nothing stops one oversized upload from blowing well
 // past a tenant's entire monthly budget before the spend it caused is ever recorded.
 //
-// 40,000 characters (~10,000 tokens) keeps a single ingest's extractor + verifier cost to a
-// small fraction of a cent — 10,000 tokens * $1/M ≈ $0.01 for the extractor call, and the
-// verifier's per-candidate prompts are the same order of magnitude — while leaving far more
-// text than a real bulletin or schedule ever contains. Chunking and embedding
-// (EMBEDDING_MODEL is ~50x cheaper per token than FAST_MODEL, per src/ai/pricing.ts) still
-// run over the FULL, untruncated text, so retrieval quality — what a visitor's question can
-// actually surface — is unaffected; only the agent stages that decide what reaches the
-// calendar are bounded.
+// 40,000 characters (~10,000 tokens) bounds the EXTRACTOR call to roughly $0.01
+// (10,000 tokens * FAST_MODEL's $1/M input price) — but the verifier resends this same
+// text with EVERY candidate's prompt (src/agent/verifier.ts), so the verifier's total
+// cost is per-candidate, not fixed. Left unbounded, that fan-out is the whole cost: a
+// review of this pipeline measured 120 candidates from one adversarial document costing
+// $1.2180 — each verifier call individually cheap, the COUNT unbounded. MAX_CANDIDATES
+// below caps that multiplier; see its comment for the resulting worst-case total. Chunking
+// and embedding (EMBEDDING_MODEL is ~50x cheaper per token than FAST_MODEL, per
+// src/ai/pricing.ts) still run over the FULL, untruncated text, so retrieval quality — what
+// a visitor's question can actually surface — is unaffected; only the agent stages that
+// decide what reaches the calendar are bounded.
 export const MAX_EXTRACTION_CHARS = 40_000;
+
+// Caps how many extractor candidates ever reach the verifier. Without this, the
+// extractor's own output size is the only limit on fan-out (see `maxOutputTokens` in
+// src/agent/extractor.ts for that half of the bound) — and each verifier call resends the
+// FULL extraction text (up to MAX_EXTRACTION_CHARS) alongside one candidate, so cost scales
+// with candidate COUNT, not just text size.
+//
+// Worst-case arithmetic at FAST_MODEL pricing ($1/M input, $5/M output —
+// src/ai/pricing.ts), assuming every call maxes its input at MAX_EXTRACTION_CHARS
+// (~10,000 tokens) and a generous ~200-token verdict output:
+//   extractor:  1 call  * (10,000 * $1/M + 4,096 * $5/M)      ≈ $0.0305
+//   verifier:   8 calls * (10,000 * $1/M + 200   * $5/M)      ≈ $0.088
+//   total per ingest run                                      ≈ $0.12
+// That is the ceiling for ANY single document, however many events a hostile or malformed
+// upload's extractor output claims — down from the unbounded $1.2180 measured against 120
+// candidates before this cap existed. 8 is deliberately generous for a real church
+// bulletin (which realistically names a handful of dated events, not dozens) while keeping
+// the worst case a known, checkable number rather than a provider default.
+export const MAX_CANDIDATES = 8;
 
 // A crashed run's recovery write must itself never fail. `error.message` can carry
 // arbitrary bytes from wherever the run actually broke — including, in the exact scenario
@@ -108,6 +143,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
   const result: IngestResult = {
     documentId, status: doc.ingestStatus as IngestStatus,
     chunkCount: 0, extracted: 0, published: 0, rejected: 0, truncatedForExtraction: false,
+    extractionFailed: false, eventsReplaced: false,
   };
 
   try {
@@ -115,7 +151,6 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     result.status = 'parsing';
 
     const parsed = await parseDocument(input.bytes, input.mimeType);
-    await saveSourceText(db, churchId, documentId, parsed.text);
 
     // Compute and embed the new chunks BEFORE touching the old ones. Re-ingest is a
     // replace, not an append, but the replace must not destroy the previous content
@@ -165,7 +200,11 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     // the extractor/verifier prompts are capped here.
     result.truncatedForExtraction = parsed.text.length > MAX_EXTRACTION_CHARS;
     if (result.truncatedForExtraction) {
-      console.error('ingest: text truncated before extraction/verification', {
+      // Expected behavior on a long document, not a failure — MAX_EXTRACTION_CHARS is a
+      // deliberate cost bound (see its comment above), and chunking/embedding still
+      // covered the whole text. console.warn, not console.error, so this doesn't read as
+      // an incident in the logs.
+      console.warn('ingest: text truncated before extraction/verification', {
         churchId, documentId, fullLength: parsed.text.length, truncatedTo: MAX_EXTRACTION_CHARS,
       });
     }
@@ -174,47 +213,105 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       : parsed.text;
 
     const referenceDate = input.referenceDate ?? new Date().toISOString().slice(0, 10);
-    const candidates = deps.extractorModel
-      ? await extractEvents(
-          { db, model: deps.extractorModel },
-          { churchId, documentId, text: extractionText, referenceDate },
-        )
-      : [];
+    let candidates: ExtractedEvent[] = [];
+    if (deps.extractorModel) {
+      const extraction = await extractEvents(
+        { db, model: deps.extractorModel },
+        { churchId, documentId, text: extractionText, referenceDate },
+      );
+      candidates = extraction.candidates;
+      // A failed extraction is NOT the same as a clean "no events" result — see the doc
+      // comment on `IngestResult.extractionFailed`. This flag is what lets the
+      // delete+insert below be skipped instead of wiping the document's previously
+      // verified events on the strength of a call that never actually ran.
+      result.extractionFailed = extraction.failed;
+    }
     result.extracted = candidates.length;
+
+    // Cap fan-out into the verifier before it ever gets there — see MAX_CANDIDATES's
+    // comment for the cost math this bounds.
+    const boundedCandidates = candidates.length > MAX_CANDIDATES
+      ? candidates.slice(0, MAX_CANDIDATES)
+      : candidates;
+    if (candidates.length > MAX_CANDIDATES) {
+      console.warn('ingest: extracted candidates exceeded MAX_CANDIDATES, dropping the excess before verification', {
+        churchId, documentId, extracted: candidates.length, kept: MAX_CANDIDATES,
+      });
+    }
 
     await setIngestStatus(db, churchId, documentId, 'verifying');
     result.status = 'verifying';
 
-    const verified = candidates.length
-      ? await verifyEvents(
+    let verified: VerifiedEvent[] = [];
+    if (boundedCandidates.length > 0) {
+      if (deps.verifierModel) {
+        verified = await verifyEvents(
           { db, model: deps.verifierModel },
-          { churchId, documentId, text: extractionText, events: candidates },
-        )
-      : [];
+          { churchId, documentId, text: extractionText, events: boundedCandidates },
+        );
+      } else {
+        // Mirror the extractor's own gate (`deps.extractorModel` above): omitting
+        // `verifierModel` must not fall through to `verifyEvents`'s `deps.model ??
+        // FAST_MODEL` default, which resolves a bare model-id STRING against the real,
+        // billed AI Gateway. There is nothing to verify with, so every candidate is
+        // rejected with the same `outage: true` marker `verifyEvents` itself uses for a
+        // failed call — verification being unconfigured is exactly as untrustworthy as
+        // verification being unreachable, and gets the same fail-closed treatment.
+        console.error('ingest.verify: no verifierModel configured; rejecting all candidates instead of making a live call', {
+          churchId, documentId, candidateCount: boundedCandidates.length,
+        });
+        const outageVerdict: Verdict = {
+          decision: 'rejected', note: 'Verificador não configurado; evento não publicado.', outage: true,
+        };
+        verified = boundedCandidates.map((e) => ({ ...e, verdict: outageVerdict }));
+      }
+    }
 
     const confirmed = verified.filter((e) => e.verdict.decision === 'confirmed');
     result.published = confirmed.length;
     result.rejected = verified.length - confirmed.length;
 
-    // Same reasoning as the chunks above: the previous events survive extraction and
-    // verification (both of which can fail) and are only replaced once the outcome is
-    // known, with the delete and insert back-to-back and nothing awaitable between them.
-    await db.delete(events).where(and(eq(events.churchId, churchId), eq(events.sourceDocumentId, documentId)));
-    if (confirmed.length > 0) {
-      await db.insert(events).values(
-        confirmed.map((e) => ({
-          churchId,
-          title: e.title,
-          startsAt: new Date(e.startsAt),
-          location: e.location,
-          description: e.description,
-          verified: true,
-          sourceDocumentId: documentId,
-          extractionConfidence: e.confidence,
-          verificationNote: e.verdict.note,
-          sourceQuote: e.sourceQuote,
-        })),
-      );
+    // The previous events survive extraction and verification UNLESS this run actually
+    // produced a trustworthy verdict — either a genuine confirm/reject (the document was
+    // read and judged) or a genuine "no candidates" (nothing to judge). What must NOT
+    // replace them: extraction failing outright (`result.extractionFailed`), or every
+    // candidate coming back rejected only because verification itself was unavailable
+    // (`outage: true` on all of them) rather than because the document didn't support
+    // them. Both of those are "we don't know", not "the answer is no" — publishing an
+    // empty replace on the strength of "we don't know" is exactly the fail-DESTRUCTIVE
+    // bug this guards against: an agent-stage outage must reject candidates it couldn't
+    // check (see verifyEvents), but it must never delete events a PREVIOUS, successful
+    // run already verified.
+    const allVerifiedWereOutage = verified.length > 0 && verified.every((e) => e.verdict.outage === true);
+    const skipEventsReplace = result.extractionFailed || allVerifiedWereOutage;
+    result.eventsReplaced = !skipEventsReplace;
+
+    if (skipEventsReplace) {
+      console.warn('ingest: leaving existing events untouched — extraction failed or verification was entirely unavailable this run', {
+        churchId, documentId, extractionFailed: result.extractionFailed, allVerifiedWereOutage,
+      });
+    } else {
+      // Delete-then-insert, with nothing awaitable in between: the production driver
+      // (neon-http; see src/db/client.ts) does not support `db.transaction` — it throws
+      // "No transactions support in neon-http driver" — so this ordering, not a
+      // transaction, is what keeps a failure from ever landing between the two writes.
+      await db.delete(events).where(and(eq(events.churchId, churchId), eq(events.sourceDocumentId, documentId)));
+      if (confirmed.length > 0) {
+        await db.insert(events).values(
+          confirmed.map((e) => ({
+            churchId,
+            title: e.title,
+            startsAt: new Date(e.startsAt),
+            location: e.location,
+            description: e.description,
+            verified: true,
+            sourceDocumentId: documentId,
+            extractionConfidence: e.confidence,
+            verificationNote: e.verdict.note,
+            sourceQuote: e.sourceQuote,
+          })),
+        );
+      }
     }
 
     await setIngestStatus(db, churchId, documentId, 'published');

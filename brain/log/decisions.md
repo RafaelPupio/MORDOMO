@@ -143,12 +143,22 @@ not just the Task 6 gate already logged above.
   verified, which is not.
 - **Deterministic quote and date guards run in the extractor, before any candidate reaches
   the verifier.** Checking that `sourceQuote` actually occurs in the document text and
-  that `startsAt` parses to a real date costs nothing (`Date.parse` and a string search)
-  next to a model call, and it catches the two most common hallucination shapes —
-  invented text, invented dates — without spending a verifier call, or model judgment, on
-  a candidate that was never going to survive review anyway. The verifier's job is then
-  narrower and better-focused: adjudicate candidates that are at least structurally real,
-  not reject garbage.
+  that `startsAt` is a full, real ISO date-and-time costs nothing (a string search and a
+  regex + `Date.parse`) next to a model call, and it catches two narrow, mechanical
+  hallucination shapes — an invented QUOTE (text that never appears in the source) and an
+  unparseable or partial date STRING ("quando der", "2026", "Jan 2026") — without spending
+  a verifier call, or model judgment, on a candidate that was never going to survive
+  review anyway. Neither guard checks that the EVENT itself is real: a candidate can quote
+  a genuine, unrelated sentence and attach a genuine, parseable date to it and still be
+  invented — these guards catch garbage input shapes, not garbage claims. That is the
+  verifier's job, and it is worth being honest about how much weight it is actually
+  carrying: it is the SAME model as the extractor (Haiku via `FAST_MODEL`, unless
+  overridden), so the two calls share correlated failure modes rather than being
+  independent checks in the statistical sense. What makes the second pass worth having
+  anyway is the framing, not a different model: a separate call, a separate
+  disprove-it prompt (see below), and — the anchor — the candidate's own `sourceQuote` handed
+  back to it, so the verifier's job narrows to "does this specific quote actually support
+  this specific claim" rather than open-ended fact-checking against the whole document.
 - **The quote guard tolerates typography drift but not invented content.** A model
   "copying" a quote verbatim commonly still retypes an em dash as a hyphen, straightens a
   curly apostrophe, or drops an accent — none of which mean the model invented anything.
@@ -199,3 +209,107 @@ not just the Task 6 gate already logged above.
   when Plan 3 ships real staff auth, the correct move is to delete the bearer-token check
   and the env var, not leave both bolted on underneath the new auth as a second gate
   nobody remembers the purpose of.
+
+## 2026-08-20 — Plan 2 whole-branch review: fail-closed is not fail-destructive, and
+re-ingest needed a caller
+
+A whole-branch review of the ingest pipeline (full findings and verification output:
+`.superpowers/sdd/plan2-final-fixes-report.md`) found that "fails closed" (the framing
+used throughout the entries above) had quietly become "fails destructively" in two places,
+and that the "re-ingest replaces rather than appends" design one entry above had no way to
+actually be invoked. Both are now fixed; this entry records the decisions, especially the
+two genuinely ambiguous ones.
+
+- **A swallowed agent-stage failure must never be indistinguishable from "this document
+  has no events."** `extractEvents` used to return a bare `ExtractedEvent[]`, so a total
+  `generateObject` outage and a clean "found nothing" both showed up as `[]` — and
+  `runIngest`'s events delete-then-insert ran on that `[]` either way, deleting a
+  document's previously verified events on the strength of a call that never actually
+  ran. `extractEvents` now returns `{ candidates, failed }`; `verifyEvents` marks a
+  per-candidate outage-rejection with `outage: true`, distinct from a genuine
+  model-produced rejection. `runIngest` skips the events replace entirely when extraction
+  failed outright, or when every verified candidate came back outage-rejected — leaving
+  the previous events untouched — and records which happened in
+  `IngestResult.extractionFailed` / `eventsReplaced` so a caller (and Plan 3's future
+  dashboard) can tell "nothing to report because there was nothing to check" apart from
+  "nothing to report because we checked and there's nothing there."
+- **Omitting `verifierModel` while `extractorModel` IS set must not fall through to a
+  live, billed gateway call.** `runIngest` gated the extractor stage on
+  `deps.extractorModel` but never gated the verifier stage on `deps.verifierModel` —
+  `verifyEvents`'s own `deps.model ?? FAST_MODEL` default would resolve a bare model-id
+  string against the real AI Gateway the moment a caller (or a test) set one model and
+  forgot the other. The verifier stage is now gated the same way, and when it's skipped,
+  every candidate is rejected with the same `outage: true` marker a real outage produces —
+  verification being unconfigured is exactly as untrustworthy as verification being
+  unreachable.
+- **Re-ingest replacing rather than appending was correct but unreachable — fixed by
+  giving the HTTP endpoint a way to ask for it.** `POST /api/ingest` always called
+  `createDocument`, so the ONLY shipped caller of `runIngest` could never re-ingest —
+  every upload got a fresh `documentId`, and the delete-ordering design one entry above
+  had nothing to protect in practice. The endpoint now accepts an optional `documentId`
+  form field; when present, `getDocument` (already church-scoped) confirms it belongs to
+  the caller's own church before reusing it — a documentId for another church, or one
+  that doesn't exist, gets the same 404, so existence is never leaked across tenants.
+- **Verifier fan-out is now bounded in this repo, not left to a provider default.** With
+  no cap on the extractor's candidate array and no `maxOutputTokens`, a document (or a
+  hostile upload) whose extractor output claimed many candidates fanned out one full
+  verifier call per candidate — each resending the whole (up to 40,000-char) document
+  text. Measured against the pre-fix code: 120 candidates, $1.2180 for one document. Fixed
+  with three independent bounds, all in `src/core/ingest.ts` / `src/agent/extractor.ts` /
+  `src/agent/verifier.ts`: an explicit `maxOutputTokens` on the extractor call,
+  `MAX_CANDIDATES = 8` capping how many candidates ever reach the verifier (worst case
+  now ≈$0.12/ingest — the math is in a comment on the constant so the next reader can
+  check it without re-deriving it), and `VERIFY_CONCURRENCY = 4` bounding how many
+  verifier calls run at once (this bounds burst load on the gateway, not total spend —
+  MAX_CANDIDATES is what bounds spend).
+- **`events.verified` is now enforced at read time, not just written and trusted.**
+  `listUpcomingEvents` returned every future event regardless of `verified`, so the
+  verifier agent's entire guarantee — the whole reason a second, adversarial model call
+  exists — had no enforcement at the one place a visitor's answer or the calendar tool
+  actually reads from. `listUpcomingEvents` now filters on `verified = true`; `createEvent`
+  gained an explicit optional `verified` parameter so a caller outside the verified
+  pipeline (seeding, a future manual-entry UI) has to say so rather than silently
+  inheriting the schema's `false` default and disappearing from the calendar. Plan 1's
+  seed script (`scripts/seed.ts`) already set `verified: true` on every seeded event, so
+  the demo corpus needed no change.
+- **`documents.source_text` dropped rather than wired up — decided, not deferred.** The
+  column's stated purpose ("so re-running extraction never re-parses") was never
+  implemented: `runIngest` always re-parses `input.bytes` regardless, so the column only
+  ever doubled stored text for a benefit nothing collected. Wiring it up would mean
+  threading a "skip parsing, use this text" path through `runIngest`'s public contract for
+  a caller that doesn't exist yet (a re-ingest-by-`documentId`-without-re-upload flow is
+  plausible future Plan 3 scope, but isn't today's), versus deleting an unused nullable
+  column and its one writer (`saveSourceText`). Chose deletion: a clean, single-statement
+  migration (`drizzle/0003_drop_document_source_text.sql`) beats carrying dead
+  infrastructure for a feature that isn't built. If a "re-index without re-upload" flow
+  becomes real Plan 3 work, storing source text again is a one-column migration away —
+  the schema's git history doesn't disappear.
+- **`documents.ingest_status` deliberately still does NOT gate what `searchKnowledgeBase`
+  serves — decided, not overlooked.** The alternative (filter to `ingest_status =
+  'published'`) looked like the obviously-safer read at first, but `runIngest` writes a
+  document's chunks at the `extracting` transition — well before `published` — precisely
+  so retrieval doesn't depend on the agent stages succeeding. Filtering by status would
+  also hide a PREVIOUSLY published document's still-good chunks the moment a later
+  re-ingest attempt fails and parks it at `failed` — exactly the chunks the delete-ordering
+  fix (two entries above) exists to keep serving. There is no `ingest_status` value where
+  filtering on it would hide something bad without also hiding something good, so the
+  decision is to leave it unfiltered and say why in a comment on both the column
+  (`src/db/schema.ts`) and the query (`src/core/retrieval.ts`), rather than add a filter
+  that reads safer than it is.
+- **The extractor's deterministic guards, and the verifier's actual independence, were
+  described more confidently than they deliver.** The quote and date guards catch
+  invented QUOTE text and unparseable/partial DATE strings — narrow, mechanical checks —
+  not invented EVENTS: a candidate can quote a genuine, unrelated sentence and attach a
+  genuine date to it and still be fabricated. And the verifier is the same underlying
+  model as the extractor (`FAST_MODEL` unless overridden), so the two calls share
+  correlated failure modes rather than being statistically independent checks; what earns
+  the second pass its keep is the framing (separate call, disprove-it prompt) and being
+  handed the candidate's own `sourceQuote` as an anchor, not a different model. Language
+  softened in the two-agent design decision above to match what the guards and the
+  verifier actually do, not what they were hoped to do.
+- **Extractor date guard tightened to require a full ISO date-and-time.** `Date.parse`
+  alone accepted `"2026"` and `"Jan 2026"` as valid dates (both resolve to Jan 1,
+  midnight UTC) — exactly the underspecified guess a model produces when a document names
+  a month or year without a specific day and time. A regex now requires the full
+  `YYYY-MM-DDTHH:mm` shape (with optional seconds/fraction/offset) before `Date.parse` is
+  even consulted, matching what the extractor's own system prompt already asks for.

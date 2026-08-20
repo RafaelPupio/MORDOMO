@@ -30,13 +30,6 @@ export async function listDocuments(db: Db, churchId: string) {
     .orderBy(desc(documents.createdAt));
 }
 
-export async function saveSourceText(db: Db, churchId: string, documentId: string, text: string) {
-  await db
-    .update(documents)
-    .set({ sourceText: text })
-    .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
-}
-
 /**
  * Moves a document to `status`, refusing an illegal transition. Reads the current row
  * first so the state machine — not the caller — decides what is allowed.

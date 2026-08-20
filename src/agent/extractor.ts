@@ -39,6 +39,16 @@ const eventSchema = z.object({
 
 const extractionSchema = z.object({ events: z.array(eventSchema) });
 
+// `extractEvents` must let its caller tell "this document genuinely has no events" apart
+// from "the extractor could not run" — a zero-length `candidates` array means the FIRST
+// one whenever `failed` is false, and means nothing trustworthy whenever `failed` is
+// true. Collapsing both into a bare `ExtractedEvent[]` (the pre-fix shape) made a
+// `generateObject` outage indistinguishable from a clean empty result, which is exactly
+// what let `runIngest` treat an outage as "nothing to publish" and delete the document's
+// previously verified events on the strength of that non-signal. See the caller in
+// src/core/ingest.ts for how `failed` is used to skip that delete.
+export type ExtractResult = { candidates: ExtractedEvent[]; failed: boolean };
+
 function systemPrompt(referenceDate: string): string {
   return [
     'You extract calendar events from Brazilian church documents written in Portuguese.',
@@ -53,7 +63,7 @@ function systemPrompt(referenceDate: string): string {
 export async function extractEvents(
   deps: ExtractorDeps,
   input: ExtractorInput,
-): Promise<ExtractedEvent[]> {
+): Promise<ExtractResult> {
   const model = deps.model ?? FAST_MODEL;
   const pricedModel = priceableModelId(model, FAST_MODEL);
 
@@ -65,6 +75,11 @@ export async function extractEvents(
       schema: extractionSchema,
       system: systemPrompt(input.referenceDate),
       prompt: input.text,
+      // Bounds worst-case output size — see MAX_CANDIDATES in src/core/ingest.ts for the
+      // full cost accounting this is one half of. 4096 output tokens is generous for any
+      // real bulletin (a dozen-plus fully-populated candidate events) while ruling out an
+      // unbounded response driving the verifier fan-out this same review flagged (I3).
+      maxOutputTokens: 4096,
     }));
   } catch (error) {
     // A total failure here (network error, output the SDK could not repair into schema
@@ -97,7 +112,7 @@ export async function extractEvents(
         churchId: input.churchId, documentId: input.documentId,
       });
     }
-    return [];
+    return { candidates: [], failed: true };
   }
 
   try {
@@ -115,19 +130,37 @@ export async function extractEvents(
   }
 
   // Two cheap, deterministic guards before any model-generated row goes further: the
-  // quote must actually occur in the source, and the date must be real. These catch the
-  // most common hallucination shapes without spending a second model call on them.
-  return object.events
+  // quote must actually occur in the source, and the date must be a full, real
+  // date-and-time. These catch the most common hallucination shapes — a quote that was
+  // never in the document, a date string that doesn't resolve to a real instant — without
+  // spending a second model call on them. Neither guard checks that the EVENT itself is
+  // real: a candidate can quote a genuine, unrelated sentence from the document and still
+  // be invented. That is the verifier's job, not this one's.
+  const candidates = object.events
     .map((event) => ({ ...event, confidence: clamp01(event.confidence) }))
     .filter((event) => {
-      if (!Number.isFinite(Date.parse(event.startsAt))) return false;
+      if (!isFullIsoDateTime(event.startsAt)) return false;
       return quoteAppearsIn(input.text, event.sourceQuote);
     });
+  return { candidates, failed: false };
 }
 
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.min(1, Math.max(0, n));
+}
+
+// `Date.parse` alone accepts partial values like "2026" (Jan 1, midnight UTC) and
+// "Jan 2026" (also Jan 1, midnight UTC) as valid dates — exactly the kind of
+// underspecified guess a model produces when a document names a month or a year without
+// a specific day and time. The extractor's own system prompt asks for a full
+// "Data e hora de início em ISO 8601 (UTC)", so a value that isn't a complete
+// date-and-time is already off-contract; requiring the full shape here drops it before
+// it costs a verifier call it was never going to survive on the merits anyway.
+const FULL_ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+function isFullIsoDateTime(value: string): boolean {
+  return FULL_ISO_DATETIME.test(value) && Number.isFinite(Date.parse(value));
 }
 
 // Unicode-normalize both sides before comparing so benign typography drift — the most

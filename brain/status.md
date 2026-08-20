@@ -15,6 +15,25 @@ extract → verify → publish — proven end to end: a freshly ingested bulleti
 retrievable and cited by the secretary, and its verified event lands on the calendar the
 agent reads (`tests/e2e/ingest-to-answer.test.ts`). Not yet merged, not yet deployed.
 
+**2026-08-20** — **Plan 2 whole-branch review fixes landed** (158 tests green, typecheck
++ lint + build clean). A whole-branch review found the pipeline could silently DELETE
+already-verified events (a swallowed extractor or verifier outage was indistinguishable
+from "this document has no events", so the delete-then-insert ran anyway) and that the
+only shipped upload path had no way to reach the re-ingest behavior the delete-ordering
+was designed around — every upload created a new document, so nothing ever replaced.
+Both are fixed: `extractEvents`/`verifyEvents` now return a typed outcome that
+distinguishes "failed to run" from "genuinely found nothing", `runIngest` skips the
+events replace entirely when that distinction says the verdict isn't trustworthy, and
+`POST /api/ingest` accepts an optional `documentId` field (checked against the caller's
+own church) to express re-ingest. Also fixed: a failed run no longer returns HTTP 201;
+omitting `verifierModel` can no longer fall through to a live, billed gateway call;
+verifier fan-out is now capped (`MAX_CANDIDATES = 8`) instead of scaling with however many
+candidates a document's extractor output claims; `events.verified` is now enforced at
+read time in `listUpcomingEvents`, not just written and ignored; the unused
+`documents.source_text` column and its writer were dropped rather than wired up, since
+nothing reads it and `runIngest` always re-parses the uploaded bytes anyway. Full
+findings, decisions, and verification output: `.superpowers/sdd/plan2-final-fixes-report.md`.
+
 ## What runs today
 
 The whole chat path exists and is tested end to end against an in-memory Postgres:
@@ -44,14 +63,21 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   candidate against the source before anything reaches the calendar. The pipeline fails
   closed throughout: a verification-call outage rejects that candidate instead of
   publishing it unchecked, and any unhandled failure parks the document at `failed` with
-  the error recorded rather than leaving it stuck mid-run. `POST /api/ingest` runs this
-  inline (`maxDuration = 300`, no queue yet) behind a placeholder bearer-token gate
-  (`Authorization: Bearer <INGEST_TOKEN>`) that fails closed — an unset or empty token
-  rejects every request rather than admitting one. **`INGEST_TOKEN` must be set in
-  production** before this endpoint is usable there. Proven end to end in
-  `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin is retrievable via the
-  secretary's `searchKnowledge` tool, cited to the right document, and its verified event
-  shows up in `getCalendar`.
+  the error recorded rather than leaving it stuck mid-run. Fail-closed does NOT mean
+  fail-destructive: an agent-stage outage on re-ingest (extractor or verifier) leaves the
+  document's previously verified events untouched rather than replacing them with an
+  empty set — `IngestResult.eventsReplaced` says whether this run's outcome was trustworthy
+  enough to actually replace them. `events.verified` is enforced at read time
+  (`listUpcomingEvents`), not just written by the verifier and trusted. `POST /api/ingest`
+  runs this inline (`maxDuration = 300`, no queue yet) behind a placeholder bearer-token
+  gate (`Authorization: Bearer <INGEST_TOKEN>`) that fails closed — an unset or empty token
+  rejects every request rather than admitting one — and returns a non-201 status when the
+  run itself ends `failed`. An optional `documentId` form field re-ingests (replaces) that
+  document instead of creating a new one, rejecting one that doesn't belong to the caller's
+  church. **`INGEST_TOKEN` must be set in production** before this endpoint is usable
+  there. Proven end to end in `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested
+  bulletin is retrievable via the secretary's `searchKnowledge` tool, cited to the right
+  document, and its verified event shows up in `getCalendar`.
 
 ## Blocked — needs Rafael
 
