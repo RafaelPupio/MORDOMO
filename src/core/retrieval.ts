@@ -70,7 +70,7 @@ export function selectExcerpt(content: string, query: string): string {
   const suffixEllipsis = end < content.length;
 
   // The ellipsis characters count toward the budget, so trim the window to make room.
-  let budget = EXCERPT_CHARS - (prefixEllipsis ? 1 : 0) - (suffixEllipsis ? 1 : 0);
+  const budget = EXCERPT_CHARS - (prefixEllipsis ? 1 : 0) - (suffixEllipsis ? 1 : 0);
   if (end - start > budget) end = start + budget;
 
   const windowText = content.slice(start, end);
