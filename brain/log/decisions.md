@@ -313,3 +313,64 @@ two genuinely ambiguous ones.
   a month or year without a specific day and time. A regex now requires the full
   `YYYY-MM-DDTHH:mm` shape (with optional seconds/fraction/offset) before `Date.parse` is
   even consulted, matching what the extractor's own system prompt already asks for.
+
+## 2026-08-20 — Plan 3: staff operations, and retiring `INGEST_TOKEN`
+
+Plan 3 adds a password-gated staff area (login, guarded route group, documents + upload,
+agenda with extraction provenance, prayer and support inboxes with human-approved AI
+drafts) and a usage page. This entry records the WHY behind the decisions that shape its
+security posture, plus what happened to `INGEST_TOKEN`.
+
+- **`churchId` comes ONLY from the signed, httpOnly session — never from a form field or
+  query parameter.** `requireStaffContext()` (`src/core/staff-context.ts`) is the single
+  place every staff page and Server Action gets its tenant id from, and it derives that
+  id by reading the verified session cookie and cross-checking it against the actual
+  `churches` row (`church.id !== session.churchId` → redirect), not by trusting whatever
+  the caller claims. The alternative — accepting a `churchId` the client supplies, even
+  just to prefill a form — turns every staff mutation into a potential cross-tenant write:
+  a crafted form field would let a signed-in staff member of one church touch another
+  church's documents, tickets, or prayer requests. There is only one church in this demo
+  today, so this bug has no visible symptom yet — which is exactly why it has to be
+  structural (one function, reused everywhere) rather than something each page remembers
+  to do correctly on its own.
+- **The AI reply is a draft a human edits, never an auto-send.** `draftReply`
+  (`src/agent/reply-drafter.ts`) proposes a Portuguese reply grounded in the knowledge
+  base; the support inbox (`src/app/staff/(dashboard)/atendimentos`) always renders it
+  into an editable textarea, and sending is a separate, explicit staff action. A support
+  ticket is by definition a question the visitor-facing agent could not answer on its own
+  — the harder tail of the request distribution, and the one most likely to contain
+  something a model gets subtly wrong (a promise the church can't keep, a wrong time, a
+  tone mismatch). Auto-sending there would spend the trust a human reply carries on
+  exactly the cases least suited to it. A human in the loop is not a stopgap for a future
+  "smarter" model; it is the right shape for this feature.
+- **The drafter returns an empty draft instead of throwing on failure.** If the embedder
+  or the model call fails, `draftReply` catches it and returns `{ reply: '', sources: [] }`
+  rather than letting the exception propagate. The support inbox is a queue a staff member
+  already has to work — a broken drafter must degrade to "write it yourself," the same
+  as the inbox looked like before this feature existed, never to "the inbox is down." The
+  failure is still logged server-side for debugging; it is only the staff member's path
+  that is protected from it.
+- **Staff actions remain rate-limited and budget-gated despite being authenticated.**
+  Every staff mutation that touches the LLM/embedding gateway — upload (`uploadDocument`),
+  the reply drafter — goes through the same `checkRateLimit` / `checkBudget` gates as the
+  public chat and ingest paths, scoped per church. Authentication answers "is this
+  request from staff," not "is this request cheap to trust with unlimited spend" — this is
+  a public portfolio demo, so a leaked or reused `STAFF_PASSWORD` (there is exactly one,
+  no per-user accounts yet) becoming a route to an unmetered gateway bill is a real
+  failure mode, not a hypothetical one. The gates cost nothing when they're not being hit
+  and stop that failure mode cold when they are.
+- **`INGEST_TOKEN` is retired, not stacked.** The 2026-08-20 Plan 2 decision above
+  recorded this token as an explicit placeholder for real staff auth and said plainly:
+  "when Plan 3 ships real staff auth, the correct move is to delete the bearer-token
+  check and the env var, not leave both bolted on underneath the new auth as a second
+  gate nobody remembers the purpose of." That is what happened. `POST /api/ingest`
+  (`src/channels/ingest-http.ts`) now reads the same `ccb_staff` session cookie every
+  other staff mutation uses — verified with the same `readStaffSession` helper, and, like
+  `requireStaffContext`, cross-checked against the live `churches` row so a session signed
+  for a re-seeded church id cannot be replayed. `INGEST_TOKEN` is gone from the route's
+  dependencies, from `.env.example`, and from the deployment checklist in
+  `brain/status.md`. Fail-closed did not change shape: no cookie, an unconfigured session
+  secret, a bad signature, an expired session, or a session for the wrong church all still
+  return 401, exercised in `tests/channels/ingest-http.test.ts`'s `session auth` block —
+  the same property `INGEST_TOKEN` used to guarantee, now guaranteed by the session
+  instead of a second, parallel secret.

@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       // so this bundle doesn't drag in the chat route's whole module graph just to reuse
       // one function (see M6 in the ingest security review).
       globalCapUsd: parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP),
-      ingestToken: process.env.INGEST_TOKEN,
+      staffSessionSecret: process.env.STAFF_SESSION_SECRET,
       extractorModel: FAST_MODEL,
       verifierModel: FAST_MODEL,
     },

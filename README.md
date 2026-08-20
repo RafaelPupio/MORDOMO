@@ -6,10 +6,12 @@ all invented, and no real data appears anywhere in this repo or its seed corpus.
 
 ## Status
 
-**Plan 1 (foundation + chat) is code-complete. Nothing is deployed yet.** There is no
-live demo URL — deployment is blocked on authenticating the Vercel CLI. Everything below
-is built and covered by an automated test suite (`npm test`), but none of it has run in
-production. A URL will be added here once it exists.
+**Plans 1–3 (foundation + chat, document ingest, staff operations) are code-complete.
+Nothing is deployed yet.** There is no live demo URL — deployment is blocked on accepting
+Neon's Marketplace terms of service, a step that only renders in an interactive browser
+session and so cannot be driven from an unattended CLI. Everything below is built and
+covered by an automated test suite (`npm test`), but none of it has run in production. A
+URL will be added here once it exists.
 
 ## What works today
 
@@ -18,7 +20,20 @@ production. A URL will be added here once it exists.
   `createPrayerRequest`, `escalateToHuman`.
 - Retrieval-augmented generation over pgvector, with source citations (document +
   excerpt) shown in the UI.
-- Per-tenant usage metering (`usage_ledger`) and a monthly budget cap that fails closed.
+- A document ingest pipeline (upload → parse → chunk → embed → extract → verify →
+  publish): an extractor agent proposes calendar events from an uploaded document, and a
+  separate verifier agent — a distinct model call, prompted to disprove each candidate —
+  audits every one against its source before it can reach the calendar.
+- A password-gated staff area (`/staff`), covering:
+  - knowledge-base management — document list, upload, and per-document ingest status;
+  - an agenda that shows each verified event alongside its extraction provenance (the
+    source quote and the verifier's note);
+  - prayer-request and support-ticket inboxes with AI-suggested draft replies that a
+    staff member edits and sends — nothing goes out unread;
+  - a usage page showing month-to-date AI cost per feature against the tenant's budget.
+- Per-tenant usage metering (`usage_ledger`) and a monthly budget cap that fails closed,
+  enforced on every AI-touching path — visitor chat and authenticated staff actions
+  alike.
 - Per-visitor rate limiting, request-size bounds, and conversation ownership tied to a
   server-minted cookie — never the client's IP or anything the client supplies.
 - A committed, runnable retrieval benchmark (`npm run benchmark:retrieval`) scoring ten
@@ -39,10 +54,13 @@ on the reply in real time.
 
 ## Not built yet
 
-Three later plans are scoped but not started: document ingest (multi-agent extract →
-verify), staff operations (dashboard, inbox, calendar), and reporting + a portfolio
-landing page. Also out of scope for now: a WhatsApp channel adapter, self-serve church
-signup, and billing.
+Plan 4 — reporting (a weekly AI-generated digest) and a portfolio landing page — is
+scoped but not started. Also deliberately out of scope for now: multiple staff accounts,
+roles, and password reset; a staff audit log; a WhatsApp channel adapter for visitors;
+self-serve church signup; and billing. A sent support reply is persisted to the
+conversation but not actually delivered by email or WhatsApp, and a document's original
+file is not stored — only its extracted text and chunks are — so there is no document
+download.
 
 ## Running locally
 
@@ -65,7 +83,9 @@ services or API keys: `npm test`.
 ## Design & plan
 
 - Design spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`
-- Plan 1 implementation plan: `docs/superpowers/plans/2026-08-19-plan-1-foundation-chat-slice.md`
+- Implementation plans: `docs/superpowers/plans/2026-08-19-plan-1-foundation-chat-slice.md`,
+  `docs/superpowers/plans/2026-08-20-plan-2-ingest-pipeline.md`,
+  `docs/superpowers/plans/2026-08-20-plan-3-staff-operations.md`
 - Running technical log: `brain/status.md`, `brain/log/decisions.md`
 
 ## Language

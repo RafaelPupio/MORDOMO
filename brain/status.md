@@ -34,6 +34,18 @@ read time in `listUpcomingEvents`, not just written and ignored; the unused
 nothing reads it and `runIngest` always re-parses the uploaded bytes anyway. Full
 findings, decisions, and verification output: `.superpowers/sdd/plan2-final-fixes-report.md`.
 
+**2026-08-20** — **Plan 3 code complete** on branch `feat/plan-3-staff-operations` (211
+tests green, typecheck + lint + build clean). Staff operations: password-gated session
+login, a guarded `(dashboard)` route group, document upload wired to the same
+`runIngest` pipeline `POST /api/ingest` uses, an agenda page showing each verified
+event's extraction provenance, prayer-request and support-ticket inboxes with a reply
+drafter agent whose output a staff member always edits before sending, and a usage page
+(month-to-date cost per feature against the tenant's budget). `POST /api/ingest` now
+accepts the same staff session cookie as authorisation; `INGEST_TOKEN` — Plan 2's
+explicit placeholder for exactly this — has been removed from the code and from
+`.env.example`, per the decision recorded when it was introduced. Not yet merged, not
+yet deployed.
+
 ## What runs today
 
 The whole chat path exists and is tested end to end against an in-memory Postgres:
@@ -69,15 +81,33 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   empty set — `IngestResult.eventsReplaced` says whether this run's outcome was trustworthy
   enough to actually replace them. `events.verified` is enforced at read time
   (`listUpcomingEvents`), not just written by the verifier and trusted. `POST /api/ingest`
-  runs this inline (`maxDuration = 300`, no queue yet) behind a placeholder bearer-token
-  gate (`Authorization: Bearer <INGEST_TOKEN>`) that fails closed — an unset or empty token
-  rejects every request rather than admitting one — and returns a non-201 status when the
-  run itself ends `failed`. An optional `documentId` form field re-ingests (replaces) that
-  document instead of creating a new one, rejecting one that doesn't belong to the caller's
-  church. **`INGEST_TOKEN` must be set in production** before this endpoint is usable
-  there. Proven end to end in `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested
-  bulletin is retrievable via the secretary's `searchKnowledge` tool, cited to the right
-  document, and its verified event shows up in `getCalendar`.
+  runs this inline (`maxDuration = 300`, no queue yet) behind the staff session cookie
+  (see below) — an unset session secret, a missing cookie, a bad signature, an expired
+  session, or a session signed for a different church all fail closed with 401 — and
+  returns a non-201 status when the run itself ends `failed`. An optional `documentId`
+  form field re-ingests (replaces) that document instead of creating a new one, rejecting
+  one that doesn't belong to the caller's church. Proven end to end in
+  `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin is retrievable via the
+  secretary's `searchKnowledge` tool, cited to the right document, and its verified event
+  shows up in `getCalendar`.
+- **Staff area** (`/staff`, Plan 3): a password check (`STAFF_PASSWORD`, fails closed
+  when unset) signs an HMAC-signed, httpOnly session cookie; the `(dashboard)` route
+  group re-checks that cookie on every request and redirects to `/staff/login` otherwise
+  — `/staff/login` itself sits outside the guarded group, so an unauthenticated visit
+  redirects exactly once, never loops. Every staff page and Server Action derives
+  `churchId` from that session alone (`requireStaffContext()`), never from a form field.
+  Documents: list, upload (through the same `runIngest` pipeline `POST /api/ingest`
+  uses), per-document ingest status. Agenda: verified events with their extraction
+  provenance (source quote + verifier note). Prayer requests and support tickets: status
+  workflow, plus a reply-drafter agent (`draftReply`) that proposes a grounded Portuguese
+  reply for a ticket — a staff member always edits and sends it; the drafter returns an
+  empty draft rather than throwing if retrieval or generation fails, so a broken drafter
+  never blocks the inbox. Usage page: month-to-date cost per feature
+  (`chat.reply`, `chat.retrieval`, `ingest.embed`, `ingest.extract`, `ingest.verify`,
+  `support.draft`, `support.retrieval`) against the tenant's budget. All staff mutations
+  remain rate-limited and budget-gated exactly like the public chat path — an
+  authenticated session on a public demo is still an untrusted spend path, not a reason
+  to relax the gates.
 
 ## Blocked — needs Rafael
 
@@ -86,10 +116,10 @@ which needs a browser.** Provisioning the production database via
 `vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
 interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
 accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
-the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY` and
-`INGEST_TOKEN`, `BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` against that real
-seed to confirm retrieval quality holds with real embeddings (not just the offline
-HashEmbedder number), `vercel deploy --prod`.
+the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
+`STAFF_PASSWORD`, and `STAFF_SESSION_SECRET`, `BENCHMARK_REAL_EMBEDDER=1 npm run
+benchmark:retrieval` against that real seed to confirm retrieval quality holds with real
+embeddings (not just the offline HashEmbedder number), `vercel deploy --prod`.
 
 Nothing has been deployed and no cloud resource has been created.
 
@@ -97,8 +127,8 @@ Nothing has been deployed and no cloud resource has been created.
 
 1. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
    migrate, seed, benchmark against the real embedder, deploy, verify).
-2. Merge Plan 1 and Plan 2.
-3. Plan 3 — staff operations (dashboard, real staff auth retiring `INGEST_TOKEN`).
+2. Merge Plans 1, 2, and 3.
+3. Plan 4 — reporting (weekly AI-generated digest) and the portfolio landing page.
 
 ## Open questions
 
