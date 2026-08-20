@@ -1,7 +1,8 @@
+import { getSentTicketReply } from '@/core/staff-operations';
 import { requireStaffContext } from '@/core/staff-context';
 import { getDb } from '@/db/client';
 import { listTickets } from '@/db/repo/tickets';
-import { TicketCard } from './ticket-card';
+import { TicketCard, type TicketRow } from './ticket-card';
 
 export const metadata = { title: 'Atendimentos — Secretaria' };
 
@@ -10,7 +11,25 @@ export const metadata = { title: 'Atendimentos — Secretaria' };
 // — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function AtendimentosPage() {
   const { churchId } = await requireStaffContext();
-  const tickets = await listTickets(getDb(), churchId);
+  const db = getDb();
+  const tickets = await listTickets(db, churchId);
+
+  // Project a narrow, client-safe row per ticket instead of passing the full DB row to the
+  // client component: `churchId`/`conversationId` never need to reach the browser (this is
+  // same-tenant data, not a cross-church leak — just unnecessary payload in the RSC stream).
+  // For a ticket that has left `open`, resolve here what was ACTUALLY sent (read from its
+  // conversation, not the `suggestedReply` draft column — see `getSentTicketReply`'s doc
+  // comment) so `TicketCard` never needs its own DB access.
+  const rows: TicketRow[] = await Promise.all(
+    tickets.map(async (ticket) => ({
+      id: ticket.id,
+      topic: ticket.topic,
+      status: ticket.status,
+      createdAt: ticket.createdAt,
+      suggestedReply: ticket.suggestedReply,
+      sentReply: ticket.status === 'open' ? null : await getSentTicketReply(db, churchId, ticket.id),
+    })),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -23,11 +42,11 @@ export default async function AtendimentosPage() {
         </p>
       </div>
 
-      {tickets.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-neutral-500">Nenhum atendimento por aqui.</p>
       ) : (
         <ul className="flex flex-col gap-3">
-          {tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} />)}
+          {rows.map((row) => <TicketCard key={row.id} ticket={row} />)}
         </ul>
       )}
     </div>

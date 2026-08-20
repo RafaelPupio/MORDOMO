@@ -3,7 +3,7 @@ import { formatDateTime } from '@/core/format';
 import { requireStaffContext } from '@/core/staff-context';
 import { getDb } from '@/db/client';
 import { listPrayerRequests, type PrayerStatus } from '@/db/repo/prayer';
-import { updatePrayerStatus } from './actions';
+import { PrayerStatusButtons } from './status-buttons';
 
 export const metadata = { title: 'Orações — Secretaria' };
 
@@ -18,8 +18,6 @@ const STATUS_STYLE: Record<PrayerStatus, string> = {
   praying: 'bg-amber-100 text-amber-800',
   done: 'bg-emerald-100 text-emerald-800',
 };
-
-const STATUS_ORDER: readonly PrayerStatus[] = ['new', 'praying', 'done'];
 
 const FILTERS: { value?: PrayerStatus; label: string }[] = [
   { value: undefined, label: 'Todas' },
@@ -94,21 +92,7 @@ export default async function OracoesPage({
               <p className="mt-2 text-sm text-neutral-800">{req.request}</p>
               {req.name && <p className="mt-1 text-xs text-neutral-500">— {req.name}</p>}
 
-              <div className="mt-3 flex gap-2">
-                {STATUS_ORDER.map((s) => (
-                  <form key={s} action={updatePrayerStatus}>
-                    <input type="hidden" name="id" value={req.id} />
-                    <input type="hidden" name="status" value={s} />
-                    <button
-                      type="submit"
-                      disabled={req.status === s}
-                      className="rounded-lg border px-3 py-1 text-xs font-medium disabled:cursor-default disabled:opacity-40"
-                    >
-                      {STATUS_LABEL[s]}
-                    </button>
-                  </form>
-                ))}
-              </div>
+              <PrayerStatusButtons id={req.id} status={req.status} />
             </li>
           ))}
         </ul>

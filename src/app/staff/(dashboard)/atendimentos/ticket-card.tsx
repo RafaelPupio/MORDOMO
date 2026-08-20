@@ -1,23 +1,49 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '@/core/format';
+import type { SentTicketReply } from '@/core/staff-operations';
 import {
-  sendReply, suggestReply, updateTicketStatus, type SendReplyState, type SuggestReplyState,
+  sendReply, suggestReply, updateTicketStatus,
+  type SendReplyState, type TicketStatusState,
 } from './actions';
+import type { SuggestReplyState } from './suggest-reply-state';
 
+// A narrow, client-safe projection of a ticket row — see atendimentos/page.tsx for why
+// `churchId`/`conversationId` are deliberately left out. `sentReply` is `null` for an `open`
+// ticket (nothing to show yet) and always populated otherwise.
 export type TicketRow = {
   id: string;
   topic: string;
   status: string;
-  suggestedReply: string | null;
   createdAt: Date;
+  suggestedReply: string | null;
+  sentReply: SentTicketReply | null;
 };
 
 const STATUS_LABEL: Record<string, string> = { open: 'Aberto', answered: 'Respondido', closed: 'Encerrado' };
 
 const SUGGEST_INITIAL: SuggestReplyState = {};
 const SEND_INITIAL: SendReplyState = {};
+const STATUS_INITIAL: TicketStatusState = {};
+
+// What was ACTUALLY sent for a non-open ticket (I3) — read from the conversation, not the
+// AI draft column, and always labeled plainly, including the two cases where there is
+// nothing to show rather than silently falling back to the draft.
+function SentReplyPanel({ sentReply }: { sentReply: SentTicketReply }) {
+  if (!sentReply.found) {
+    const message = sentReply.reason === 'no-conversation'
+      ? 'Este atendimento não tem uma conversa associada — nada foi enviado por aqui.'
+      : 'Nenhuma resposta foi registrada nesta conversa.';
+    return <p className="mt-2 text-sm italic text-neutral-500">{message}</p>;
+  }
+  return (
+    <div className="mt-2">
+      <p className="text-xs font-medium text-neutral-500">Resposta enviada</p>
+      <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-800">{sentReply.text}</p>
+    </div>
+  );
+}
 
 // One row per ticket. Open tickets get the full "suggest -> edit -> send" flow; the AI's
 // draft is clearly labeled and never sent on its own — only the "Enviar" button, submitting
@@ -25,11 +51,29 @@ const SEND_INITIAL: SendReplyState = {};
 export function TicketCard({ ticket }: { ticket: TicketRow }) {
   const [suggestState, suggestAction, suggesting] = useActionState(suggestReply, SUGGEST_INITIAL);
   const [sendState, sendAction, sending] = useActionState(sendReply, SEND_INITIAL);
+  const [statusState, statusAction, statusPending] = useActionState(updateTicketStatus, STATUS_INITIAL);
 
   // Prefer the reply from this session's latest suggestion; fall back to whatever the
   // ticket already has saved (from an earlier suggestion, possibly in a previous page load).
   const draft = suggestState.reply ?? ticket.suggestedReply ?? '';
   const sources = suggestState.sources ?? [];
+
+  // Controlled textarea, seeded from `draft`, that only follows a NEW draft while the
+  // staff member hasn't started editing it (current value still equals the last draft they
+  // were shown). Replaces the previous `key={draft}` remount trick, which discarded any
+  // in-progress edit every time a suggestion re-ran — this preserves those edits instead,
+  // while a genuinely fresh draft still appears on an untouched textarea.
+  const [replyText, setReplyText] = useState(draft);
+  const lastDraftRef = useRef(draft);
+  useEffect(() => {
+    if (draft !== lastDraftRef.current) {
+      setReplyText((current) => (current === lastDraftRef.current ? draft : current));
+      lastDraftRef.current = draft;
+    }
+  }, [draft]);
+
+  const replyFieldId = `reply-${ticket.id}`;
+  const draftWarningId = `draft-warning-${ticket.id}`;
 
   return (
     <li className="rounded-xl border p-4">
@@ -44,9 +88,7 @@ export function TicketCard({ ticket }: { ticket: TicketRow }) {
       </div>
 
       {ticket.status !== 'open' ? (
-        draft && (
-          <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-600">{draft}</p>
-        )
+        ticket.sentReply && <SentReplyPanel sentReply={ticket.sentReply} />
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <form action={suggestAction}>
@@ -60,18 +102,24 @@ export function TicketCard({ ticket }: { ticket: TicketRow }) {
             </button>
           </form>
           {suggestState.error && <p role="alert" className="text-xs text-red-700">{suggestState.error}</p>}
+          {suggestState.notice && <p role="status" className="text-xs text-amber-700">{suggestState.notice}</p>}
 
           <form action={sendAction} className="flex flex-col gap-2">
             <input type="hidden" name="id" value={ticket.id} />
             {draft && (
-              <p className="text-xs font-medium text-amber-700">
+              <p id={draftWarningId} className="text-xs font-medium text-amber-700">
                 Rascunho da IA — revise antes de enviar
               </p>
             )}
+            <label htmlFor={replyFieldId} className="text-xs font-medium text-neutral-700">
+              Resposta
+            </label>
             <textarea
-              key={draft}
+              id={replyFieldId}
               name="reply"
-              defaultValue={draft}
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              aria-describedby={draft ? draftWarningId : undefined}
               rows={3}
               placeholder="Escreva a resposta…"
               className="rounded-xl border px-3 py-2 text-sm outline-none focus:border-neutral-400"
@@ -100,12 +148,17 @@ export function TicketCard({ ticket }: { ticket: TicketRow }) {
             </div>
           </form>
 
-          <form action={updateTicketStatus}>
+          <form action={statusAction} className="flex flex-col items-start gap-1">
             <input type="hidden" name="id" value={ticket.id} />
             <input type="hidden" name="status" value="closed" />
-            <button type="submit" className="self-start text-xs text-neutral-500 underline">
+            <button
+              type="submit"
+              disabled={statusPending}
+              className="self-start text-xs text-neutral-500 underline disabled:opacity-50"
+            >
               Encerrar sem responder
             </button>
+            {statusState.error && <p role="alert" className="text-xs text-red-700">{statusState.error}</p>}
           </form>
         </div>
       )}
