@@ -12,10 +12,39 @@ const VISITOR_COOKIE_NAME = 'ccb_visitor';
 
 // F4: cap what one request's history can cost. `messages` is entirely client-supplied on
 // this public, unauthenticated endpoint, and the budget gate above only bounds spend
-// *between* requests — it cannot bound the size of a single one. These caps are demo-scale
-// sanity limits, not a real conversation-length product decision.
-const MAX_MESSAGES = 50;
-const MAX_TOTAL_CHARS = 24_000;
+// *between* requests — it cannot bound the size of a single one.
+//
+// F4 (round 3): two SEPARATE bounds exist here, guarding two different failure modes, and
+// they must not be conflated the way a single "over budget -> 400" rule did before:
+//
+// - HISTORY_ABUSE_MAX_CHARS is a hard ceiling on the whole request's serialized size. It
+//   exists purely to stop a request from being made *expensive* (JSON parsing, DB writes,
+//   model context) — crossing it is treated as abuse and rejected with 400, before any
+//   database write, exactly like a malformed body. It is set far above anything a real
+//   conversation reaches, so it never fires on ordinary use.
+// - MODEL_HISTORY_CHARS bounds what actually gets sent to the model. A long, honest
+//   conversation legitimately grows past this size — a grounded reply carries cited source
+//   excerpts, and those add up over many turns — without being abusive in any way. Failing
+//   those requests outright (the previous behavior) broke the chat permanently for anyone
+//   who talked long enough: once history crossed this figure, every subsequent turn 400'd,
+//   because the client keeps resending the whole growing history. Instead, the history sent
+//   to the *model* is silently trimmed to the most recent messages that fit — the client
+//   still gets a normal 200 and a reply; only the model's context loses old turns. This is
+//   what a real product does: forget old history, don't break the conversation.
+//
+// MAX_MESSAGES is a coarse, cheap pre-filter on message *count* (checked by zod before any
+// serialization happens), so an absurdly long messages array can't force the server to pay
+// JSON.stringify cost on all of it. It must stay comfortably above the message count a
+// legitimate long conversation reaches before HISTORY_ABUSE_MAX_CHARS would fire — otherwise
+// it would 400 an honest conversation for a reason that has nothing to do with abuse, which
+// is exactly the contradiction this round fixes. (50 was too low: a realistic grounded turn
+// runs ~3,100 characters, so 50 messages — 25 turns — arrives at ~78,000 characters, nowhere
+// near HISTORY_ABUSE_MAX_CHARS.)
+// Exported so tests can assert against the actual bounds instead of duplicating magic
+// numbers that could silently drift out of sync with this file.
+export const MAX_MESSAGES = 500;
+export const HISTORY_ABUSE_MAX_CHARS = 256_000;
+export const MODEL_HISTORY_CHARS = 24_000;
 
 // F3: each part is one AI SDK UIMessage part (text, tool-call, file, reasoning, ...). Only
 // the shared discriminant (`type`) is validated here; unknown extra fields are allowed
@@ -39,10 +68,6 @@ const messageSchema = z.object({
 // verbatim into the `messages.parts` jsonb column (saveMessage stores the parsed `parts`
 // array as-is). `messages.parts` is exactly what gets serialized to jsonb, so the real cap
 // has to be on the SERIALIZED size of each message, not its text fields alone.
-// `MAX_TOTAL_CHARS` keeps its original value: it was already generous for realistic
-// conversation text, and the JSON wrapper overhead this now also counts (field names,
-// braces, quotes — a few dozen extra characters per message) is a small fraction of a
-// 24,000-character budget for any conversation that isn't already trying to abuse it.
 //
 // F5: a message whose serialized text contains a raw NUL character or an unpaired ("lone")
 // UTF-16 surrogate is syntactically valid JSON but Postgres refuses to store either in a
@@ -50,6 +75,10 @@ const messageSchema = z.object({
 // `ensureConversation` had already written a `conversations` row for the request. Both
 // checks are folded into the one per-message `JSON.stringify` pass below (via its replacer
 // callback) so a request is never serialized twice just to validate it.
+//
+// This function is used ONLY against HISTORY_ABUSE_MAX_CHARS (the hard 400 bound) — never
+// against MODEL_HISTORY_CHARS, which is a silent trimming target, not a rejection rule. See
+// the comment above the constants for why the two are kept separate.
 function inspectMessages(
   msgs: readonly z.infer<typeof messageSchema>[],
 ): { totalChars: number; hasInvalidChars: boolean } {
@@ -68,9 +97,35 @@ function inspectMessages(
     totalChars += serialized.length;
     // Already over budget: the request is rejected regardless of what's left, so there's
     // no need to keep serializing the remaining messages.
-    if (totalChars > MAX_TOTAL_CHARS) break;
+    if (totalChars > HISTORY_ABUSE_MAX_CHARS) break;
   }
   return { totalChars, hasInvalidChars };
+}
+
+// Trims the history that actually gets sent to the model down to `maxChars`, per
+// MODEL_HISTORY_CHARS above. This is NOT a rejection path — it never errors and the request
+// it's applied to always returns 200. Rules, matching the invariants a client can rely on:
+//   - the newest (last) message is always kept, even alone it exceeds `maxChars` — a single
+//     long honest question must still reach the model, not be trimmed away to nothing;
+//   - older messages are added back, oldest-dropped-first, only while they still fit;
+//   - the result is always a contiguous suffix of `msgs` — nothing is ever dropped from the
+//     middle.
+// Persistence is unaffected by this: callers must derive what they save from the ORIGINAL,
+// untrimmed `body.messages`, not from this function's return value.
+function trimHistoryForModel(
+  msgs: readonly z.infer<typeof messageSchema>[],
+  maxChars: number,
+): z.infer<typeof messageSchema>[] {
+  if (msgs.length === 0) return [];
+  let total = JSON.stringify(msgs[msgs.length - 1]).length;
+  let startIndex = msgs.length - 1;
+  for (let i = msgs.length - 2; i >= 0; i--) {
+    const size = JSON.stringify(msgs[i]).length;
+    if (total + size > maxChars) break;
+    total += size;
+    startIndex = i;
+  }
+  return msgs.slice(startIndex);
 }
 
 const bodySchema = z
@@ -81,7 +136,7 @@ const bodySchema = z
   .refine(
     (body) => {
       const { totalChars, hasInvalidChars } = inspectMessages(body.messages);
-      return totalChars <= MAX_TOTAL_CHARS && !hasInvalidChars;
+      return totalChars <= HISTORY_ABUSE_MAX_CHARS && !hasInvalidChars;
     },
     { message: 'history exceeds the character budget or contains invalid characters' },
   );
@@ -201,11 +256,18 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
       return jsonResponse({ code: 'conversation_forbidden' }, { status: 403 });
     }
 
-    const uiMessages = body.messages as unknown as UIMessage[];
-    const last = uiMessages[uiMessages.length - 1];
+    // Persistence always uses the FULL, untrimmed history the client sent — trimming below
+    // only affects what the model sees, never what gets saved. The newest message is the
+    // same element either way (trimHistoryForModel always keeps it), so this is just reading
+    // it from the untrimmed array directly rather than depending on the trim step at all.
+    const last = body.messages[body.messages.length - 1];
     if (last?.role === 'user') {
       await saveMessage(deps.db, { churchId: church.id, conversationId: body.conversationId, role: 'user', parts: last.parts });
     }
+
+    // F4 (round 3): trim the history handed to the model to MODEL_HISTORY_CHARS. Silent —
+    // no error, no status change — see the constant comments above for why.
+    const uiMessages = trimHistoryForModel(body.messages, MODEL_HISTORY_CHARS) as unknown as UIMessage[];
 
     // A1: convertToModelMessages is async in ai@7.0.68, so runSecretary returns a Promise.
     const result = await runSecretary(deps, {

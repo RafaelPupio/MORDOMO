@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
-import { handleChatRequest } from '@/channels/web';
+import { HISTORY_ABUSE_MAX_CHARS, MAX_MESSAGES, MODEL_HISTORY_CHARS, handleChatRequest } from '@/channels/web';
 import { budgets, churches, conversations, messages, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
@@ -67,7 +67,89 @@ async function mockModel() {
   });
 }
 
+// Same fixture as mockModel(), but also records the `prompt` (the model-messages array
+// produced from `uiMessages` by convertToModelMessages) on every doStream call, so a test
+// can inspect exactly what history the server actually handed to the model — the thing
+// server-side trimming is supposed to shrink.
+async function mockModelCapturingPrompts() {
+  const { MockLanguageModelV3 } = await import('ai/test');
+  const { simulateReadableStream } = await import('ai');
+  const chunks: import('@ai-sdk/provider').LanguageModelV3StreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    { type: 'text-start', id: 't1' },
+    { type: 'text-delta', id: 't1', delta: 'Olá! Como posso ajudar?' },
+    { type: 'text-end', id: 't1' },
+    {
+      type: 'finish',
+      finishReason: { unified: 'stop', raw: 'stop' },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 8, text: 8, reasoning: undefined },
+      },
+    },
+  ];
+  const prompts: unknown[] = [];
+  const model = new MockLanguageModelV3({
+    doStream: async (options) => {
+      prompts.push(options.prompt);
+      return { stream: simulateReadableStream({ chunks }) };
+    },
+  });
+  return { model, prompts };
+}
+
 const userMessages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Olá!' }] }];
+
+// Builds one realistic "grounded" turn: a short user question and an assistant reply that
+// cites five knowledge-base sources (the shape the regression is about — a real grounded
+// reply is not just a few words of text, it's a tool-output part carrying source excerpts).
+// Each part's text carries a MARK_* token unique to its turn number and role, so a test can
+// tell, just by substring search on the serialized prompt, which turns survived trimming.
+// Sized (repeat count tuned against this exact fixture) to land close to the ~3,100
+// characters/turn the reviewer measured against the live handler.
+const GROUNDED_EXCERPT_SENTENCE = 'Este e um trecho de exemplo extraido da base de conhecimento da igreja. ';
+
+function groundedTurnMessages(turn: number) {
+  const userMsg = {
+    id: `u${turn}`,
+    role: 'user',
+    parts: [{ type: 'text', text: `MARK_USER_${turn} pergunta sobre o culto numero ${turn}` }],
+  };
+  const sources = Array.from({ length: 5 }, (_, i) => ({
+    title: `Fonte ${turn}-${i}`,
+    excerpt: `MARK_SOURCE_${turn}_${i} ${GROUNDED_EXCERPT_SENTENCE.repeat(8)}`,
+  }));
+  const assistantMsg = {
+    id: `a${turn}`,
+    role: 'assistant',
+    parts: [
+      {
+        type: 'tool-searchKnowledge',
+        toolCallId: `c${turn}`,
+        state: 'output-available',
+        input: { query: `pergunta ${turn}` },
+        output: { sources },
+      },
+      { type: 'text', text: `MARK_ASSISTANT_${turn} resposta grounded citando as fontes acima para o turno ${turn}.` },
+    ],
+  };
+  return { userMsg, assistantMsg };
+}
+
+// Builds the full client-supplied history for a conversation that has just reached
+// `turnCount` turns: every prior turn's user question AND grounded assistant reply, plus
+// the newest turn's user question only (its reply hasn't happened yet — this is what the
+// client sends to ask for it), matching how a real chat client resends the whole growing
+// history on every request.
+function buildGroundedHistory(turnCount: number) {
+  const msgs: unknown[] = [];
+  for (let turn = 1; turn <= turnCount; turn++) {
+    const { userMsg, assistantMsg } = groundedTurnMessages(turn);
+    msgs.push(userMsg);
+    if (turn < turnCount) msgs.push(assistantMsg);
+  }
+  return msgs;
+}
 
 describe('handleChatRequest', () => {
   it('rejects a malformed body with 400', async () => {
@@ -237,7 +319,7 @@ describe('handleChatRequest', () => {
   describe('F4: client-supplied history is capped', () => {
     it('rejects a history with more than the max message count', async () => {
       const { db } = await setupDemo();
-      const tooMany = Array.from({ length: 51 }, (_, i) => ({
+      const tooMany = Array.from({ length: MAX_MESSAGES + 1 }, (_, i) => ({
         id: `m${i}`,
         role: 'user',
         parts: [{ type: 'text', text: 'hi' }],
@@ -249,14 +331,26 @@ describe('handleChatRequest', () => {
       expect(res.status).toBe(400);
     });
 
-    it('rejects a history over the total character budget', async () => {
+    // (Round 3) This used to assert 400: a single message just over the old MAX_TOTAL_CHARS
+    // (24,000) was treated as abuse. That was the regression itself — a single honest,
+    // long message is nowhere near abusive, and it's also the newest (only) message, which
+    // trimHistoryForModel must never drop. It is now well under HISTORY_ABUSE_MAX_CHARS
+    // (256,000), so it is accepted and reaches the model whole, unstrimmed, even though it
+    // is over MODEL_HISTORY_CHARS on its own.
+    it('still returns 200 for a single huge newest user message under the abuse bound (not trimmed away)', async () => {
       const { db } = await setupDemo();
-      const huge = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(24_001) }] }];
+      const { model, prompts } = await mockModelCapturingPrompts();
+      const bigText = `MARK_ONLY ${'x'.repeat(100_000)}`;
+      const huge = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: bigText }] }];
       const res = await handleChatRequest(
-        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
         chatReq({ messages: huge, conversationId: crypto.randomUUID() }),
       );
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
+      await res.text();
+      // The message reached the model whole — trimming never drops the newest message, no
+      // matter how far over MODEL_HISTORY_CHARS it is on its own.
+      expect(JSON.stringify(prompts[0])).toContain('MARK_ONLY');
     });
   });
 
@@ -296,12 +390,19 @@ describe('handleChatRequest', () => {
       expect(await db.select().from(messages)).toHaveLength(0);
     });
 
-    it('rejects many individually-small messages whose serialized total exceeds the cap', async () => {
+    // (Round 3) This used to assert 400: 40 small messages summing to ~33,000 characters is
+    // well over the old single MAX_TOTAL_CHARS (24,000) but nowhere near abusive — it's
+    // comfortably under HISTORY_ABUSE_MAX_CHARS (256,000). That "reject an honest, merely
+    // long history" behavior was the regression. It now gets trimmed for the model (see the
+    // dedicated F4 (round 3) tests below) and the request completes normally.
+    it('still returns 200 for many individually-small messages whose serialized total exceeds MODEL_HISTORY_CHARS but not the abuse bound', async () => {
       const { db } = await setupDemo();
+      const model = await mockModel();
       const conversationId = crypto.randomUUID();
-      // 40 messages, each carrying a modest ~780-byte tool-output part (well under any
-      // per-message threshold), summing to well over MAX_TOTAL_CHARS (24,000).
-      const manySmall = Array.from({ length: 40 }, (_, i) => ({
+      // 40 small tool-output messages (~830 bytes each, ~33,000 total: over
+      // MODEL_HISTORY_CHARS but far under HISTORY_ABUSE_MAX_CHARS), plus the newest user
+      // turn a real client would append before asking for the next reply.
+      const manySmall: unknown[] = Array.from({ length: 40 }, (_, i) => ({
         id: `m${i}`,
         role: 'assistant',
         parts: [
@@ -313,13 +414,17 @@ describe('handleChatRequest', () => {
           },
         ],
       }));
+      manySmall.push({ id: 'newest', role: 'user', parts: [{ type: 'text', text: 'E o horário de domingo?' }] });
       const res = await handleChatRequest(
-        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
         chatReq({ messages: manySmall, conversationId }),
       );
-      expect(res.status).toBe(400);
-      expect(await db.select().from(conversations)).toHaveLength(0);
-      expect(await db.select().from(messages)).toHaveLength(0);
+      expect(res.status).toBe(200);
+      await res.text();
+      expect(await db.select().from(conversations)).toHaveLength(1);
+      const { listMessages } = await import('@/db/repo/chat');
+      const saved = await listMessages(db, conversationId);
+      expect(saved.map((m) => m.role)).toEqual(['user', 'assistant']); // newest user turn + the reply, persisted as always
     });
 
     it('rejects a file part with a large data: URL, persisting nothing', async () => {
@@ -404,6 +509,112 @@ describe('handleChatRequest', () => {
       expect(body.code).toBe('bad_request');
       expect(await db.select().from(conversations)).toHaveLength(0);
       expect(await db.select().from(messages)).toHaveLength(0);
+    });
+  });
+
+  // F4 (round 3): a reviewer measured that a normal, non-abusive conversation where the
+  // secretary cites sources costs ~3,100 serialized characters per grounded turn. Once a
+  // visitor crossed the old single MAX_TOTAL_CHARS (24,000, around turn 9), every
+  // subsequent turn 400'd — permanently, because the client keeps resending the whole
+  // growing history. The fix splits one bound into two: HISTORY_ABUSE_MAX_CHARS (256,000)
+  // still hard-rejects genuinely abusive requests before any DB write; MODEL_HISTORY_CHARS
+  // (24,000, unchanged in value, changed in role) now silently trims what's sent to the
+  // model instead of rejecting the request.
+  describe('F4 (round 3): history over MODEL_HISTORY_CHARS is trimmed, not rejected', () => {
+    it('still returns 200 turn after turn, past the point that used to 400 (the regression)', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const conversationId = crypto.randomUUID();
+
+      let cookie: string | undefined;
+      let history: unknown[] = [];
+      const statusByTurn = new Map<number, number>();
+      for (let turn = 1; turn <= 12; turn++) {
+        const { userMsg, assistantMsg } = groundedTurnMessages(turn);
+        history = [...history, userMsg];
+        const res = await handleChatRequest(deps, chatReq({ messages: history, conversationId }, cookie ? { cookie } : {}));
+        if (!cookie) cookie = visitorCookieFrom(res);
+        statusByTurn.set(turn, res.status);
+        await res.text(); // drain so onEnd persistence completes before the next turn
+        history = [...history, assistantMsg];
+      }
+
+      // Turn 9's history alone is already ~28,000 characters (over the old 24,000 cap) —
+      // this is exactly the point the reviewer found permanently broken. Turn 12 proves it
+      // isn't a one-time fluke: the conversation keeps working as it keeps growing.
+      expect(statusByTurn.get(9)).toBe(200);
+      expect(statusByTurn.get(12)).toBe(200);
+      // Every turn, not just 9 and 12 — the fix isn't turn-specific.
+      expect([...statusByTurn.values()]).toEqual(Array(12).fill(200));
+    });
+
+    it('keeps the newest user message and drops the oldest ones from what the model receives', async () => {
+      const { db } = await setupDemo();
+      const { model, prompts } = await mockModelCapturingPrompts();
+      const turnCount = 20;
+      const history = buildGroundedHistory(turnCount); // ~67,000 chars: over MODEL_HISTORY_CHARS, under the abuse bound
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: history, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(200);
+      await res.text();
+
+      const promptJson = JSON.stringify(prompts[0]);
+      expect(promptJson).toContain(`MARK_USER_${turnCount}`); // newest message: always present
+      expect(promptJson).not.toContain('MARK_USER_1 '); // oldest turn: dropped by trimming
+      expect(promptJson).not.toContain('MARK_ASSISTANT_1 ');
+    });
+
+    it('keeps a contiguous suffix when trimming — no turns dropped from the middle', async () => {
+      const { db } = await setupDemo();
+      const { model, prompts } = await mockModelCapturingPrompts();
+      const turnCount = 20;
+      const history = buildGroundedHistory(turnCount);
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: history, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(200);
+      await res.text();
+
+      const promptJson = JSON.stringify(prompts[0]);
+      const presentTurns: number[] = [];
+      for (let turn = 1; turn <= turnCount; turn++) {
+        const present = promptJson.includes(`MARK_USER_${turn} `) || promptJson.includes(`MARK_ASSISTANT_${turn} `);
+        if (present) presentTurns.push(turn);
+      }
+
+      expect(presentTurns.length).toBeGreaterThan(0);
+      expect(presentTurns.length).toBeLessThan(turnCount); // trimming actually happened
+      expect(presentTurns[presentTurns.length - 1]).toBe(turnCount); // ends at the newest turn
+      // A contiguous suffix means the kept turns are exactly the last N — no gaps, nothing
+      // missing from the middle of that range.
+      const expectedSuffix = Array.from({ length: presentTurns.length }, (_, i) => turnCount - presentTurns.length + 1 + i);
+      expect(presentTurns).toEqual(expectedSuffix);
+    });
+
+    it('still returns 400 for a body over the hard abuse bound, persisting nothing', async () => {
+      const { db } = await setupDemo();
+      const conversationId = crypto.randomUUID();
+      // Comfortably over HISTORY_ABUSE_MAX_CHARS (256,000) but far below the 2MB payloads
+      // used elsewhere in this file — proves the exact new boundary is enforced, not just
+      // that wildly oversized bodies happen to get caught too.
+      const abusive = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(HISTORY_ABUSE_MAX_CHARS + 4_000) }] }];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: abusive, conversationId }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      expect(await db.select().from(conversations)).toHaveLength(0);
+      expect(await db.select().from(messages)).toHaveLength(0);
+    });
+
+    it('MODEL_HISTORY_CHARS stays well under HISTORY_ABUSE_MAX_CHARS (the two bounds do not contradict each other)', () => {
+      expect(MODEL_HISTORY_CHARS).toBeLessThan(HISTORY_ABUSE_MAX_CHARS);
     });
   });
 });
