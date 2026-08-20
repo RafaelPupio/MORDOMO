@@ -12,6 +12,15 @@ export async function ensureConversation(
     .onConflictDoNothing();
 }
 
+// Fetches the conversation row as it actually exists in the database. Used to verify
+// ownership after ensureConversation: onConflictDoNothing means the row that matters
+// is whichever one was already there, not necessarily the one the caller intended to
+// insert.
+export async function getConversation(db: Db, id: string) {
+  const [row] = await db.select().from(conversations).where(eq(conversations.id, id));
+  return row;
+}
+
 export async function saveMessage(
   db: Db,
   input: { churchId: string; conversationId: string; role: 'user' | 'assistant'; parts: unknown },

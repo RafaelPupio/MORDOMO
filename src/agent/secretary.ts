@@ -37,13 +37,26 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
       inputSchema: z.object({ query: z.string().describe('Search query in Portuguese') }),
       execute: async ({ query }) => {
         const { sources, embeddingTokens } = await searchKnowledgeBase(deps.db, deps.embedder, ctx.churchId, query);
-        await recordUsage(deps.db, {
-          churchId: ctx.churchId,
-          feature: 'chat.retrieval',
-          model: deps.embedder.model,
-          inputTokens: embeddingTokens,
-          outputTokens: 0,
-        });
+        // A ledger write failing here must not discard a successful search: the visitor
+        // still gets a grounded answer, and we just lose one usage record instead of
+        // falsely claiming "I don't know" on top of an unrelated infra hiccup.
+        try {
+          await recordUsage(deps.db, {
+            churchId: ctx.churchId,
+            feature: 'chat.retrieval',
+            model: deps.embedder.model,
+            inputTokens: embeddingTokens,
+            outputTokens: 0,
+          });
+        } catch (err) {
+          console.error('searchKnowledge: failed to record usage ledger entry', {
+            churchId: ctx.churchId,
+            conversationId: ctx.conversationId,
+            model: deps.embedder.model,
+            embeddingTokens,
+            error: err,
+          });
+        }
         return { sources };
       },
     }),

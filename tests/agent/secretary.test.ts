@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
 import { secretaryTools } from '@/agent/secretary';
 import { chunkMarkdown } from '@/core/chunking';
@@ -42,6 +43,37 @@ describe('secretaryTools', () => {
     expect(out.sources[0].documentTitle).toBe('Horários');
     const ledger = await db.select().from(usageLedger);
     expect(ledger.some((u) => u.feature === 'chat.retrieval')).toBe(true);
+  });
+
+  // A4: recordUsage must not be able to destroy a successful search. costUsd() throws
+  // for a model with no configured price, so an embedder reporting an unpriced model id
+  // (while still producing valid vectors, via the real HashEmbedder underneath) forces
+  // the ledger write to fail without touching retrieval itself.
+  it('still returns sources when metering the retrieval fails', async () => {
+    const { db, church } = await setup();
+    const [doc] = await db.insert(documents).values({ churchId: church.id, title: 'Horários', kind: 'schedule' }).returning();
+    const realEmbedder = new HashEmbedder();
+    const pieces = chunkMarkdown('## Culto\n\nCulto de domingo às 10h.');
+    const { embeddings } = await realEmbedder.embed(pieces.map((p) => p.content));
+    await db.insert(chunks).values(pieces.map((p, i) => ({ churchId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })));
+
+    class UnpricedEmbedder implements Embedder {
+      readonly model = 'test/unpriced-embedder'; // deliberately absent from src/ai/pricing.ts
+      embed(texts: string[]) {
+        return realEmbedder.embed(texts); // real vectors, so retrieval still matches
+      }
+    }
+    const tools = secretaryTools({ db, embedder: new UnpricedEmbedder() }, { churchId: church.id, conversationId: crypto.randomUUID() });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const out = (await tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)) as ToolOutput<
+        typeof tools.searchKnowledge.execute
+      >;
+      expect(out.sources[0].documentTitle).toBe('Horários');
+      expect(errorSpy).toHaveBeenCalled(); // the failure was logged, not silently swallowed
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('getCalendar lists upcoming events', async () => {
