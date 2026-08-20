@@ -16,6 +16,8 @@ export const documents = pgTable('documents', {
   kind: text('kind').notNull(), // 'schedule' | 'bulletin' | 'ministry' | 'statute' | 'faq' | 'upload'
   sourcePath: text('source_path'),
   ingestStatus: text('ingest_status').notNull().default('published'), // Plan 2 adds the pipeline states
+  ingestError: text('ingest_error'),
+  sourceText: text('source_text'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -38,6 +40,9 @@ export const events = pgTable('events', {
   description: text('description'),
   verified: boolean('verified').notNull().default(false), // Plan 2: verifier agent flips this
   sourceDocumentId: uuid('source_document_id').references(() => documents.id),
+  extractionConfidence: real('extraction_confidence'),
+  verificationNote: text('verification_note'),
+  sourceQuote: text('source_quote'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
