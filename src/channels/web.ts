@@ -161,6 +161,20 @@ function trimHistoryForModel(
     total += size;
     startIndex = i;
   }
+  // I1: the size-based slice above stops purely on byte budget, so whether the resulting
+  // suffix happens to START with a 'user' or an 'assistant' message depends only on
+  // message sizes — realistic conversations (long visitor questions, short replies, per the
+  // system prompt) regularly land on 'assistant'. The Anthropic Messages API requires the
+  // FIRST message in a request to be role 'user', so a suffix starting on 'assistant' would
+  // be rejected by the provider. Advance forward (never re-including anything already
+  // dropped, so the result stays a contiguous suffix) until the first kept message is a
+  // user turn. The loop bound is `msgs.length - 1`, so this can never advance past the
+  // newest message — the invariant that the newest turn is always kept, even if it is
+  // itself an assistant message (shouldn't happen from this client, but stay safe), holds
+  // regardless of role.
+  while (startIndex < msgs.length - 1 && msgs[startIndex].role !== 'user') {
+    startIndex++;
+  }
   return msgs.slice(startIndex);
 }
 
@@ -183,7 +197,22 @@ const bodySchema = z
     },
   );
 
-const CHAT_LIMIT = { limit: 20, windowSeconds: 600 };
+// I4: sized against this branch's own worst-case per-request cost, not picked arbitrarily.
+// A single request can run up to stepCountIs(5) model steps over up to MODEL_HISTORY_CHARS
+// (24,000 chars, ~6,000 tokens) of history each step, priced at CHAT_MODEL's $3/M-in,
+// $15/M-out (src/ai/pricing.ts) — the reviewer worked this out to roughly $0.1425 in the
+// worst case. The previous limit (20 requests / 10 minutes) permitted ~2,880 requests/day
+// from a single identity, or up to ~$2.85 per 10-minute window: enough for one compliant
+// visitor to exhaust a $40/mo tenant budget in a few hours, taking the whole demo dark for
+// everyone else for the rest of the month even though the budget gate (fail-closed) did its
+// job. The plan's $10-50/mo target implies roughly 300 requests/month total; 20/hour/identity
+// is generous headroom for a real conversation while keeping one visitor's worst case to
+// about $2.85/hour instead of $2.85/10-minutes. This does not change the budget-gate logic
+// itself — checkBudget is still the actual backstop — it just makes the failure mode less
+// severe.
+// Exported (like the constants above) so tests can assert against the actual value instead
+// of duplicating a magic number that could silently drift out of sync with this file.
+export const CHAT_LIMIT = { limit: 20, windowSeconds: 3600 };
 
 function parseCookie(req: Request, name: string): string | undefined {
   const header = req.headers.get('cookie');
@@ -230,10 +259,21 @@ function resolveVisitorId(req: Request): { visitorId: string; mintedCookieHeader
 // itself (Vercel), not forwarded verbatim from the client, so they're not attacker-
 // controlled the way a bare `x-forwarded-for` is. `x-forwarded-for` is a comma-separated
 // hop chain where the LEFTMOST entry is whatever the client claimed and the RIGHTMOST
-// entry is the hop nearest us — we take the rightmost as the least-spoofable guess. If
-// none of these headers are present, every caller falls back to their own visitor cookie
-// rather than a shared constant, so header-less callers still get separate buckets (F2).
-function resolveRateLimitIdentity(req: Request, visitorId: string): string {
+// entry is the hop nearest us — we take the rightmost as the least-spoofable guess.
+//
+// I2: when none of those platform headers are present, `visitorId` is only a trustworthy,
+// STABLE identity if it came from a cookie the caller actually sent back — `hasStableIdentity`
+// is false exactly when resolveVisitorId had to mint a fresh UUID for this single request
+// (no valid existing cookie). Keying the limiter on a freshly-minted, per-request UUID would
+// let any caller that simply ignores Set-Cookie (a bare curl loop, no cookie jar) get an
+// unbounded number of one-shot buckets — each one permanently inserting its own
+// `rate_limits` AND `conversations` row — which is a rate limiter in name only. So
+// unidentifiable, header-less, cookie-less traffic is folded into one shared, conservative
+// bucket instead; only a caller that keeps and returns its visitor cookie earns its own
+// per-visitor bucket, same as before.
+const ANONYMOUS_RATE_LIMIT_KEY = 'anon';
+
+function resolveRateLimitIdentity(req: Request, visitorId: string, hasStableIdentity: boolean): string {
   const realIp = req.headers.get('x-real-ip');
   if (realIp) return realIp.trim();
 
@@ -246,7 +286,7 @@ function resolveRateLimitIdentity(req: Request, visitorId: string): string {
     if (hops.length > 0) return hops[hops.length - 1];
   }
 
-  return visitorId;
+  return hasStableIdentity ? visitorId : ANONYMOUS_RATE_LIMIT_KEY;
 }
 
 export async function handleChatRequest(deps: WebChannelDeps, req: Request): Promise<Response> {
@@ -279,7 +319,10 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
     // A2: scope the rate-limit key by tenant. `rate_limits` is a tenant-agnostic table
     // keyed by an opaque string, so the tenant must live in the key itself — otherwise
     // visitors of different churches would share one counter.
-    const rateLimitId = resolveRateLimitIdentity(req, visitorId);
+    // I2: `mintedCookieHeader` is set exactly when the caller had no valid existing visitor
+    // cookie — see resolveVisitorId — so its absence is what makes visitorId a stable,
+    // caller-honoured identity rather than a fresh one-off UUID.
+    const rateLimitId = resolveRateLimitIdentity(req, visitorId, !mintedCookieHeader);
     const rate = await checkRateLimit(deps.db, `chat:${church.id}:${rateLimitId}`, CHAT_LIMIT);
     if (!rate.allowed) return jsonResponse({ code: 'rate_limited' }, { status: 429 });
 
@@ -304,7 +347,22 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
     // it from the untrimmed array directly rather than depending on the trim step at all.
     const last = body.messages[body.messages.length - 1];
     if (last?.role === 'user') {
-      await saveMessage(deps.db, { churchId: church.id, conversationId: body.conversationId, role: 'user', parts: last.parts });
+      // I5: the client (useChat) assigns a stable id to a message once and resends the same
+      // history — unchanged — on a retry (the "try again" button calls regenerate(), which
+      // resends the whole history including this exact message). Without something keying
+      // off that id, every retry of the same turn inserts a second, duplicate `messages` row
+      // for a question the visitor only asked once. Passing the client's id through as
+      // `clientMessageId` (scoped to this conversation — see the unique index on
+      // (conversation_id, client_message_id) in src/db/schema.ts) and letting saveMessage's
+      // onConflictDoNothing skip the repeat makes the write idempotent per (conversation,
+      // client message) instead of per HTTP call.
+      await saveMessage(deps.db, {
+        churchId: church.id,
+        conversationId: body.conversationId,
+        role: 'user',
+        parts: last.parts,
+        clientMessageId: last.id,
+      });
     }
 
     // F4 (round 3): trim the history handed to the model to MODEL_HISTORY_CHARS. Silent —
@@ -327,12 +385,31 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
       // `onFinish` is deprecated in ai@7.0.68 in favor of `onEnd` (identical signature,
       // including `responseMessage`) — using the non-deprecated name here.
       onEnd: async ({ responseMessage }) => {
+        // I5: onEnd still fires when the model call fails or is aborted before producing any
+        // content — `responseMessage.parts` is `[]` in that case. Persisting that produces a
+        // permanent, empty assistant row for every failed/retried turn, with no informational
+        // value; Plan 3's staff inbox will read `messages` back and have to special-case it
+        // forever. There is nothing worth saving, so skip the write entirely.
+        if (responseMessage.parts.length === 0) return;
         await saveMessage(deps.db, {
           churchId: church.id,
           conversationId: body.conversationId,
           role: 'assistant',
           parts: responseMessage.parts,
         });
+      },
+      // M8: without this, a model/gateway failure produces no server-side log line at all —
+      // the client correctly gets a masked generic message (unchanged: same default text the
+      // SDK would use anyway), but the operator has no way to know it happened. Log the real
+      // error server-side; the string returned here is what reaches the client, so it must
+      // stay exactly as generic as the SDK's own default.
+      onError: (error) => {
+        console.error('handleChatRequest: model/stream failure', {
+          conversationId: body.conversationId,
+          churchId: church.id,
+          error,
+        });
+        return 'An error occurred.';
       },
     });
   } catch (err) {

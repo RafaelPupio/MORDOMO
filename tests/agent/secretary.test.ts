@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Embedder } from '@/ai/embedder';
 import { HashEmbedder } from '@/ai/embedder';
-import { secretaryTools } from '@/agent/secretary';
+import { priceableModelId, runSecretary, secretaryTools } from '@/agent/secretary';
+import { CHAT_MODEL, FAST_MODEL } from '@/ai/pricing';
 import { chunkMarkdown } from '@/core/chunking';
 import { listPrayerRequests } from '@/db/repo/prayer';
 import { listTickets } from '@/db/repo/tickets';
@@ -116,5 +117,101 @@ describe('secretaryTools', () => {
     >;
     expect(out.ticketId).toBeDefined();
     expect((await listTickets(db, church.id))[0].topic).toBe('Agendar aconselhamento');
+  });
+});
+
+// M7: `deps.model` may be a plain model-id string or a LanguageModel OBJECT (as every other
+// test in this file passes via MockLanguageModelV3); an object carries no id to price by.
+describe('priceableModelId (M7)', () => {
+  it('prices under the actual model id when it is a plain string override', () => {
+    expect(priceableModelId(FAST_MODEL)).toBe(FAST_MODEL);
+    expect(priceableModelId(CHAT_MODEL)).toBe(CHAT_MODEL);
+  });
+
+  it('falls back to CHAT_MODEL when given a model object with no id to price by', async () => {
+    const { MockLanguageModelV3 } = await import('ai/test');
+    const model = new MockLanguageModelV3();
+    expect(priceableModelId(model)).toBe(CHAT_MODEL);
+  });
+});
+
+describe('runSecretary', () => {
+  // Same fixture shape as tests/channels/web.test.ts's mockModel(): a minimal successful
+  // stream, so onFinish's usage-recording path actually runs.
+  async function mockModel() {
+    const { MockLanguageModelV3 } = await import('ai/test');
+    const { simulateReadableStream } = await import('ai');
+    const streamChunks: import('@ai-sdk/provider').LanguageModelV3StreamPart[] = [
+      { type: 'stream-start', warnings: [] },
+      { type: 'text-start', id: 't1' },
+      { type: 'text-delta', id: 't1', delta: 'Olá!' },
+      { type: 'text-end', id: 't1' },
+      {
+        type: 'finish',
+        finishReason: { unified: 'stop', raw: 'stop' },
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 8, text: 8, reasoning: undefined },
+        },
+      },
+    ];
+    return new MockLanguageModelV3({ doStream: async () => ({ stream: simulateReadableStream({ chunks: streamChunks }) }) });
+  }
+
+  // I3: mirrors the A4 test above (searchKnowledge's ledger-write guard), but for the OTHER
+  // recordUsage call in this file — the one runSecretary's onFinish makes for 'chat.reply',
+  // which previously had neither try/catch nor logging. "Poisoning the insert" here means a
+  // churchId that doesn't exist in `churches`, so usage_ledger's church_id foreign key fails
+  // on write — a failure independent of model pricing, unlike the A4 test's approach.
+  it('logs, rather than throws, when recording chat.reply usage fails — the failure is never silent', async () => {
+    const db = await createTestDb();
+    const model = await mockModel();
+    const conversationId = crypto.randomUUID();
+    const missingChurchId = crypto.randomUUID();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await runSecretary(
+        { db, embedder: new HashEmbedder(), model },
+        {
+          churchId: missingChurchId,
+          churchName: 'Igreja Inexistente',
+          conversationId,
+          uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,
+        },
+      );
+      const res = result.toUIMessageStreamResponse();
+      await res.text(); // drain so onFinish actually runs
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        'runSecretary: failed to record usage ledger entry',
+        expect.objectContaining({ churchId: missingChurchId, conversationId, model: CHAT_MODEL }),
+      );
+      const ledger = await db.select().from(usageLedger);
+      expect(ledger.some((u) => u.feature === 'chat.reply')).toBe(false); // the record never landed
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('still records chat.reply usage normally when nothing is poisoned (regression guard)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await mockModel();
+    const result = await runSecretary(
+      { db, embedder: new HashEmbedder(), model },
+      {
+        churchId: church.id,
+        churchName: church.name,
+        conversationId: crypto.randomUUID(),
+        uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,
+      },
+    );
+    const res = result.toUIMessageStreamResponse();
+    await res.text();
+
+    const ledger = await db.select().from(usageLedger);
+    const replyRow = ledger.find((u) => u.feature === 'chat.reply');
+    expect(replyRow).toBeDefined();
+    expect(replyRow!.model).toBe(CHAT_MODEL);
   });
 });

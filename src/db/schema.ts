@@ -1,5 +1,5 @@
 import {
-  boolean, index, integer, jsonb, pgTable, real, text, timestamp, uuid, vector,
+  boolean, index, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid, vector,
 } from 'drizzle-orm/pg-core';
 
 export const churches = pgTable('churches', {
@@ -56,8 +56,22 @@ export const messages = pgTable('messages', {
   seq: integer('seq').notNull().generatedAlwaysAsIdentity(),
   role: text('role').notNull(), // 'user' | 'assistant'
   parts: jsonb('parts').notNull(), // AI SDK UIMessage parts (text, tool calls with citations)
+  // I5: the client-supplied message id (NOT a uuid — the AI SDK's default id generator is a
+  // 16-char alphanumeric string, so this cannot reuse `id`, which stays a server-generated
+  // uuid). Lets saveMessage make the user-message write idempotent across retries of the
+  // same turn (regenerate() resends the same history, same id) without trusting the client
+  // id to be globally unique — the uniqueness check below is scoped to the conversation, so
+  // a colliding/malicious id from a different conversation can never suppress a write here.
+  // Nullable: assistant-authored rows never carry one.
+  clientMessageId: text('client_message_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+}, (t) => [
+  // A plain (non-partial) unique index still lets multiple rows share a NULL
+  // clientMessageId (Postgres treats NULLs as distinct for uniqueness), so this only
+  // constrains rows that actually carry a client id — exactly the ones I5's idempotency
+  // guard needs.
+  uniqueIndex('messages_conversation_client_id_idx').on(t.conversationId, t.clientMessageId),
+]);
 
 export const prayerRequests = pgTable('prayer_requests', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -87,21 +87,50 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
   };
 }
 
+// M7: `deps.model` can be a plain model-id string (the production default, or a real
+// override) or a LanguageModel OBJECT (e.g. MockLanguageModelV3 in tests) — an object has no
+// id to look up a price by, so pricing falls back to CHAT_MODEL in that case. Without this,
+// usage was always priced under CHAT_MODEL even when a string override was in play, silently
+// mispricing every call made under the override. Exported so tests can assert this decision
+// directly, without needing to route a real (network-resolving) string model id through
+// streamText just to observe which id its usage got priced under.
+export function priceableModelId(model: LanguageModel): string {
+  return typeof model === 'string' ? model : CHAT_MODEL;
+}
+
 export async function runSecretary(deps: SecretaryDeps, input: SecretaryInput) {
+  const model = deps.model ?? CHAT_MODEL;
+  const pricedModel = priceableModelId(model);
   return streamText({
-    model: deps.model ?? CHAT_MODEL,
+    model,
     system: systemPrompt(input.churchName),
     messages: await convertToModelMessages(input.uiMessages),
     tools: secretaryTools(deps, { churchId: input.churchId, conversationId: input.conversationId }),
     stopWhen: stepCountIs(5),
     onFinish: async ({ usage }) => {
-      await recordUsage(deps.db, {
-        churchId: input.churchId,
-        feature: 'chat.reply',
-        model: CHAT_MODEL,
-        inputTokens: usage.inputTokens ?? 0,
-        outputTokens: usage.outputTokens ?? 0,
-      });
+      // I3: mirrors the searchKnowledge tool's ledger-write guard above — a failed insert
+      // must not crash a chat reply that has already streamed to the visitor. Unlike that
+      // sibling call, this is the expensive half of every turn's cost; swallowing it without
+      // logging (as this used to) makes budget under-counting both permanent (the record
+      // never happens) and invisible (nothing anywhere says it didn't).
+      try {
+        await recordUsage(deps.db, {
+          churchId: input.churchId,
+          feature: 'chat.reply',
+          model: pricedModel,
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+        });
+      } catch (err) {
+        console.error('runSecretary: failed to record usage ledger entry', {
+          churchId: input.churchId,
+          conversationId: input.conversationId,
+          model: pricedModel,
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+          error: err,
+        });
+      }
     },
   });
 }

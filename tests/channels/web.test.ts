@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
-import { HISTORY_ABUSE_MAX_CHARS, MAX_MESSAGES, MODEL_HISTORY_CHARS, handleChatRequest } from '@/channels/web';
-import { budgets, churches, conversations, messages, usageLedger } from '@/db/schema';
+import { CHAT_LIMIT, HISTORY_ABUSE_MAX_CHARS, MAX_MESSAGES, MODEL_HISTORY_CHARS, handleChatRequest } from '@/channels/web';
+import { budgets, churches, conversations, messages, rateLimits, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
 const VISITOR_COOKIE = 'ccb_visitor';
@@ -98,6 +98,19 @@ async function mockModelCapturingPrompts() {
   return { model, prompts };
 }
 
+// I5: simulates a model/gateway failure mid-call — the AI SDK catches a thrown doStream and
+// turns it into an 'error' part inside the UI message stream rather than a non-2xx HTTP
+// response, so no text/tool-output chunks are ever produced and the accumulated
+// responseMessage.parts handed to onEnd stays empty.
+async function mockFailingModel() {
+  const { MockLanguageModelV3 } = await import('ai/test');
+  return new MockLanguageModelV3({
+    doStream: async () => {
+      throw new Error('simulated model/gateway failure');
+    },
+  });
+}
+
 const userMessages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Olá!' }] }];
 
 // Builds one realistic "grounded" turn: a short user question and an assistant reply that
@@ -175,7 +188,7 @@ describe('handleChatRequest', () => {
     for (let i = 0; i < 20; i++) {
       last = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip }));
     }
-    expect(last!.status).toBe(429); // 21st request from this visitor (1 + 20) exceeds 20/10min
+    expect(last!.status).toBe(429); // 21st request from this visitor (1 + 20) exceeds 20/hour (I4)
   });
 
   it('returns 402 when the global budget is exhausted', async () => {
@@ -698,6 +711,174 @@ describe('handleChatRequest', () => {
       );
       expect(res.status).toBe(200); // trimmed for the model, not rejected
       await res.text();
+    });
+  });
+
+  // I1: trimHistoryForModel cuts on size alone, so which role ends up first depends only on
+  // message sizes — a realistic conversation (long visitor questions, short replies, per the
+  // system prompt's "keep answers short") regularly lands the cut on an assistant message.
+  // The Anthropic Messages API requires the first message to be role 'user'.
+  describe('I1: the prompt handed to the model always starts on a user turn', () => {
+    // Alternating long-user / short-assistant turns, sized so that size-based trimming alone
+    // (without the I1 fix) would cut right after an assistant reply, landing the kept suffix
+    // on that assistant message. Mirrors the reviewer's exact repro shape.
+    function longUserShortAssistantHistory(turns: number, userChars: number) {
+      const msgs: unknown[] = [];
+      for (let turn = 1; turn <= turns; turn++) {
+        msgs.push({
+          id: `u${turn}`,
+          role: 'user',
+          parts: [{ type: 'text', text: `MARK_USER_${turn} ${'x'.repeat(userChars)}` }],
+        });
+        if (turn < turns) {
+          msgs.push({ id: `a${turn}`, role: 'assistant', parts: [{ type: 'text', text: `MARK_ASSISTANT_${turn} ok` }] });
+        }
+      }
+      return msgs;
+    }
+
+    it.each([
+      [8, 3000],
+      [10, 3000],
+      [6, 4000],
+    ])('turns=%i userChars=%i: the model never receives a prompt starting with an assistant message', async (turns, userChars) => {
+      const { db } = await setupDemo();
+      const { model, prompts } = await mockModelCapturingPrompts();
+      const history = longUserShortAssistantHistory(turns, userChars);
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+        chatReq({ messages: history, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(200);
+      await res.text();
+
+      // `system` is sent to the model as its own leading message with role 'system' in the
+      // AI SDK's internal prompt representation (providers split it back out into Anthropic's
+      // separate top-level `system` field) — the invariant under test is about the actual
+      // conversation turns, so look past that leading system entry.
+      const prompt = prompts[0] as Array<{ role: string }>;
+      const conversationTurns = prompt.filter((m) => m.role !== 'system');
+      expect(conversationTurns.length).toBeGreaterThan(0);
+      expect(conversationTurns[0].role).toBe('user');
+    });
+  });
+
+  // I2: `resolveRateLimitIdentity` used to fall back to the per-request visitorId whenever no
+  // platform IP header was present — but that visitorId is a FRESH UUID whenever the caller
+  // also has no existing cookie, so a cookie-less, header-less caller got a brand-new bucket
+  // every single request (`curl` in a loop, no cookie jar). Fixed: that traffic now shares
+  // one constant bucket.
+  describe('I2: cookie-less, header-less callers share one rate-limit bucket', () => {
+    it('trips 429 well before 30 requests, and creates only one rate_limits row for all of them', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+
+      const statuses: number[] = [];
+      for (let i = 0; i < 30; i++) {
+        // ip: null omits x-forwarded-for; no `cookie` option means no cookie is sent back —
+        // together, cookie-less AND header-less, on every one of the 30 requests.
+        const res = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip: null }));
+        statuses.push(res.status);
+        await res.text();
+      }
+
+      // Before the fix: every request minted its own visitorId-keyed bucket, so all 30 would
+      // succeed (200) or fail only on conversation ownership — never 429. After the fix, the
+      // shared 'anon' bucket exhausts CHAT_LIMIT.limit well before 30 requests.
+      const rateLimited = statuses.filter((s) => s === 429).length;
+      expect(rateLimited).toBeGreaterThan(0);
+      expect(rateLimited).toBe(30 - CHAT_LIMIT.limit);
+
+      const rows = await db.select().from(rateLimits);
+      // One shared bucket for this church, not one per request.
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  // I4: the per-visitor window must actually be an hour now, not just a comment change —
+  // prove the limit does NOT reset 10 minutes in, which is exactly when the old 600s window
+  // used to roll over.
+  describe('I4: the per-visitor limit window is calibrated to the demo budget (hourly, not 10-minute)', () => {
+    it('exports the new, hourly limit', () => {
+      expect(CHAT_LIMIT).toEqual({ limit: 20, windowSeconds: 3600 });
+    });
+
+    it('stays exhausted 10 minutes after the limit trips, unlike the old 10-minute window', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const ip = '7.7.7.7';
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-08-19T12:00:00Z'));
+        let last: Response | null = null;
+        for (let i = 0; i < 21; i++) {
+          last = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip }));
+        }
+        expect(last!.status).toBe(429); // limit exhausted within the first window
+
+        // 10 minutes and 1 second later: under the OLD 600s window this would already be a
+        // fresh window (request allowed again). Under the fixed 3600s window it is still the
+        // SAME window, so the caller must still be blocked.
+        vi.setSystemTime(new Date('2026-08-19T12:10:01Z'));
+        const stillBlocked = await handleChatRequest(
+          deps,
+          chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip }),
+        );
+        expect(stillBlocked.status).toBe(429);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // I5: persistence used to be unconditional on both sides of the exchange — a failed model
+  // call still wrote an empty assistant row, and a retried turn (regenerate() resends the
+  // same history) still wrote a second, duplicate user row for the same client message id.
+  describe('I5: failed and retried turns do not corrupt the transcript', () => {
+    it('does not persist an empty assistant row when the model call fails', async () => {
+      const { db } = await setupDemo();
+      const model = await mockFailingModel();
+      const conversationId = crypto.randomUUID();
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await handleChatRequest(
+          { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 },
+          chatReq({ messages: userMessages, conversationId }),
+        );
+        await res.text(); // drain so onEnd runs regardless of how the failure surfaced
+
+        const { listMessages } = await import('@/db/repo/chat');
+        const saved = await listMessages(db, conversationId);
+        // The user's turn is still saved (it's written before the model is ever called) —
+        // only the empty assistant row must be missing.
+        expect(saved.map((m) => m.role)).toEqual(['user']);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('does not duplicate the user row when the same turn is sent twice (retry)', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const conversationId = crypto.randomUUID();
+
+      const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }));
+      const cookie = visitorCookieFrom(first);
+      await first.text();
+
+      // regenerate() resends the exact same history — same message id ('m1') — for a retry
+      // of the same turn.
+      const second = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { cookie }));
+      await second.text();
+
+      const { listMessages } = await import('@/db/repo/chat');
+      const saved = await listMessages(db, conversationId);
+      expect(saved.filter((m) => m.role === 'user')).toHaveLength(1); // not duplicated
+      expect(saved.filter((m) => m.role === 'assistant')).toHaveLength(2); // each call still gets its own reply
     });
   });
 });
