@@ -1,7 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 import { extractEvents } from '@/agent/extractor';
+import { CHAT_MODEL } from '@/ai/pricing';
 import { usageLedger } from '@/db/schema';
 import { createTestDb, seedChurch } from '../helpers/db';
+
+// generateObject is mocked at the module level, by default delegating to the real
+// implementation, so most tests below still exercise the SDK's actual parsing/validation
+// path (via MockLanguageModelV3, same as before). Two tests override it for a single call
+// via mockRejectedValueOnce/mockResolvedValueOnce, to reach paths a mock LanguageModel
+// can't: a total call failure, and a plain *string* deps.model. A string model id resolves
+// through the AI SDK's global gateway provider — which would mean real network access in
+// this test — so we bypass generateObject's model resolution entirely instead, the same
+// reason secretary.test.ts tests `priceableModelId` as a pure function rather than routing
+// a string model through streamText.
+const generateObjectMock = vi.hoisted(() => vi.fn());
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('ai')>();
+  generateObjectMock.mockImplementation(actual.generateObject);
+  return { ...actual, generateObject: generateObjectMock };
+});
 
 // generateObject is exercised through a mock model that returns the JSON the schema
 // expects, so the test verifies OUR contract (shape, defaults, metering, error
@@ -114,5 +131,109 @@ describe('extractEvents', () => {
     expect(out).toHaveLength(1);
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
+  });
+
+  // Finding 1a: `generateObject` validates the WHOLE `{ events: [...] }` payload in one
+  // shot. Before the fix, `confidence: 1.5` failing the schema's `.min/.max` bound threw
+  // NoObjectGeneratedError for the entire batch, silently discarding every legitimate
+  // candidate alongside the bad one. The schema now accepts any number and we clamp it
+  // ourselves per candidate, so one out-of-range field can no longer sink the batch.
+  it('keeps every candidate when one has an out-of-range confidence, clamping it into 0..1', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await objectModel({
+      events: [
+        { title: 'Confiança fora da faixa', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 1.5, sourceQuote: 'Encontro de jovens OTB' },
+        { title: 'Confiança normal', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 0.9, sourceQuote: 'Encontro de jovens OTB' },
+      ],
+    });
+    const out = await extractEvents({ db, model }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+    });
+    expect(out).toHaveLength(2);
+    expect(out.find((e) => e.title === 'Confiança fora da faixa')?.confidence).toBe(1);
+    expect(out.find((e) => e.title === 'Confiança normal')?.confidence).toBe(0.9);
+  });
+
+  // Finding 1b: a total `generateObject` failure (network error, output the SDK could
+  // not repair) must not throw out of extractEvents — the surrounding ingest pipeline
+  // still needs to publish the document's chunks even with zero extracted events.
+  it('returns an empty array without throwing, and logs, when generateObject fails entirely', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    generateObjectMock.mockRejectedValueOnce(new Error('network unreachable'));
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const out = await extractEvents({ db }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+    });
+    expect(out).toEqual([]);
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // Finding 2: the quote guard must tolerate the typography drift a model commonly
+  // introduces when "copying" text — an em dash retyped as a hyphen, curly quotes
+  // straightened, an accent dropped — without becoming a fuzzy match.
+  it('accepts quotes that differ from the source only by em dash, curly apostrophe, or stripped accent', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const text = 'Encontro de jovens — sábado (10/10), na sala ‘Boas-vindas’, às 19h.';
+    const model = await objectModel({
+      events: [
+        { title: 'Travessão como hífen e acento removido', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 0.9, sourceQuote: 'Encontro de jovens - sabado (10/10)' },
+        { title: 'Aspas retas em vez de curvas', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 0.9, sourceQuote: "sala 'Boas-vindas'" },
+      ],
+    });
+    const out = await extractEvents({ db, model }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text, referenceDate: '2026-10-01',
+    });
+    expect(out.map((e) => e.title)).toEqual([
+      'Travessão como hífen e acento removido',
+      'Aspas retas em vez de curvas',
+    ]);
+  });
+
+  // Companion to the drift test above: widening the normalization must not turn the
+  // guard into a fuzzy/substring-of-anything check. An empty or whitespace-only quote,
+  // and a quote that genuinely does not occur in the document, must still be rejected.
+  it('still rejects an empty or whitespace-only sourceQuote', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await objectModel({
+      events: [
+        { title: 'Vazio', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 0.9, sourceQuote: '' },
+        { title: 'Só espaços', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
+          confidence: 0.9, sourceQuote: '   ' },
+      ],
+    });
+    const out = await extractEvents({ db, model }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+    });
+    expect(out).toEqual([]);
+  });
+
+  // Finding 3: `recordUsage` used to hardcode `model: FAST_MODEL` regardless of the model
+  // actually used via deps.model. A string deps.model resolves through the AI SDK's
+  // global gateway provider (real network), so this bypasses generateObject's model
+  // resolution via the module mock instead of routing a string through a live call.
+  it('prices the ledger row under the actual string model id passed via deps.model, not the FAST_MODEL default', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    generateObjectMock.mockResolvedValueOnce({
+      object: { events: [] },
+      usage: { inputTokens: 42, outputTokens: 7 },
+    });
+    const out = await extractEvents({ db, model: CHAT_MODEL }, {
+      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+    });
+    expect(out).toEqual([]);
+    const ledger = await db.select().from(usageLedger);
+    const row = ledger.find((u) => u.feature === 'ingest.extract');
+    expect(row?.model).toBe(CHAT_MODEL);
   });
 });
