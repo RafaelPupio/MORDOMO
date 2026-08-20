@@ -5,6 +5,7 @@ import type { Embedder } from '@/ai/embedder';
 import { runIngest } from '@/core/ingest';
 import { parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
+import { hasUnstorableChars } from '@/core/text-safety';
 import type { Db } from '@/db/client';
 import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
 import { createDocument, getDocument } from '@/db/repo/documents';
@@ -48,14 +49,6 @@ function tokenMatches(expected: string, presented: string): boolean {
   const presentedBuf = Buffer.from(presented);
   if (expectedBuf.length !== presentedBuf.length) return false;
   return timingSafeEqual(expectedBuf, presentedBuf);
-}
-
-// `String.prototype.isWellFormed()` (ES2024) is false exactly for strings holding an
-// unpaired UTF-16 surrogate. NUL is well-formed UTF-16 but still unstorable in a Postgres
-// text/jsonb column, so it needs its own check. Same check src/channels/web.ts applies to
-// chat message text, applied here to a parsed document's extracted text.
-function hasUnstorableChars(text: string): boolean {
-  return text.includes('\u0000') || !text.isWellFormed();
 }
 
 export async function handleIngestRequest(deps: IngestChannelDeps, req: Request): Promise<Response> {
