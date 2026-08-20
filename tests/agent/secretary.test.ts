@@ -76,6 +76,22 @@ describe('secretaryTools', () => {
     }
   });
 
+  // Companion to the A4 test above: A4 proves a failure *recording usage* is swallowed.
+  // This proves a failure in the search itself is NOT swallowed — searchKnowledgeBase is
+  // called outside the try/catch in secretary.ts, so a broken embedder must still fail the
+  // tool call instead of silently returning as if nothing was found.
+  it('propagates a failure from searchKnowledgeBase itself, not just from recording usage', async () => {
+    const { db, church } = await setup();
+    class ThrowingEmbedder implements Embedder {
+      readonly model = 'test/throwing-embedder';
+      embed(): Promise<{ embeddings: number[][]; tokens: number }> {
+        return Promise.reject(new Error('embedder unavailable'));
+      }
+    }
+    const tools = secretaryTools({ db, embedder: new ThrowingEmbedder() }, { churchId: church.id, conversationId: crypto.randomUUID() });
+    await expect(tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)).rejects.toThrow('embedder unavailable');
+  });
+
   it('getCalendar lists upcoming events', async () => {
     const { db, church, tools } = await setup();
     await db.insert(events).values({ churchId: church.id, title: 'Retiro', startsAt: new Date(Date.now() + 86_400_000) });

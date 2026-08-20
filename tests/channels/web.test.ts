@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
 import { handleChatRequest } from '@/channels/web';
-import { budgets, churches } from '@/db/schema';
+import { budgets, churches, messages, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
+
+const VISITOR_COOKIE = 'ccb_visitor';
 
 async function setupDemo() {
   const db = await createTestDb();
@@ -11,12 +13,26 @@ async function setupDemo() {
   return { db, church };
 }
 
-function chatReq(body: unknown, ip = '9.9.9.9'): Request {
+// `ip: null` omits x-forwarded-for entirely, simulating a caller behind no proxy header at
+// all (F2). `cookie` sets the `ccb_visitor` cookie the way a returning browser would.
+function chatReq(body: unknown, opts: { ip?: string | null; cookie?: string } = {}): Request {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  const ip = opts.ip === undefined ? '9.9.9.9' : opts.ip;
+  if (ip !== null) headers['x-forwarded-for'] = ip;
+  if (opts.cookie) headers.cookie = `${VISITOR_COOKIE}=${opts.cookie}`;
   return new Request('http://test/api/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+    headers,
     body: JSON.stringify(body),
   });
+}
+
+function visitorCookieFrom(res: Response): string {
+  const setCookie = res.headers.get('set-cookie');
+  if (!setCookie) throw new Error('expected a Set-Cookie header for a first-time visitor');
+  const match = new RegExp(`${VISITOR_COOKIE}=([^;]+)`).exec(setCookie);
+  if (!match) throw new Error(`Set-Cookie did not include ${VISITOR_COOKIE}`);
+  return match[1];
 }
 
 // Stream part shapes follow the installed AI SDK's LanguageModelV3StreamPart (verified
@@ -70,12 +86,12 @@ describe('handleChatRequest', () => {
     const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
     const ip = '5.5.5.5';
 
-    const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, ip));
+    const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip }));
     expect(first.status).toBe(200); // under the limit: never 429
 
     let last: Response | null = null;
     for (let i = 0; i < 20; i++) {
-      last = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, ip));
+      last = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId: crypto.randomUUID() }, { ip }));
     }
     expect(last!.status).toBe(429); // 21st request from this visitor (1 + 20) exceeds 20/10min
   });
@@ -102,36 +118,145 @@ describe('handleChatRequest', () => {
     const { listMessages } = await import('@/db/repo/chat');
     const saved = await listMessages(db, conversationId);
     expect(saved.map((m) => m.role)).toEqual(['user', 'assistant']);
-    const { usageLedger } = await import('@/db/schema');
     const ledger = await db.select().from(usageLedger);
-    expect(ledger.some((u) => u.feature === 'chat.reply')).toBe(true);
+    const replyRow = ledger.find((u) => u.feature === 'chat.reply');
+    expect(replyRow).toBeDefined();
+    // A row existing isn't enough — assert it carries the actual metered numbers, not
+    // zeros that a future SDK usage-shape change could silently coerce in.
+    expect(replyRow!.inputTokens).toBeGreaterThan(0);
+    expect(replyRow!.outputTokens).toBeGreaterThan(0);
+    expect(replyRow!.costUsd).toBeGreaterThan(0);
     expect(saved.every((m) => m.churchId === church.id)).toBe(true);
   });
 
-  // A3: ensureConversation alone (onConflictDoNothing) would let a visitor who guesses
-  // or steals another visitor's conversationId silently append to it. Verify ownership
-  // is actually enforced: a second visitor (different x-forwarded-for) reusing the
-  // first visitor's conversationId must be rejected, and must not be able to append.
-  it('rejects a different visitor reusing another visitor\'s conversationId with 403, and blocks the append', async () => {
-    const { db } = await setupDemo();
-    const model = await mockModel();
-    const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
-    const conversationId = crypto.randomUUID();
+  describe('F1: conversation ownership rests on the server-set visitor cookie', () => {
+    it('sets a Set-Cookie for ccb_visitor on a first-time request, even one that gets rejected', async () => {
+      const { db } = await setupDemo();
+      const res = await handleChatRequest({ db, embedder: new HashEmbedder(), globalCapUsd: 50 }, chatReq({ nope: true }));
+      expect(res.status).toBe(400);
+      expect(res.headers.get('set-cookie')).toContain(`${VISITOR_COOKIE}=`);
+    });
 
-    const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, '1.1.1.1'));
-    expect(first.status).toBe(200);
-    await first.text(); // drain so the first visitor's messages are persisted
+    // Replaces the old A3 test: the attack is now expressed as a different visitor
+    // *cookie* (the actual ownership token), not a different IP.
+    it("rejects a different visitor cookie reusing another visitor's conversationId with 403, and blocks the append", async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const conversationId = crypto.randomUUID();
 
-    const { listMessages } = await import('@/db/repo/chat');
-    const before = await listMessages(db, conversationId);
-    expect(before.length).toBeGreaterThan(0);
+      const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }));
+      expect(first.status).toBe(200);
+      await first.text(); // drain so the first visitor's messages are persisted
 
-    const second = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, '2.2.2.2'));
-    expect(second.status).toBe(403);
-    const body = await second.json();
-    expect(body.code).toBe('conversation_forbidden');
+      const { listMessages } = await import('@/db/repo/chat');
+      const before = await listMessages(db, conversationId);
+      expect(before.length).toBeGreaterThan(0);
 
-    const after = await listMessages(db, conversationId);
-    expect(after).toHaveLength(before.length); // nothing was appended by the intruder
+      const second = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { cookie: crypto.randomUUID() }));
+      expect(second.status).toBe(403);
+      const body = await second.json();
+      expect(body.code).toBe('conversation_forbidden');
+
+      const after = await listMessages(db, conversationId);
+      expect(after).toHaveLength(before.length); // nothing was appended by the intruder
+    });
+
+    // The core F1 reproduction: an attacker who only controls x-forwarded-for (not a
+    // cookie) must not gain access to the victim's conversation.
+    it("does not grant access to another visitor's conversation by spoofing x-forwarded-for alone", async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const conversationId = crypto.randomUUID();
+      const victimIp = '10.0.0.1';
+
+      const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { ip: victimIp }));
+      expect(first.status).toBe(200);
+      await first.text();
+
+      const { listMessages } = await import('@/db/repo/chat');
+      const before = await listMessages(db, conversationId);
+
+      // Same x-forwarded-for as the victim, but no matching visitor cookie.
+      const attack = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { ip: victimIp }));
+      expect(attack.status).toBe(403);
+
+      const after = await listMessages(db, conversationId);
+      expect(after).toHaveLength(before.length);
+    });
+  });
+
+  describe('F2: header-less callers never collapse into one shared identity', () => {
+    it('gives two cookie-less, header-less callers different identities', async () => {
+      const { db } = await setupDemo();
+      const model = await mockModel();
+      const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+      const conversationId = crypto.randomUUID();
+
+      const first = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { ip: null }));
+      expect(first.status).toBe(200);
+      await first.text();
+      const cookieA = visitorCookieFrom(first);
+
+      const { listMessages } = await import('@/db/repo/chat');
+      const before = await listMessages(db, conversationId);
+      expect(before.length).toBeGreaterThan(0);
+
+      const second = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }, { ip: null }));
+      expect(second.status).toBe(403); // a second header-less caller must not inherit the first's conversation
+      const cookieB = visitorCookieFrom(second);
+      expect(cookieB).not.toBe(cookieA);
+
+      const after = await listMessages(db, conversationId);
+      expect(after).toHaveLength(before.length);
+    });
+  });
+
+  describe('F3: malformed bodies are rejected before any side effect', () => {
+    const cases: Array<[string, unknown]> = [
+      ['message missing role and parts', {}],
+      ['message missing parts', { role: 'user' }],
+      ['parts is not an array', { role: 'user', parts: 'not-an-array' }],
+    ];
+
+    it.each(cases)('%s -> 400, persists nothing', async (_label, message) => {
+      const { db } = await setupDemo();
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: [message], conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.code).toBe('bad_request');
+      const rows = await db.select().from(messages);
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('F4: client-supplied history is capped', () => {
+    it('rejects a history with more than the max message count', async () => {
+      const { db } = await setupDemo();
+      const tooMany = Array.from({ length: 51 }, (_, i) => ({
+        id: `m${i}`,
+        role: 'user',
+        parts: [{ type: 'text', text: 'hi' }],
+      }));
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: tooMany, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a history over the total character budget', async () => {
+      const { db } = await setupDemo();
+      const huge = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'x'.repeat(24_001) }] }];
+      const res = await handleChatRequest(
+        { db, embedder: new HashEmbedder(), globalCapUsd: 50 },
+        chatReq({ messages: huge, conversationId: crypto.randomUUID() }),
+      );
+      expect(res.status).toBe(400);
+    });
   });
 });
