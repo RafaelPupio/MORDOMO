@@ -6,8 +6,8 @@ import { getDb } from '@/db/client';
 // Deliberately do NOT export `runtime = 'edge'`.
 export const maxDuration = 60;
 
-// C1: this is the only cost control set by hand in a dashboard, so it's also the only one
-// that can be typo'd. `Number("abc")` is `NaN`, and every `spend >= NaN` comparison in
+// This is the only cost control set by hand in a dashboard, so it's also the only one that
+// can be typo'd. `Number("abc")` is `NaN`, and every `spend >= NaN` comparison in
 // checkBudget() is false — a malformed value doesn't just misconfigure the cap, it deletes
 // it (fails OPEN). checkBudget already fails closed when a tenant has no budget row at all;
 // this parse must fail closed the same way. A missing OR malformed value both degrade to the

@@ -20,9 +20,26 @@ describe('seed corpus', () => {
     }
   });
 
-  it('events.json parses with valid dates', () => {
-    const eventsRaw = JSON.parse(readFileSync(path.join(SEED_DIR, 'events.json'), 'utf8')) as { startsAt: string; title: string }[];
-    expect(eventsRaw.length).toBeGreaterThanOrEqual(5);
-    for (const e of eventsRaw) expect(Number.isNaN(new Date(e.startsAt).getTime())).toBe(false);
+  it('every seed file in the corpus carries the fictional disclaimer, markdown or not', () => {
+    // The three .md files carry the disclaimer inline as prose (checked above); events.json
+    // is structured data with no prose to carry it in, so it carries the same guarantee as
+    // an explicit `disclaimer` field instead. This test covers the whole seed directory, not
+    // just files that happen to end in .md, so a future non-markdown seed file can't ship
+    // without the same guarantee by construction.
+    for (const file of readdirSync(SEED_DIR)) {
+      if (file.endsWith('.md')) continue;
+      const text = readFileSync(path.join(SEED_DIR, file), 'utf8');
+      expect(text).toMatch(/fictíci/i);
+    }
+  });
+
+  it('events.json parses with valid dates and a disclaimer', () => {
+    const eventsFile = JSON.parse(readFileSync(path.join(SEED_DIR, 'events.json'), 'utf8')) as {
+      disclaimer: string;
+      events: { startsAt: string; title: string }[];
+    };
+    expect(eventsFile.disclaimer).toMatch(/fictíci/i);
+    expect(eventsFile.events.length).toBeGreaterThanOrEqual(5);
+    for (const e of eventsFile.events) expect(Number.isNaN(new Date(e.startsAt).getTime())).toBe(false);
   });
 });

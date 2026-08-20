@@ -28,8 +28,8 @@ export async function saveMessage(
     conversationId: string;
     role: 'user' | 'assistant';
     parts: unknown;
-    // I5: when present, makes this insert idempotent per (conversationId, clientMessageId)
-    // — a second saveMessage call for the same client-authored turn (e.g. a retry resending
+    // When present, makes this insert idempotent per (conversationId, clientMessageId) — a
+    // second saveMessage call for the same client-authored turn (e.g. a retry resending
     // the same history) silently no-ops instead of inserting a duplicate row. Omitted for
     // assistant-authored messages, which have no client id and are never retried this way.
     clientMessageId?: string;

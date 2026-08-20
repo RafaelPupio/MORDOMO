@@ -1606,7 +1606,7 @@ git add -A && git commit -m "feat(channels): web chat handler with rate limit, b
 
 ## Endereço
 
-Rua das Palmeiras, 123 — Jardim Esperança, São Paulo/SP, CEP 04000-000.
+Rua das Palmeiras, 123 — Jardim Esperança, São Paulo/SP, CEP 04000-000 (endereço fictício).
 Estacionamento gratuito no local, com vagas acessíveis. A entrada principal tem rampa.
 
 ## Contato

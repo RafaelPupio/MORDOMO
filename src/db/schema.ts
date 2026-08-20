@@ -56,7 +56,7 @@ export const messages = pgTable('messages', {
   seq: integer('seq').notNull().generatedAlwaysAsIdentity(),
   role: text('role').notNull(), // 'user' | 'assistant'
   parts: jsonb('parts').notNull(), // AI SDK UIMessage parts (text, tool calls with citations)
-  // I5: the client-supplied message id (NOT a uuid — the AI SDK's default id generator is a
+  // The client-supplied message id (NOT a uuid — the AI SDK's default id generator is a
   // 16-char alphanumeric string, so this cannot reuse `id`, which stays a server-generated
   // uuid). Lets saveMessage make the user-message write idempotent across retries of the
   // same turn (regenerate() resends the same history, same id) without trusting the client
@@ -68,8 +68,8 @@ export const messages = pgTable('messages', {
 }, (t) => [
   // A plain (non-partial) unique index still lets multiple rows share a NULL
   // clientMessageId (Postgres treats NULLs as distinct for uniqueness), so this only
-  // constrains rows that actually carry a client id — exactly the ones I5's idempotency
-  // guard needs.
+  // constrains rows that actually carry a client id — exactly the ones the idempotency
+  // guard above needs.
   uniqueIndex('messages_conversation_client_id_idx').on(t.conversationId, t.clientMessageId),
 ]);
 

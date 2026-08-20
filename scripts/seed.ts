@@ -56,12 +56,14 @@ async function main() {
     console.log(`  ${file}: ${pieces.length} chunks`);
   }
 
-  const seedEvents = JSON.parse(readFileSync(path.join(SEED_DIR, 'events.json'), 'utf8')) as
-    { title: string; startsAt: string; location?: string; description?: string }[];
+  const eventsFile = JSON.parse(readFileSync(path.join(SEED_DIR, 'events.json'), 'utf8')) as {
+    disclaimer: string;
+    events: { title: string; startsAt: string; location?: string; description?: string }[];
+  };
   await db.insert(events).values(
-    seedEvents.map((e) => ({ churchId: church.id, title: e.title, startsAt: new Date(e.startsAt), location: e.location, description: e.description, verified: true })),
+    eventsFile.events.map((e) => ({ churchId: church.id, title: e.title, startsAt: new Date(e.startsAt), location: e.location, description: e.description, verified: true })),
   );
-  console.log(`  events.json: ${seedEvents.length} events`);
+  console.log(`  events.json: ${eventsFile.events.length} events`);
   console.log('Seed complete.');
 }
 

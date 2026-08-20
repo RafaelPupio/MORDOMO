@@ -46,8 +46,8 @@ describe('secretaryTools', () => {
     expect(ledger.some((u) => u.feature === 'chat.retrieval')).toBe(true);
   });
 
-  // A4: recordUsage must not be able to destroy a successful search. costUsd() throws
-  // for a model with no configured price, so an embedder reporting an unpriced model id
+  // recordUsage must not be able to destroy a successful search. costUsd() throws for a
+  // model with no configured price, so an embedder reporting an unpriced model id
   // (while still producing valid vectors, via the real HashEmbedder underneath) forces
   // the ledger write to fail without touching retrieval itself.
   it('still returns sources when metering the retrieval fails', async () => {
@@ -120,9 +120,9 @@ describe('secretaryTools', () => {
   });
 });
 
-// M7: `deps.model` may be a plain model-id string or a LanguageModel OBJECT (as every other
+// `deps.model` may be a plain model-id string or a LanguageModel OBJECT (as every other
 // test in this file passes via MockLanguageModelV3); an object carries no id to price by.
-describe('priceableModelId (M7)', () => {
+describe('priceableModelId', () => {
   it('prices under the actual model id when it is a plain string override', () => {
     expect(priceableModelId(FAST_MODEL)).toBe(FAST_MODEL);
     expect(priceableModelId(CHAT_MODEL)).toBe(CHAT_MODEL);
@@ -158,11 +158,11 @@ describe('runSecretary', () => {
     return new MockLanguageModelV3({ doStream: async () => ({ stream: simulateReadableStream({ chunks: streamChunks }) }) });
   }
 
-  // I3: mirrors the A4 test above (searchKnowledge's ledger-write guard), but for the OTHER
-  // recordUsage call in this file — the one runSecretary's onFinish makes for 'chat.reply',
-  // which previously had neither try/catch nor logging. "Poisoning the insert" here means a
-  // churchId that doesn't exist in `churches`, so usage_ledger's church_id foreign key fails
-  // on write — a failure independent of model pricing, unlike the A4 test's approach.
+  // Mirrors the searchKnowledge ledger-write-guard test above, but for the OTHER recordUsage
+  // call in this file — the one runSecretary's onFinish makes for 'chat.reply', which must
+  // not throw or go unlogged either. "Poisoning the insert" here means a churchId that
+  // doesn't exist in `churches`, so usage_ledger's church_id foreign key fails on write — a
+  // failure independent of model pricing, unlike the searchKnowledge test's approach.
   it('logs, rather than throws, when recording chat.reply usage fails — the failure is never silent', async () => {
     const db = await createTestDb();
     const model = await mockModel();
@@ -176,6 +176,7 @@ describe('runSecretary', () => {
           churchId: missingChurchId,
           churchName: 'Igreja Inexistente',
           conversationId,
+          visitorKey: 'test',
           uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,
         },
       );
@@ -203,6 +204,7 @@ describe('runSecretary', () => {
         churchId: church.id,
         churchName: church.name,
         conversationId: crypto.randomUUID(),
+        visitorKey: 'test',
         uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,
       },
     );

@@ -14,7 +14,7 @@ async function setupDemo() {
 }
 
 // `ip: null` omits x-forwarded-for entirely, simulating a caller behind no proxy header at
-// all (F2). `cookie` sets the `ccb_visitor` cookie the way a returning browser would.
+// all. `cookie` sets the `ccb_visitor` cookie the way a returning browser would.
 function chatReq(body: unknown, opts: { ip?: string | null; cookie?: string } = {}): Request {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   const ip = opts.ip === undefined ? '9.9.9.9' : opts.ip;
@@ -98,7 +98,7 @@ async function mockModelCapturingPrompts() {
   return { model, prompts };
 }
 
-// I5: simulates a model/gateway failure mid-call — the AI SDK catches a thrown doStream and
+// Simulates a model/gateway failure mid-call — the AI SDK catches a thrown doStream and
 // turns it into an 'error' part inside the UI message stream rather than a non-2xx HTTP
 // response, so no text/tool-output chunks are ever produced and the accumulated
 // responseMessage.parts handed to onEnd stays empty.
@@ -119,7 +119,7 @@ const userMessages = [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'O
 // Each part's text carries a MARK_* token unique to its turn number and role, so a test can
 // tell, just by substring search on the serialized prompt, which turns survived trimming.
 // Sized (repeat count tuned against this exact fixture) to land close to the ~3,100
-// characters/turn the reviewer measured against the live handler.
+// characters/turn a real grounded reply measures against the live handler.
 const GROUNDED_EXCERPT_SENTENCE = 'Este e um trecho de exemplo extraido da base de conhecimento da igreja. ';
 
 function groundedTurnMessages(turn: number) {
@@ -171,7 +171,7 @@ describe('handleChatRequest', () => {
     expect(res.status).toBe(400);
   });
 
-  // A5: prove the per-visitor limit itself trips 429, independent of the budget gate.
+  // Prove the per-visitor limit itself trips 429, independent of the budget gate.
   // The model is mocked so the within-limit requests can run their full course (rate
   // limiting is checked before the budget gate, and the budget gate is checked before
   // the model is ever invoked) without any network call.
@@ -224,7 +224,7 @@ describe('handleChatRequest', () => {
     expect(saved.every((m) => m.churchId === church.id)).toBe(true);
   });
 
-  describe('F1: conversation ownership rests on the server-set visitor cookie', () => {
+  describe('conversation ownership rests on the server-set visitor cookie', () => {
     it('sets a Set-Cookie for ccb_visitor on a first-time request, even one that gets rejected', async () => {
       const { db } = await setupDemo();
       const res = await handleChatRequest({ db, embedder: new HashEmbedder(), globalCapUsd: 50 }, chatReq({ nope: true }));
@@ -282,7 +282,7 @@ describe('handleChatRequest', () => {
     });
   });
 
-  describe('F2: header-less callers never collapse into one shared identity', () => {
+  describe('header-less callers never collapse into one shared identity', () => {
     it('gives two cookie-less, header-less callers different identities', async () => {
       const { db } = await setupDemo();
       const model = await mockModel();
@@ -308,7 +308,7 @@ describe('handleChatRequest', () => {
     });
   });
 
-  describe('F3: malformed bodies are rejected before any side effect', () => {
+  describe('malformed bodies are rejected before any side effect', () => {
     const cases: Array<[string, unknown]> = [
       ['message missing role and parts', {}],
       ['message missing parts', { role: 'user' }],
@@ -329,7 +329,7 @@ describe('handleChatRequest', () => {
     });
   });
 
-  describe('F4: client-supplied history is capped', () => {
+  describe('client-supplied history is capped', () => {
     it('rejects a history with more than the max message count', async () => {
       const { db } = await setupDemo();
       const tooMany = Array.from({ length: MAX_MESSAGES + 1 }, (_, i) => ({
@@ -344,14 +344,14 @@ describe('handleChatRequest', () => {
       expect(res.status).toBe(400);
     });
 
-    // (Round 3) This used to assert 200: a single message well under HISTORY_ABUSE_MAX_CHARS
-    // (256,000) but over MODEL_HISTORY_CHARS (24,000) reached the model whole, unstrimmed,
-    // because trimHistoryForModel never drops the newest message no matter its size. That
-    // was itself a gap (round 4): a public endpoint whose cost protection is a pre-request
-    // budget check must never let a single request hand the model more than the model-history
-    // budget. A legitimate chat turn is a message, not a document, so this is now a 400
-    // instead of a silent pass-through — see the F4 (round 4) group below for the full
-    // boundary coverage this test used to be the only proxy for.
+    // A single message well under HISTORY_ABUSE_MAX_CHARS (256,000) but over
+    // MODEL_HISTORY_CHARS (24,000) must not reach the model whole, unstrimmed, just because
+    // trimHistoryForModel never drops the newest message no matter its size. A public
+    // endpoint whose cost protection is a pre-request budget check must never let a single
+    // request hand the model more than the model-history budget. A legitimate chat turn is a
+    // message, not a document, so this is a 400 instead of a silent pass-through — see the
+    // "a single message over MODEL_HISTORY_CHARS" group below for the full boundary coverage
+    // this test is a proxy for.
     it('rejects a single huge newest user message that alone exceeds MODEL_HISTORY_CHARS, persisting nothing', async () => {
       const { db } = await setupDemo();
       const bigText = `MARK_ONLY ${'x'.repeat(100_000)}`;
@@ -368,13 +368,13 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // F4/F5 (round 2): a reviewer found the original `totalMessageChars` only summed `text`
-  // fields, so a non-text part payload — a tool-output part, a `file` part's `data:` URL,
-  // or a stray passthrough field — bypassed the cap by roughly 400x while still reaching
-  // the model and being persisted into `messages.parts`. F5 covers a separate defect: NUL
-  // and lone-surrogate characters passed shape validation but crashed the Postgres jsonb
-  // write with a 500 after a `conversations` row had already been inserted.
-  describe('F4/F5 (round 2): serialized-size cap and malformed-UTF-8 rejection', () => {
+  // A cap that only summed `part.text` fields would miss a non-text part payload — a
+  // tool-output part, a `file` part's `data:` URL, or a stray passthrough field — bypassing
+  // the cap by roughly 400x while it still reached the model and got persisted into
+  // `messages.parts`. Separately, NUL and lone-surrogate characters pass shape validation
+  // but would crash the Postgres jsonb write with a 500 after a `conversations` row had
+  // already been inserted.
+  describe('serialized-size cap and malformed-UTF-8 rejection', () => {
     it('rejects a single message whose non-text tool-output payload is huge, persisting nothing', async () => {
       const { db } = await setupDemo();
       const conversationId = crypto.randomUUID();
@@ -404,11 +404,11 @@ describe('handleChatRequest', () => {
       expect(await db.select().from(messages)).toHaveLength(0);
     });
 
-    // (Round 3) This used to assert 400: 40 small messages summing to ~33,000 characters is
-    // well over the old single MAX_TOTAL_CHARS (24,000) but nowhere near abusive — it's
-    // comfortably under HISTORY_ABUSE_MAX_CHARS (256,000). That "reject an honest, merely
-    // long history" behavior was the regression. It now gets trimmed for the model (see the
-    // dedicated F4 (round 3) tests below) and the request completes normally.
+    // 40 small messages summing to ~33,000 characters is well over MODEL_HISTORY_CHARS
+    // (24,000) but nowhere near abusive — comfortably under HISTORY_ABUSE_MAX_CHARS
+    // (256,000). Rejecting an honest, merely long history would be wrong: it gets trimmed
+    // for the model instead (see the dedicated "history over MODEL_HISTORY_CHARS is
+    // trimmed" tests below) and the request completes normally.
     it('still returns 200 for many individually-small messages whose serialized total exceeds MODEL_HISTORY_CHARS but not the abuse bound', async () => {
       const { db } = await setupDemo();
       const model = await mockModel();
@@ -526,15 +526,14 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // F4 (round 3): a reviewer measured that a normal, non-abusive conversation where the
-  // secretary cites sources costs ~3,100 serialized characters per grounded turn. Once a
-  // visitor crossed the old single MAX_TOTAL_CHARS (24,000, around turn 9), every
-  // subsequent turn 400'd — permanently, because the client keeps resending the whole
-  // growing history. The fix splits one bound into two: HISTORY_ABUSE_MAX_CHARS (256,000)
-  // still hard-rejects genuinely abusive requests before any DB write; MODEL_HISTORY_CHARS
-  // (24,000, unchanged in value, changed in role) now silently trims what's sent to the
-  // model instead of rejecting the request.
-  describe('F4 (round 3): history over MODEL_HISTORY_CHARS is trimmed, not rejected', () => {
+  // A normal, non-abusive conversation where the secretary cites sources costs ~3,100
+  // serialized characters per grounded turn. A single bound that rejects once history
+  // crosses 24,000 characters (around turn 9) would 400 every subsequent turn permanently,
+  // because the client keeps resending the whole growing history. So the bound is split in
+  // two: HISTORY_ABUSE_MAX_CHARS (256,000) hard-rejects genuinely abusive requests before
+  // any DB write; MODEL_HISTORY_CHARS (24,000) silently trims what's sent to the model
+  // instead of rejecting the request.
+  describe('history over MODEL_HISTORY_CHARS is trimmed, not rejected', () => {
     it('still returns 200 turn after turn, past the point that used to 400 (the regression)', async () => {
       const { db } = await setupDemo();
       const model = await mockModel();
@@ -554,9 +553,9 @@ describe('handleChatRequest', () => {
         history = [...history, assistantMsg];
       }
 
-      // Turn 9's history alone is already ~28,000 characters (over the old 24,000 cap) —
-      // this is exactly the point the reviewer found permanently broken. Turn 12 proves it
-      // isn't a one-time fluke: the conversation keeps working as it keeps growing.
+      // Turn 9's history alone is already ~28,000 characters (over MODEL_HISTORY_CHARS) —
+      // exactly the point where a single hard-reject bound would break permanently. Turn 12
+      // proves it isn't a one-time fluke: the conversation keeps working as it keeps growing.
       expect(statusByTurn.get(9)).toBe(200);
       expect(statusByTurn.get(12)).toBe(200);
       // Every turn, not just 9 and 12 — the fix isn't turn-specific.
@@ -632,14 +631,14 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // F4 (round 4): trimHistoryForModel always keeps the newest message whole (correct — the
-  // user's current turn must never be trimmed away), but that meant a single oversized
-  // newest message bypassed MODEL_HISTORY_CHARS entirely and reached the model at up to
-  // HISTORY_ABUSE_MAX_CHARS. This group proves the new rule: a single message over
-  // MODEL_HISTORY_CHARS is now a 400, the boundary itself is exact (not off-by-one in the
-  // rejecting direction), and the round-3 fix (trim, don't reject, when the TOTAL is large
-  // but every individual message is small) still holds.
-  describe('F4 (round 4): a single message over MODEL_HISTORY_CHARS is rejected, not silently sent to the model', () => {
+  // trimHistoryForModel always keeps the newest message whole (correct — the user's current
+  // turn must never be trimmed away), but that alone would let a single oversized newest
+  // message bypass MODEL_HISTORY_CHARS entirely and reach the model at up to
+  // HISTORY_ABUSE_MAX_CHARS. This group proves the guarding rule: a single message over
+  // MODEL_HISTORY_CHARS is a 400, the boundary itself is exact (not off-by-one in the
+  // rejecting direction), and trimming (not rejecting) still holds when the TOTAL is large
+  // but every individual message is small.
+  describe('a single message over MODEL_HISTORY_CHARS is rejected, not silently sent to the model', () => {
     // Builds a message whose JSON.stringify(...).length is exactly `targetChars`, so the
     // boundary tests below can target MODEL_HISTORY_CHARS +/- 1 precisely instead of an
     // approximate fixture size. Padding with plain ASCII 'x' characters adds exactly
@@ -685,9 +684,9 @@ describe('handleChatRequest', () => {
       expect(await db.select().from(messages)).not.toHaveLength(0);
     });
 
-    // Regression guard: the new per-message cap must not resurrect the round-3 bug, where an
-    // honest, long conversation got hard-rejected once its TOTAL crossed the character cap.
-    // Every individual message here stays well under MODEL_HISTORY_CHARS; only the running
+    // Regression guard: the per-message cap must not reintroduce hard-rejecting an honest,
+    // long conversation once its TOTAL crosses the character cap. Every individual message
+    // here stays well under MODEL_HISTORY_CHARS; only the running
     // total across the whole conversation grows past it. That must still be 200 with the
     // model-side history trimmed, never a 400 — a per-message cap is not a reintroduced
     // total-history cap.
@@ -714,14 +713,14 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // I1: trimHistoryForModel cuts on size alone, so which role ends up first depends only on
+  // trimHistoryForModel cuts on size alone, so which role ends up first depends only on
   // message sizes — a realistic conversation (long visitor questions, short replies, per the
   // system prompt's "keep answers short") regularly lands the cut on an assistant message.
   // The Anthropic Messages API requires the first message to be role 'user'.
-  describe('I1: the prompt handed to the model always starts on a user turn', () => {
+  describe('the prompt handed to the model always starts on a user turn', () => {
     // Alternating long-user / short-assistant turns, sized so that size-based trimming alone
-    // (without the I1 fix) would cut right after an assistant reply, landing the kept suffix
-    // on that assistant message. Mirrors the reviewer's exact repro shape.
+    // (without advancing to the next user turn) would cut right after an assistant reply,
+    // landing the kept suffix on that assistant message.
     function longUserShortAssistantHistory(turns: number, userChars: number) {
       const msgs: unknown[] = [];
       for (let turn = 1; turn <= turns; turn++) {
@@ -763,12 +762,12 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // I2: `resolveRateLimitIdentity` used to fall back to the per-request visitorId whenever no
-  // platform IP header was present — but that visitorId is a FRESH UUID whenever the caller
-  // also has no existing cookie, so a cookie-less, header-less caller got a brand-new bucket
-  // every single request (`curl` in a loop, no cookie jar). Fixed: that traffic now shares
-  // one constant bucket.
-  describe('I2: cookie-less, header-less callers share one rate-limit bucket', () => {
+  // Falling back to the per-request visitorId whenever no platform IP header is present
+  // would be wrong — that visitorId is a FRESH UUID whenever the caller also has no existing
+  // cookie, so a cookie-less, header-less caller would get a brand-new bucket every single
+  // request (`curl` in a loop, no cookie jar). Instead that traffic shares one constant
+  // bucket.
+  describe('cookie-less, header-less callers share one rate-limit bucket', () => {
     it('trips 429 well before 30 requests, and creates only one rate_limits row for all of them', async () => {
       const { db } = await setupDemo();
       const model = await mockModel();
@@ -796,15 +795,14 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // I4: the per-visitor window must actually be an hour now, not just a comment change —
-  // prove the limit does NOT reset 10 minutes in, which is exactly when the old 600s window
-  // used to roll over.
-  describe('I4: the per-visitor limit window is calibrated to the demo budget (hourly, not 10-minute)', () => {
-    it('exports the new, hourly limit', () => {
+  // The per-visitor window must actually be an hour, not just documented as one — prove the
+  // limit does NOT reset 10 minutes in.
+  describe('the per-visitor limit window is calibrated to the demo budget (hourly, not 10-minute)', () => {
+    it('exports the hourly limit', () => {
       expect(CHAT_LIMIT).toEqual({ limit: 20, windowSeconds: 3600 });
     });
 
-    it('stays exhausted 10 minutes after the limit trips, unlike the old 10-minute window', async () => {
+    it('stays exhausted 10 minutes after the limit trips, not just a 10-minute window', async () => {
       const { db } = await setupDemo();
       const model = await mockModel();
       const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
@@ -834,10 +832,11 @@ describe('handleChatRequest', () => {
     });
   });
 
-  // I5: persistence used to be unconditional on both sides of the exchange — a failed model
-  // call still wrote an empty assistant row, and a retried turn (regenerate() resends the
-  // same history) still wrote a second, duplicate user row for the same client message id.
-  describe('I5: failed and retried turns do not corrupt the transcript', () => {
+  // Persistence must not be unconditional on either side of the exchange — a failed model
+  // call should not write an empty assistant row, and a retried turn (regenerate() resends
+  // the same history) should not write a second, duplicate user row for the same client
+  // message id.
+  describe('failed and retried turns do not corrupt the transcript', () => {
     it('does not persist an empty assistant row when the model call fails', async () => {
       const { db } = await setupDemo();
       const model = await mockFailingModel();

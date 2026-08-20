@@ -76,8 +76,14 @@ Append-only. Newest at the bottom of each day, newest day at the top.
 - **Each church fact gets its own `##` section in the seed corpus.** Measured against the
   real chunker, a bulletin that bundled five events into one chunk made "qual o endereço?"
   and "quando é o encontro dos jovens?" return the *wrong* chunk as their only citation —
-  worse for the demo than answering "I don't know". Restructured: 10/10 benchmark
-  questions now rank the correct chunk first.
+  worse for the demo than answering "I don't know". Restructured: `npm run
+  benchmark:retrieval` (`scripts/retrieval-benchmark.ts`, committed 2026-08-20) now scores
+  10/10 on the ten benchmark questions — but that number is offline only, scored against the
+  deterministic bag-of-words `HashEmbedder`, not yet against the real `GatewayEmbedder`
+  (`openai/text-embedding-3-small`) that will actually serve visitors. Re-running the
+  benchmark with `BENCHMARK_REAL_EMBEDDER=1` against a real production seed is a gate before
+  the demo is public — word-overlap ranking behavior is not guaranteed to transfer to a
+  semantic embedding model.
 - **Citation excerpts are centred on the matching text**, with ellipsis markers, instead
   of taking the first 400 characters — otherwise the sentence that earned the match could
   be invisible in the citation shown to the visitor.

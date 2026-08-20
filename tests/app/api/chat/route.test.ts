@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GLOBAL_CAP_USD, parseGlobalCapUsd } from '@/app/api/chat/route';
 
-// C1: `Number(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP ?? '50')` used to fail OPEN on a
-// malformed value — `Number("abc")` is `NaN`, and `spend >= NaN` is always `false`, so a
+// `Number(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP ?? '50')` would fail OPEN on a malformed
+// value — `Number("abc")` is `NaN`, and `spend >= NaN` is always `false`, so a
 // typo in this hand-set dashboard value silently deleted the global budget cap instead of
 // misconfiguring it. checkBudget() fails closed when a tenant has no budget row at all; this
 // parse must fail closed the same way — a missing OR malformed value both degrade to the

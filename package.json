@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "benchmark:retrieval": "tsx scripts/retrieval-benchmark.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.71",

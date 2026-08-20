@@ -19,7 +19,12 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   `createPrayerRequest`, `escalateToHuman`.
 - RAG over pgvector with citation excerpts centred on the matching text.
 - Seed corpus for the fictional *Igreja da Colina*: 3 Portuguese documents + 6 events.
-  All ten benchmark visitor questions retrieve the right chunk first.
+  `scripts/retrieval-benchmark.ts` (`npm run benchmark:retrieval`) scores 10/10 on the ten
+  benchmark visitor questions — but only measured offline, against the deterministic
+  bag-of-words `HashEmbedder`. It has NOT yet been run against the real embedder
+  (`GatewayEmbedder`, `openai/text-embedding-3-small`) that will actually serve visitors.
+  Re-running it with `BENCHMARK_REAL_EMBEDDER=1` against the real production seed is a gate
+  before the demo is public.
 - Cost controls: `usage_ledger` on every LLM/embedding call, per-tenant monthly budget
   (fails closed), atomic per-visitor rate limit, request-size bounds.
 - Chat UI at `/chat` with source chips, bilingual disclaimer, and error recovery.
@@ -30,13 +35,17 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
 device-login flow needs a browser and times out unattended. Once Rafael runs
 `vercel login`, the remaining steps are: provision Neon via
 `vercel integration add neon`, `npm run db:migrate`, `npm run seed` (with the REAL
-embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`, `vercel deploy --prod`.
+embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
+`BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` against that real seed to confirm
+retrieval quality holds with real embeddings (not just the offline HashEmbedder number),
+`vercel deploy --prod`.
 
 Nothing has been deployed and no cloud resource has been created.
 
 ## Next
 
-1. Rafael authenticates Vercel → finish Task 13 (provision, migrate, seed, deploy, verify).
+1. Rafael authenticates Vercel → finish Task 13 (provision, migrate, seed, benchmark
+   against the real embedder, deploy, verify).
 2. Merge Plan 1.
 3. Plan 2 — document ingest pipeline (multi-agent extract → verify).
 

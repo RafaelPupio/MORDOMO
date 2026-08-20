@@ -1,9 +1,10 @@
 import { convertToModelMessages, stepCountIs, streamText, tool } from 'ai';
-import type { LanguageModel, UIMessage } from 'ai';
+import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { Embedder } from '@/ai/embedder';
 import { CHAT_MODEL } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
+import type { IncomingChat } from '@/core/channel';
 import { searchKnowledgeBase } from '@/core/retrieval';
 import type { Db } from '@/db/client';
 import { listUpcomingEvents } from '@/db/repo/events';
@@ -11,12 +12,11 @@ import { createPrayerRequest } from '@/db/repo/prayer';
 import { createTicket } from '@/db/repo/tickets';
 
 export type SecretaryDeps = { db: Db; embedder: Embedder; model?: LanguageModel };
-export type SecretaryInput = {
-  churchId: string;
-  churchName: string;
-  conversationId: string;
-  uiMessages: UIMessage[];
-};
+// The agent's input IS the channel envelope (IncomingChat) plus the one piece of context
+// no transport can supply on its own: the display name to greet the visitor with. Every
+// adapter (web today, WhatsApp later) constructs an IncomingChat and hands it here —
+// see src/core/channel.ts for what that seam is and isn't responsible for.
+export type SecretaryInput = IncomingChat & { churchName: string };
 
 function systemPrompt(churchName: string): string {
   return [
@@ -87,9 +87,9 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
   };
 }
 
-// M7: `deps.model` can be a plain model-id string (the production default, or a real
-// override) or a LanguageModel OBJECT (e.g. MockLanguageModelV3 in tests) — an object has no
-// id to look up a price by, so pricing falls back to CHAT_MODEL in that case. Without this,
+// `deps.model` can be a plain model-id string (the production default, or a real override)
+// or a LanguageModel OBJECT (e.g. MockLanguageModelV3 in tests) — an object has no id to
+// look up a price by, so pricing falls back to CHAT_MODEL in that case. Without this,
 // usage was always priced under CHAT_MODEL even when a string override was in play, silently
 // mispricing every call made under the override. Exported so tests can assert this decision
 // directly, without needing to route a real (network-resolving) string model id through
@@ -108,8 +108,8 @@ export async function runSecretary(deps: SecretaryDeps, input: SecretaryInput) {
     tools: secretaryTools(deps, { churchId: input.churchId, conversationId: input.conversationId }),
     stopWhen: stepCountIs(5),
     onFinish: async ({ usage }) => {
-      // I3: mirrors the searchKnowledge tool's ledger-write guard above — a failed insert
-      // must not crash a chat reply that has already streamed to the visitor. Unlike that
+      // Mirrors the searchKnowledge tool's ledger-write guard above — a failed insert must
+      // not crash a chat reply that has already streamed to the visitor. Unlike that
       // sibling call, this is the expensive half of every turn's cost; swallowing it without
       // logging (as this used to) makes budget under-counting both permanent (the record
       // never happens) and invisible (nothing anywhere says it didn't).
