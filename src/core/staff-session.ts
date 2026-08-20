@@ -13,6 +13,8 @@ export type StaffSession = {
  * Constant-time password check that fails CLOSED: an unset or empty configured password
  * means nobody may sign in, never everybody. Compares byte length first so
  * `timingSafeEqual` cannot throw on a length mismatch (including multibyte input).
+ * Note: the length pre-check leaks the configured password's byte length via early return,
+ * trading constant-time compliance for robustness against attacker-controlled byte sequences.
  */
 export function checkStaffPassword(
   presented: string | undefined,
@@ -53,9 +55,15 @@ export function verifySession(
 
   try {
     const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StaffSession;
-    if (typeof parsed?.churchId !== 'string' || typeof parsed?.expiresAt !== 'number') return null;
+    if (typeof parsed?.churchId !== 'string') return null;
+    if (!Number.isFinite(parsed?.expiresAt)) return null;
+    if (!Number.isFinite(parsed?.issuedAt)) return null;
     if (parsed.expiresAt <= now.getTime()) return null;
-    return parsed;
+    return {
+      churchId: parsed.churchId,
+      issuedAt: parsed.issuedAt,
+      expiresAt: parsed.expiresAt,
+    };
   } catch {
     return null;
   }
