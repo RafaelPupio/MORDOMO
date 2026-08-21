@@ -1,5 +1,6 @@
 import { draftReply, type ReplyDrafterDeps } from '@/agent/reply-drafter';
 import { isUuid } from '@/core/ids';
+import { textFromParts } from '@/core/message-text';
 import type { Source } from '@/core/retrieval';
 import type { Db } from '@/db/client';
 import { listMessages, saveMessage } from '@/db/repo/chat';
@@ -85,18 +86,6 @@ const MAX_EXCERPT_MESSAGES = 20;
 // keeping the worst case (MAX_EXCERPT_MESSAGES x a message at MODEL_HISTORY_CHARS) from ever
 // reaching the prompt at all.
 const MAX_EXCERPT_CHARS = 8_000;
-
-// Pulls the text out of an AI SDK UIMessage `parts` array (src/db/schema.ts's `messages`
-// table stores exactly this shape). Anything that isn't a `text` part (tool calls, etc.) is
-// dropped — the drafter's prompt wants prose, not a transcript of tool plumbing.
-function textFromParts(parts: unknown): string {
-  if (!Array.isArray(parts)) return '';
-  return parts
-    .filter((p): p is { type: unknown; text?: unknown } => typeof p === 'object' && p !== null)
-    .filter((p) => p.type === 'text' && typeof p.text === 'string')
-    .map((p) => p.text as string)
-    .join(' ');
-}
 
 // True when every part of a message is a plain `text` part — i.e. nothing in it came from a
 // tool call. Used by `getSentTicketReply` below to tell a staff-typed reply apart from the
