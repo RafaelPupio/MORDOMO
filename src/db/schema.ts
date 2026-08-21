@@ -1,5 +1,5 @@
 import {
-  boolean, index, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid, vector,
+  boolean, index, integer, jsonb, pgTable, real, text, timestamp, unique, uniqueIndex, uuid, vector,
 } from 'drizzle-orm/pg-core';
 
 export const churches = pgTable('churches', {
@@ -123,3 +123,13 @@ export const rateLimits = pgTable('rate_limits', {
   windowStart: timestamp('window_start').notNull(),
   count: integer('count').notNull(),
 });
+
+export const reports = pgTable('reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  churchId: uuid('church_id').notNull().references(() => churches.id),
+  periodStart: timestamp('period_start').notNull(),
+  periodEnd: timestamp('period_end').notNull(),
+  findings: jsonb('findings').notNull(),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (t) => [unique('reports_church_period_key').on(t.churchId, t.periodStart)]);
