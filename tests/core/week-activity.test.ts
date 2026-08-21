@@ -149,6 +149,26 @@ describe('gatherWeekActivity', () => {
     expect(activity.prayerRequests[0].length).toBeLessThan(longRequest.length);
   });
 
+  // Minor finding: counts.conversations used to count a conversation touched by ANY
+  // message (visitor or assistant), which double-counted a thread where only a staff
+  // reply landed this week — inflating "conversations" while contributing zero visitor
+  // messages. It must now mirror its siblings (visitorMessages, prayerRequests, tickets)
+  // and count only conversations with a visitor message in the window.
+  it('counts.conversations only counts conversations with a visitor message in the window', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const convWithVisitor = await seedConversation(db, church.id, 'v1');
+    const staffOnlyConv = await seedConversation(db, church.id, 'v2');
+
+    await seedMessage(db, church.id, convWithVisitor, 'user', [{ type: 'text', text: 'pergunta do visitante' }], IN_WINDOW);
+    await seedMessage(db, church.id, staffOnlyConv, 'assistant', [{ type: 'text', text: 'apenas a equipe respondeu aqui' }], IN_WINDOW);
+
+    const activity = await gatherWeekActivity(db, church.id, PERIOD_START, PERIOD_END);
+
+    expect(activity.counts.conversations).toBe(1);
+    expect(activity.counts.visitorMessages).toBe(1);
+  });
+
   it('extracts text from AI-SDK parts; a message with only a tool part yields nothing', async () => {
     const db = await createTestDb();
     const church = await seedChurch(db);

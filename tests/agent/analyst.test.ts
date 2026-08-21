@@ -151,6 +151,99 @@ describe('analyzeWeek', () => {
     spy.mockRestore();
   });
 
+  // C1: the closed vocabulary (`z.enum(PRAYER_THEME_VALUES)`) is a STRUCTURAL defense,
+  // not an advisory one. A model returning a theme that leaks a name and a diagnosis
+  // cannot express that inside `prayerThemes.theme` — the value simply doesn't validate
+  // against the enum, `generateObject` throws for the WHOLE payload, and `analyzeWeek`'s
+  // existing null-on-failure path takes over. This is the reviewer's exact probe: the
+  // identifying string must never reach the returned findings, in any form.
+  it('a theme that leaks identifying detail (the reviewer\'s exact probe) cannot reach the returned findings — fails closed to null', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const leaking = 'Maria pede oração porque o marido dela tem câncer';
+    const model = await findingsModel({
+      ...FINDINGS_PAYLOAD,
+      prayerThemes: [{ theme: leaking, count: 1 }],
+    });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const week = activity({
+      prayerRequests: ['peço oração pela saúde do meu esposo'],
+      counts: { conversations: 1, visitorMessages: 0, prayerRequests: 1, tickets: 0 },
+    });
+
+    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+
+    expect(out).toBeNull();
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  // C1 fallback handling + I2: an off-vocabulary theme that is NOT identifying (just
+  // outside the fixed list) is rejected the same structural way — the whole call fails
+  // closed to null, by deliberate design (see the trade-off comment on
+  // `findingsSchema.prayerThemes` in src/agent/analyst.ts). The real, billable usage the
+  // model call incurred (300 in / 120 out, same numbers the reviewer measured) must still
+  // land in usage_ledger — a malformed-output call still cost money — per the
+  // NoObjectGeneratedError precedent already in src/agent/extractor.ts.
+  it('rejects an off-vocabulary theme by failing closed to null, and still meters the real usage spent on the failed call', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await findingsModel({
+      ...FINDINGS_PAYLOAD,
+      prayerThemes: [{ theme: 'clima', count: 1 }], // not a member of PRAYER_THEME_VALUES
+    });
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const week = activity({
+      prayerRequests: ['pedido qualquer'],
+      counts: { conversations: 1, visitorMessages: 0, prayerRequests: 1, tickets: 0 },
+    });
+
+    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+
+    expect(out).toBeNull();
+    const ledger = await db.select().from(usageLedger);
+    const rows = ledger.filter((u) => u.feature === 'report.analyze');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].inputTokens).toBe(300);
+    expect(rows[0].outputTokens).toBe(120);
+    spy.mockRestore();
+  });
+
+  // I3: `count` is left unbounded in the schema (see the comment in src/agent/analyst.ts)
+  // so one bad count can't invalidate the whole week's findings, and is clamped to a
+  // non-negative integer post-hoc instead — same precedent as `confidence` in
+  // src/agent/extractor.ts.
+  it('clamps negative, absurd, and non-integer counts to non-negative integers', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const model = await findingsModel({
+      ...FINDINGS_PAYLOAD,
+      topQuestions: [
+        { question: 'pergunta negativa', count: -5 },
+        { question: 'pergunta absurda', count: Number.MAX_SAFE_INTEGER },
+        { question: 'pergunta fracionada', count: 3.7 },
+      ],
+      prayerThemes: [{ theme: 'saúde', count: -2 }],
+    });
+
+    const week = activity({
+      visitorQuestions: ['pergunta negativa', 'pergunta absurda', 'pergunta fracionada'],
+      prayerRequests: ['pedido de saúde'],
+      counts: { conversations: 1, visitorMessages: 3, prayerRequests: 1, tickets: 0 },
+    });
+
+    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+
+    expect(out).not.toBeNull();
+    expect(out!.topQuestions.every((q) => Number.isInteger(q.count) && q.count >= 0)).toBe(true);
+    expect(out!.topQuestions.find((q) => q.question === 'pergunta negativa')?.count).toBe(0);
+    expect(out!.topQuestions.find((q) => q.question === 'pergunta fracionada')?.count).toBe(4);
+    expect(out!.topQuestions.find((q) => q.question === 'pergunta absurda')?.count).toBe(Number.MAX_SAFE_INTEGER);
+    expect(out!.prayerThemes[0].count).toBe(0);
+  });
+
   it('prices the ledger row under the actual string model id passed via deps.model, not the FAST_MODEL default', async () => {
     const db = await createTestDb();
     const church = await seedChurch(db);

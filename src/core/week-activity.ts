@@ -84,13 +84,18 @@ export async function gatherWeekActivity(
         lt(messages.createdAt, periodEnd),
       )),
 
-    // Distinct conversations touched by ANY message (visitor or assistant) in the window —
-    // "how many threads had activity", not just "how many the visitor spoke first in".
+    // Distinct conversations that had at least one VISITOR message in the window — mirrors
+    // every sibling count below (visitorMessages, prayerRequests, tickets), which all count
+    // visitor-submitted activity, not staff activity. Without `role = 'user'` here, a
+    // conversation where only a staff reply landed this week would inflate this count while
+    // contributing zero visitor messages — "5 conversations, but only 2 visitor messages" in
+    // a digest.
     db
       .select({ count: sql<number>`count(distinct ${messages.conversationId})` })
       .from(messages)
       .where(and(
         eq(messages.churchId, churchId),
+        eq(messages.role, 'user'),
         gte(messages.createdAt, periodStart),
         lt(messages.createdAt, periodEnd),
       )),
