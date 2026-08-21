@@ -27,3 +27,17 @@ export function parseGlobalCapUsd(raw: string | undefined): number {
   }
   return parsed;
 }
+
+// Shared, for the same "one neutral module, not one route's" reason as the cap parsing
+// above: `POST /api/ingest` (src/channels/ingest-http.ts) and the staff dashboard's upload
+// form (src/app/staff/(dashboard)/documentos/actions.ts) both run the SAME `runIngest`
+// pipeline for the SAME tenant, and both are reachable by the same authenticated staff
+// session — that route accepts the identical `ccb_staff` session cookie the dashboard form
+// does. Before this fix they rate-limited themselves against two separate keys
+// (`ingest:${churchId}` vs `staff-ingest:${churchId}`) with two separately-declared-but-
+// identical `{ limit: 10, windowSeconds: 3600 }` objects, so one staff session could run the
+// pipeline 20 times/hour — double either limit's own intent — just by alternating which path
+// it used. Both call sites now share this ONE constant and the SAME rate-limit key
+// (`ingest:${churchId}`), so the numbers can't silently drift apart again either (M5, the
+// Plan 3 whole-branch review).
+export const INGEST_LIMIT = { limit: 10, windowSeconds: 3600 };

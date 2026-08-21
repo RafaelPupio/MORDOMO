@@ -46,12 +46,49 @@ explicit placeholder for exactly this — has been removed from the code and fro
 `.env.example`, per the decision recorded when it was introduced. Not yet merged, not
 yet deployed.
 
+**2026-08-20** — **Plan 3 whole-branch review fixes landed** (234 tests green, typecheck
++ lint + build clean). The review's C1 finding was that a staff-sent support reply was
+terminal storage: `chat.tsx` minted a brand-new `conversationId` on every page load and
+no route ever read `messages` back, so the reply — and the visitor's own history — never
+reached anyone, no matter how long they waited or how often they returned. Fixed for
+real, not just documented: a new `GET /api/chat/history` route
+(`src/channels/web.ts`'s `handleChatHistoryRequest`) resolves the same `ccb_visitor`
+cookie the POST path already trusts for ownership, looks up that visitor's conversation
+by `(churchId, visitorKey)` (`getConversationByVisitor`, `src/db/repo/chat.ts` — chosen
+over a second cookie specifically so ownership has one source of truth, not two that
+could drift), and returns its full transcript; the client (`chat.tsx`) now fetches that
+on mount and only mints a fresh `conversationId` itself when the server genuinely has
+none (first-time visitor). `sendTicketReply`'s write was already in the right shape (a
+plain assistant text part) — nothing there needed to change. Also fixed: `uploadDocument`
+now wraps its rate-limit and budget DB calls in the same try/catch as everything else
+(I2); a new `src/app/staff/(dashboard)/error.tsx` client error boundary catches a DB
+failure inside `requireStaffContext()` instead of leaking a raw `NeonDbError` digest
+(I3); the reply drafter's conversation excerpt is now bounded by characters
+(`MAX_EXCERPT_CHARS = 8,000`), not just message count, closing a path to a
+~$0.12-per-call `support.draft` prompt (I4); the staff dashboard's upload form and
+`POST /api/ingest` now share one rate-limit bucket and one `INGEST_LIMIT` constant
+(`src/core/config.ts`) instead of two 10/hour buckets that together allowed 20 ingest
+runs/hour per session (M5); `/staff/uso` now shows the global demo-wide cap alongside
+the tenant cap, since a low `DEMO_GLOBAL_MONTHLY_USD_CAP` used to show a green tenant bar
+while every AI call was actually being refused (M6); a shared `formatUsd4`
+(`src/core/format.ts`) replaced two formatters that had drifted to different precision
+(M7); `getSentTicketReply` now checks `isUuid` first like every sibling function in that
+file already claimed to (M8); a redundant second default in the global-cap parse was
+dropped (M9); the hub's agenda tile shows a real event count instead of "Ver agenda"
+(M10); and two slightly different Portuguese "try again" strings were unified (M13).
+Full findings, decisions, and verification output:
+`.superpowers/sdd/plan3-final-fixes-report.md`.
+
 ## What runs today
 
 The whole chat path exists and is tested end to end against an in-memory Postgres:
 
 - `POST /api/chat` → rate limit → budget gate → conversation ownership → secretary agent
   → streamed reply, with the user turn and the assistant turn persisted.
+- `GET /api/chat/history` resumes a returning visitor's own conversation (matched by the
+  same `ccb_visitor` cookie the POST path trusts for ownership) instead of the client
+  starting a fresh, empty one on every page load — this is also how a staff-sent support
+  reply actually reaches the visitor who asked, the next time they open `/chat`.
 - The secretary is one tool-using agent: `searchKnowledge`, `getCalendar`,
   `createPrayerRequest`, `escalateToHuman`.
 - RAG over pgvector with citation excerpts centred on the matching text.

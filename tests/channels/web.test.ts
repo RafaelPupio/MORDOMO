@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HashEmbedder } from '@/ai/embedder';
-import { CHAT_LIMIT, HISTORY_ABUSE_MAX_CHARS, MAX_MESSAGES, MODEL_HISTORY_CHARS, handleChatRequest } from '@/channels/web';
+import {
+  CHAT_LIMIT, HISTORY_ABUSE_MAX_CHARS, MAX_MESSAGES, MODEL_HISTORY_CHARS,
+  handleChatHistoryRequest, handleChatRequest,
+} from '@/channels/web';
+import { sendTicketReply } from '@/core/staff-operations';
+import { createTicket } from '@/db/repo/tickets';
 import { budgets, churches, conversations, messages, rateLimits, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
@@ -25,6 +30,14 @@ function chatReq(body: unknown, opts: { ip?: string | null; cookie?: string } = 
     headers,
     body: JSON.stringify(body),
   });
+}
+
+// GET /api/chat/history takes no body and no IP/rate-limit headers — the only thing that
+// matters to it is the visitor cookie (or its absence).
+function historyReq(cookie?: string): Request {
+  const headers: Record<string, string> = {};
+  if (cookie) headers.cookie = `${VISITOR_COOKIE}=${cookie}`;
+  return new Request('http://test/api/chat/history', { headers });
 }
 
 function visitorCookieFrom(res: Response): string {
@@ -879,5 +892,82 @@ describe('handleChatRequest', () => {
       expect(saved.filter((m) => m.role === 'user')).toHaveLength(1); // not duplicated
       expect(saved.filter((m) => m.role === 'assistant')).toHaveLength(2); // each call still gets its own reply
     });
+  });
+});
+
+// C1: before this route existed, a staff-sent reply (`sendTicketReply`,
+// src/core/staff-operations.ts) was terminal storage — nothing ever read `messages` back for
+// the visitor, so it never reached them, including on a later visit. `handleChatHistoryRequest`
+// is what makes it reachable: it resolves the SAME `ccb_visitor` cookie `handleChatRequest`
+// already trusts for ownership, looks up that visitor's conversation
+// (`getConversationByVisitor`, src/db/repo/chat.ts), and returns its full transcript.
+describe('handleChatHistoryRequest', () => {
+  it('returns an empty result when there is no cookie at all', async () => {
+    const { db } = await setupDemo();
+    const res = await handleChatHistoryRequest({ db }, historyReq());
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ conversationId: null, messages: [] });
+  });
+
+  it("returns an empty result for a cookie that has never chatted (no conversation yet)", async () => {
+    const { db } = await setupDemo();
+    const res = await handleChatHistoryRequest({ db }, historyReq(crypto.randomUUID()));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ conversationId: null, messages: [] });
+  });
+
+  it("returns the owning visitor's own prior turns, in order — including a staff-sent reply, which is now reachable at all (C1)", async () => {
+    const { db } = await setupDemo();
+    const model = await mockModel();
+    const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+    const conversationId = crypto.randomUUID();
+
+    // The visitor's own turn (persisted by the POST path, as usual).
+    const chatRes = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }));
+    const cookie = visitorCookieFrom(chatRes);
+    await chatRes.text(); // drain so the assistant reply is persisted too
+
+    // Staff escalate this conversation into a ticket and send a reply to it — the exact path
+    // `atendimentos/actions.ts`'s `sendReply` Server Action drives via `sendTicketReply`.
+    const church = (await db.select().from(churches))[0];
+    const ticket = await createTicket(db, { churchId: church.id, conversationId, topic: 'Dúvida sobre horário' });
+    const sendResult = await sendTicketReply(db, church.id, ticket.id, 'Nosso culto é às 10h de domingo!');
+    expect(sendResult).toEqual({ sent: true });
+
+    const historyRes = await handleChatHistoryRequest({ db }, historyReq(cookie));
+    expect(historyRes.status).toBe(200);
+    const body = await historyRes.json();
+    expect(body.conversationId).toBe(conversationId);
+    // Visitor's turn, the secretary's own reply, and the staff-sent reply, in that order.
+    expect(body.messages.map((m: { role: string }) => m.role)).toEqual(['user', 'assistant', 'assistant']);
+    const texts = body.messages.map((m: { parts: { type: string; text?: string }[] }) => (
+      m.parts.map((p) => p.text ?? '').join('')
+    ));
+    expect(texts[0]).toContain('Olá!'); // the visitor's own message (userMessages fixture)
+    expect(texts[2]).toBe('Nosso culto é às 10h de domingo!'); // the staff-sent reply, last
+  });
+
+  it("gives a different visitor cookie its own (empty) result, never the first visitor's transcript", async () => {
+    const { db } = await setupDemo();
+    const model = await mockModel();
+    const deps = { db, embedder: new HashEmbedder(), model, globalCapUsd: 50 };
+    const conversationId = crypto.randomUUID();
+
+    const chatRes = await handleChatRequest(deps, chatReq({ messages: userMessages, conversationId }));
+    const ownerCookie = visitorCookieFrom(chatRes);
+    await chatRes.text();
+
+    // Sanity check: the owning visitor really does see their own history.
+    const ownerHistory = await handleChatHistoryRequest({ db }, historyReq(ownerCookie));
+    const ownerBody = await ownerHistory.json();
+    expect(ownerBody.conversationId).toBe(conversationId);
+    expect(ownerBody.messages.length).toBeGreaterThan(0);
+
+    // A different visitor cookie must get their own empty result, not the owner's transcript
+    // — there is no conversationId to attack here at all, since this route never accepts one
+    // from the caller; the whole lookup runs off the cookie-derived visitorKey alone.
+    const strangerCookie = crypto.randomUUID();
+    const strangerHistory = await handleChatHistoryRequest({ db }, historyReq(strangerCookie));
+    await expect(strangerHistory.json()).resolves.toEqual({ conversationId: null, messages: [] });
   });
 });

@@ -36,6 +36,10 @@ URL will be added here once it exists.
   alike.
 - Per-visitor rate limiting, request-size bounds, and conversation ownership tied to a
   server-minted cookie — never the client's IP or anything the client supplies.
+- A visitor's conversation persists across page loads: `GET /api/chat/history`, guarded
+  by that same cookie, resumes their own thread (and only their own) instead of starting
+  a fresh, empty one every time — which is also how a staff-sent support reply (above)
+  actually reaches the visitor who asked.
 - A committed, runnable retrieval benchmark (`npm run benchmark:retrieval`) scoring ten
   Portuguese visitor questions against the seed corpus.
 
@@ -57,10 +61,13 @@ on the reply in real time.
 Plan 4 — reporting (a weekly AI-generated digest) and a portfolio landing page — is
 scoped but not started. Also deliberately out of scope for now: multiple staff accounts,
 roles, and password reset; a staff audit log; a WhatsApp channel adapter for visitors;
-self-serve church signup; and billing. A sent support reply is persisted to the
-conversation but not actually delivered by email or WhatsApp, and a document's original
-file is not stored — only its extracted text and chunks are — so there is no document
-download.
+self-serve church signup; and billing. A sent support reply appears in the visitor's own
+chat transcript the next time they open `/chat` — the visitor's conversation is now
+resumed across page loads (a returning visitor's `ccb_visitor` cookie is matched back to
+their conversation; see `GET /api/chat/history`) instead of a fresh, empty one starting
+every time — but it is still not *pushed*: nothing is sent by email or WhatsApp, so a
+visitor who never returns to the chat never sees the reply. A document's original file is
+not stored — only its extracted text and chunks are — so there is no document download.
 
 ## Running locally
 

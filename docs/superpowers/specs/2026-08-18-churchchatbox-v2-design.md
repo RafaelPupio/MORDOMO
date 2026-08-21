@@ -44,7 +44,9 @@ English UI (per §7), entered via a "View as staff" demo button (no signup). Sec
 - **Calendar** — events extracted from bulletins by the ingest pipeline, editable.
 - **Prayer inbox** — structured prayer requests captured by the bot.
 - **Support inbox** — escalated conversations as tickets, with an AI-suggested reply the
-  staff member can edit and send (send = visible in the member chat transcript).
+  staff member can edit and send (send = visible in the member's own chat transcript once
+  they return to it — the visitor's conversation persists across page loads for exactly
+  this reason; still not pushed by email or WhatsApp).
 - **Reports** — AI-written weekly digests: top questions, unanswered questions, prayer
   themes, usage stats.
 - **Usage meter** — tokens and cost this month, per feature, against the tenant budget.

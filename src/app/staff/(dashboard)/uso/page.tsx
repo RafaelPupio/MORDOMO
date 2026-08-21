@@ -1,15 +1,11 @@
+import { monthSpendUsd } from '@/ai/usage';
+import { parseGlobalCapUsd } from '@/core/config';
+import { formatUsd4 } from '@/core/format';
 import { requireStaffContext } from '@/core/staff-context';
 import { getDb } from '@/db/client';
 import { usageSummary } from '@/db/repo/usage';
 
 export const metadata = { title: 'Uso — Secretaria' };
-
-// These amounts are fractions of a cent per call — two decimals would show "US$ 0.00"
-// for almost every row and make the table look broken. Four decimals is the smallest
-// precision that still shows a non-zero number for a single cheap model call.
-function formatUsd4(value: number): string {
-  return `US$ ${value.toFixed(4)}`;
-}
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -46,17 +42,66 @@ const FEATURE_INFO: Record<string, { label: string; description: string }> = {
   },
 };
 
+// One cap-vs-spend card, reused for both the tenant cap and the global cap below (M6) so the
+// two read identically instead of the global one being an afterthought bolted onto the
+// tenant card's markup.
+function UsageCapCard({
+  title, spentUsd, capUsd, overCapMessage,
+}: {
+  title: string;
+  spentUsd: number;
+  capUsd: number | null;
+  overCapMessage: string;
+}) {
+  const hasCap = capUsd != null;
+  const cap = capUsd ?? 0;
+  const barFraction = hasCap && cap > 0 ? Math.min(1, spentUsd / cap) : 0;
+  const overCap = hasCap && spentUsd >= cap;
+
+  return (
+    <div className="rounded-xl border p-4">
+      <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">{title}</span>
+      <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-2xl font-semibold">{formatUsd4(spentUsd)}</span>
+        <span className="text-sm text-neutral-500">
+          {hasCap ? `de ${formatUsd4(cap)} no mês` : 'sem limite configurado'}
+        </span>
+      </div>
+
+      {hasCap && (
+        <div className="mt-3">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+            <div
+              className={`h-full rounded-full ${overCap ? 'bg-red-600' : 'bg-emerald-600'}`}
+              style={{ width: `${barFraction * 100}%` }}
+            />
+          </div>
+          {overCap && <p className="mt-2 text-xs text-red-700">{overCapMessage}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists before
-// this renders; `requireStaffContext()` here is what supplies `churchId` for the query below
-// — never a form field or query parameter (see src/core/staff-context.ts).
+// this renders; `requireStaffContext()` here is what supplies `churchId` for the tenant query
+// below — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function UsoPage() {
   const { churchId } = await requireStaffContext();
-  const usage = await usageSummary(getDb(), churchId);
+  const db = getDb();
 
-  const hasCap = usage.monthlyUsd != null;
-  const capUsd = usage.monthlyUsd ?? 0;
-  const barFraction = hasCap && capUsd > 0 ? Math.min(1, usage.totalUsd / capUsd) : 0;
-  const overCap = hasCap && usage.totalUsd >= capUsd;
+  // Two independent gates, per src/ai/usage.ts's `checkBudget`: a per-tenant monthly cap
+  // AND a global cap shared across every church in this demo. Before this fix, the page only
+  // showed the tenant figure — with a low `DEMO_GLOBAL_MONTHLY_USD_CAP`, that meant a green,
+  // nowhere-near-full bar here while every AI call was actually being refused with 402/
+  // `budget_exhausted` for reasons this page gave staff no way to see (M6). `monthSpendUsd(db)`
+  // with no `churchId` is the same aggregate-across-every-tenant query `checkBudget` itself
+  // runs for the global check.
+  const [usage, globalSpentUsd] = await Promise.all([
+    usageSummary(db, churchId),
+    monthSpendUsd(db),
+  ]);
+  const globalCapUsd = parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP);
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,30 +113,19 @@ export default async function UsoPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-2xl font-semibold">{formatUsd4(usage.totalUsd)}</span>
-          <span className="text-sm text-neutral-500">
-            {hasCap ? `de ${formatUsd4(capUsd)} no mês` : 'sem limite configurado para esta igreja'}
-          </span>
-        </div>
-
-        {hasCap && (
-          <div className="mt-3">
-            <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-100">
-              <div
-                className={`h-full rounded-full ${overCap ? 'bg-red-600' : 'bg-emerald-600'}`}
-                style={{ width: `${barFraction * 100}%` }}
-              />
-            </div>
-            {overCap && (
-              <p className="mt-2 text-xs text-red-700">
-                O limite do mês foi atingido — novas chamadas de IA passam a ser recusadas
-                até o próximo mês.
-              </p>
-            )}
-          </div>
-        )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <UsageCapCard
+          title="Esta igreja"
+          spentUsd={usage.totalUsd}
+          capUsd={usage.monthlyUsd}
+          overCapMessage="O limite do mês desta igreja foi atingido — novas chamadas de IA passam a ser recusadas até o próximo mês."
+        />
+        <UsageCapCard
+          title="Limite global do demo (todas as igrejas)"
+          spentUsd={globalSpentUsd}
+          capUsd={globalCapUsd}
+          overCapMessage="O limite global do demo foi atingido — toda chamada de IA está sendo recusada até o próximo mês, mesmo que esta igreja ainda tenha saldo próprio."
+        />
       </div>
 
       <div>

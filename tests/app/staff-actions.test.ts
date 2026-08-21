@@ -191,6 +191,56 @@ describe('suggestTicketReply', () => {
 
     expect(capturedPrompt).toContain('Maria');
   });
+
+  // I4: the excerpt used to be bounded only by message COUNT (MAX_EXCERPT_MESSAGES = 20),
+  // never by character size — 20 messages at web.ts's own per-message ceiling
+  // (MODEL_HISTORY_CHARS, 24,000 chars) could reach ~480,000 characters in a single
+  // support.draft prompt. This fixture stays well under the 20-message count bound (15
+  // messages) so it isolates the CHARACTER bound as the thing actually doing the trimming.
+  it('bounds the excerpt by character budget, not just message count, and keeps the most recent turns (I4)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    const conversationId = await seedConversation(db, church.id);
+    const messageCount = 15;
+    const filler = 'x'.repeat(900); // ~900 chars of body per message
+    for (let i = 1; i <= messageCount; i++) {
+      await saveMessage(db, {
+        churchId: church.id,
+        conversationId,
+        role: i % 2 === 1 ? 'user' : 'assistant',
+        parts: [{ type: 'text', text: `MARK_${i} ${filler}` }],
+      });
+    }
+    const ticket = await createTicket(db, { churchId: church.id, conversationId, topic: 'Pergunta longa' });
+
+    let capturedPrompt = '';
+    const { MockLanguageModelV3 } = await import('ai/test');
+    const model = new MockLanguageModelV3({
+      doGenerate: async (params) => {
+        capturedPrompt = JSON.stringify(params.prompt);
+        return {
+          finishReason: { unified: 'stop', raw: 'stop' },
+          usage: {
+            inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 5, text: 5, reasoning: undefined },
+          },
+          content: [{ type: 'text', text: 'Resposta.' }],
+          warnings: [],
+        };
+      },
+    });
+
+    await suggestTicketReply(
+      { db, embedder: new HashEmbedder(), model },
+      { churchId: church.id, churchName: church.name, ticketId: ticket.id },
+    );
+
+    expect(capturedPrompt).toContain(`MARK_${messageCount}`); // newest turn: always kept
+    expect(capturedPrompt).not.toContain('MARK_1 '); // oldest turn: dropped by the char bound
+    // Unbounded, all 15 x ~900-char messages would add ~13,500 characters to the prompt; the
+    // fix keeps the excerpt itself close to MAX_EXCERPT_CHARS (8,000) instead.
+    expect(capturedPrompt.length).toBeLessThan(15 * 900);
+  });
 });
 
 describe('sendTicketReply', () => {
@@ -355,5 +405,19 @@ describe('getSentTicketReply', () => {
     await setTicketStatus(db, church.id, ticket.id, 'closed');
 
     expect(await getSentTicketReply(db, church.id, ticket.id)).toEqual({ found: false, reason: 'no-reply' });
+  });
+
+  // M8: every other function in this file checks `isUuid` before its first query — this one
+  // didn't, despite the module's own header comment claiming it does. Without the guard,
+  // Postgres throws casting a non-uuid literal to `getTicket`'s `uuid` column instead of this
+  // returning a controlled result.
+  it('treats a malformed (non-uuid) ticket id as a controlled no-conversation result, never a thrown DB error (M8)', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+
+    await expect(getSentTicketReply(db, church.id, 'not-a-uuid')).resolves.toEqual({
+      found: false,
+      reason: 'no-conversation',
+    });
   });
 });

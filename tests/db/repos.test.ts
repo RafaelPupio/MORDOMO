@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ensureConversation, listMessages, saveMessage } from '@/db/repo/chat';
+import { ensureConversation, getConversationByVisitor, listMessages, saveMessage } from '@/db/repo/chat';
 import { getChurchBySlug } from '@/db/repo/churches';
 import { createEvent, listUpcomingEvents } from '@/db/repo/events';
 import { createPrayerRequest, listPrayerRequests } from '@/db/repo/prayer';
 import { createTicket, listTickets } from '@/db/repo/tickets';
-import { churches } from '@/db/schema';
+import { churches, conversations } from '@/db/schema';
 import { createTestDb, seedChurch } from '../helpers/db';
 
 describe('repos', () => {
@@ -25,6 +25,37 @@ describe('repos', () => {
     await saveMessage(db, { churchId: church.id, conversationId: convId, role: 'assistant', parts: [{ type: 'text', text: 'olá!' }] });
     const msgs = await listMessages(db, convId);
     expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
+  });
+
+  // C1: getConversationByVisitor is what lets a returning visitor resume their own thread
+  // (src/channels/web.ts's history route) — scoped to churchId AND visitorKey, and picking
+  // the most recently started conversation among however many a visitor might have (a visitor
+  // who chatted before this fix existed, when the client minted a fresh conversationId on
+  // every page load, could already have several).
+  it('getConversationByVisitor resumes the most recent conversation, scoped to church AND visitor key', async () => {
+    const db = await createTestDb();
+    const a = await seedChurch(db, 'A');
+    const b = await seedChurch(db, 'B');
+
+    // Visitor v1 at church A has two conversations, older then newer — startedAt set
+    // explicitly (rather than relying on two back-to-back defaultNow() inserts) so the
+    // "most recent" tie-break under test is deterministic regardless of clock resolution.
+    const older = crypto.randomUUID();
+    await db.insert(conversations).values({
+      id: older, churchId: a.id, visitorKey: 'v1', startedAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    const newer = crypto.randomUUID();
+    await db.insert(conversations).values({
+      id: newer, churchId: a.id, visitorKey: 'v1', startedAt: new Date('2026-01-02T00:00:00Z'),
+    });
+    expect((await getConversationByVisitor(db, a.id, 'v1'))?.id).toBe(newer);
+
+    // A different visitor key at the same church finds nothing of v1's.
+    expect(await getConversationByVisitor(db, a.id, 'v2')).toBeUndefined();
+
+    // The same visitor key at a DIFFERENT church finds nothing either — visitorKey alone is
+    // not a unique identity across tenants.
+    expect(await getConversationByVisitor(db, b.id, 'v1')).toBeUndefined();
   });
 
   it('lists only future, verified events for the tenant, soonest first', async () => {

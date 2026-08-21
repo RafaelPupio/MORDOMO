@@ -1,6 +1,7 @@
 import type { LanguageModel } from 'ai';
 import { checkBudget } from '@/ai/usage';
 import type { Embedder } from '@/ai/embedder';
+import { INGEST_LIMIT } from '@/core/config';
 import { readStaffSession } from '@/core/staff-auth';
 import { STAFF_COOKIE_NAME } from '@/core/staff-session';
 import { runIngest } from '@/core/ingest';
@@ -38,10 +39,15 @@ const MAX_TITLE_CHARS = 300;
 // into this handler's generic 500 catch instead of the 400 a client-supplied bad value
 // deserves. Checked at the door instead, before any DB round trip.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Exported so tests can assert against the actual value instead of duplicating a magic
-// number that could silently drift out of sync with this file (same pattern as
-// src/channels/web.ts's CHAT_LIMIT).
-export const INGEST_LIMIT = { limit: 10, windowSeconds: 3600 };
+// Re-exported for backward compatibility: this used to be declared here, and
+// tests/channels/ingest-http.test.ts still imports it from this module. The real
+// declaration now lives in src/core/config.ts — shared with the staff dashboard's own
+// upload action (src/app/staff/(dashboard)/documentos/actions.ts), which runs the same
+// pipeline behind the same session and used to rate-limit itself against a second, separate
+// key (M5) — same "one neutral module, not one route's" reasoning, and the same
+// re-export-for-compatibility pattern, as DEFAULT_GLOBAL_CAP_USD/parseGlobalCapUsd in
+// src/app/api/chat/route.ts.
+export { INGEST_LIMIT };
 
 // Minimal `Cookie` header parser — deliberately not `next/headers`' `cookies()`, so this
 // handler (and its auth check) can run against a plain `Request` in tests, the same way

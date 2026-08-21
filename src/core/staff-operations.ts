@@ -67,7 +67,24 @@ export type SuggestTicketReplyResult = {
   generated: boolean;
 };
 
+// A coarse, cheap pre-filter on message COUNT, checked before any per-message text extraction
+// runs. It does NOT bound prompt SIZE — see MAX_EXCERPT_CHARS below for that — because
+// `src/channels/web.ts` accepts (and persists) a single message up to MODEL_HISTORY_CHARS
+// (24,000 characters): 20 of those would be up to ~480,000 characters, ~120,000 tokens, in one
+// `support.draft` prompt, roughly 12x MODEL_HISTORY_CHARS itself and, at CHAT_MODEL pricing
+// (src/ai/pricing.ts), on the order of $0.12 for a single suggestReply call.
 const MAX_EXCERPT_MESSAGES = 20;
+
+// The actual size bound. Mirrors `trimHistoryForModel` in src/channels/web.ts: walk the
+// (already count-bounded) history from newest to oldest, keep adding whole lines while they
+// still fit, then restore chronological order — the excerpt always ends at the most recent
+// turn and is trimmed from the OLD end, never from the middle. Like `trimHistoryForModel`, the
+// newest qualifying line is always kept even if it alone exceeds the budget (see
+// `excerptFromMessages` below) — the most recent thing the visitor said is the least safe turn
+// to drop from a reply draft. 8,000 characters is generous for a support-ticket excerpt while
+// keeping the worst case (MAX_EXCERPT_MESSAGES x a message at MODEL_HISTORY_CHARS) from ever
+// reaching the prompt at all.
+const MAX_EXCERPT_CHARS = 8_000;
 
 // Pulls the text out of an AI SDK UIMessage `parts` array (src/db/schema.ts's `messages`
 // table stores exactly this shape). Anything that isn't a `text` part (tool calls, etc.) is
@@ -95,14 +112,30 @@ function isPlainTextMessage(parts: unknown): boolean {
 // Turns a ticket's conversation history into a compact excerpt for the drafter's prompt, so
 // the draft is grounded in what the visitor actually said — not just the one-line `topic`
 // summary the secretary agent wrote when it opened the ticket (src/agent/secretary.ts).
-// Bounded to the most recent messages so a very long conversation can't blow up prompt size.
+// Bounded twice: MAX_EXCERPT_MESSAGES first (cheap, count-only), then MAX_EXCERPT_CHARS here
+// (the actual size bound) — see both constants' comments above for why count alone isn't
+// enough.
 function excerptFromMessages(history: { role: string; parts: unknown }[]): string | undefined {
-  const lines: string[] = [];
-  for (const m of history.slice(-MAX_EXCERPT_MESSAGES)) {
-    const text = textFromParts(m.parts).trim();
-    if (text) lines.push(`${m.role === 'user' ? 'Visitante' : 'Assistente'}: ${text}`);
+  const recent = history.slice(-MAX_EXCERPT_MESSAGES);
+  const kept: string[] = [];
+  let total = 0;
+  // Walk newest-first so truncation drops from the OLD end, never the new one.
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const text = textFromParts(recent[i].parts).trim();
+    if (!text) continue;
+    const line = `${recent[i].role === 'user' ? 'Visitante' : 'Assistente'}: ${text}`;
+    // +1 for the '\n' the final join() below adds between lines, so `total` tracks the
+    // actual output length rather than silently under-counting it.
+    const size = line.length + 1;
+    // `kept.length > 0` guards keeping the FIRST (i.e. newest) line unconditionally, even if
+    // it alone exceeds MAX_EXCERPT_CHARS — mirroring trimHistoryForModel's "always keep the
+    // newest whole" rule in src/channels/web.ts.
+    if (total + size > MAX_EXCERPT_CHARS && kept.length > 0) break;
+    kept.push(line);
+    total += size;
   }
-  return lines.length > 0 ? lines.join('\n') : undefined;
+  kept.reverse();
+  return kept.length > 0 ? kept.join('\n') : undefined;
 }
 
 /**
@@ -223,6 +256,8 @@ export async function getSentTicketReply(
   churchId: string,
   ticketId: string,
 ): Promise<SentTicketReply> {
+  if (!isUuid(ticketId)) return { found: false, reason: 'no-conversation' };
+
   const ticket = await getTicket(db, churchId, ticketId);
   if (!ticket || !ticket.conversationId) return { found: false, reason: 'no-conversation' };
 

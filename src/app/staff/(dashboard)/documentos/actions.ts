@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { GatewayEmbedder } from '@/ai/embedder';
 import { FAST_MODEL } from '@/ai/pricing';
 import { checkBudget } from '@/ai/usage';
-import { DEFAULT_GLOBAL_CAP_USD, parseGlobalCapUsd } from '@/core/config';
+import { INGEST_LIMIT, parseGlobalCapUsd } from '@/core/config';
 import { runIngest } from '@/core/ingest';
 import { UnsupportedMediaTypeError, parseDocument } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
@@ -14,7 +14,6 @@ import { getDb } from '@/db/client';
 import { createDocument } from '@/db/repo/documents';
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const STAFF_INGEST_LIMIT = { limit: 10, windowSeconds: 3600 };
 
 export type UploadState = { error?: string; ok?: string };
 
@@ -23,6 +22,13 @@ export type UploadState = { error?: string; ok?: string };
  * (`runIngest`, src/core/ingest.ts). `churchId` comes ONLY from `requireStaffContext()` —
  * never from `formData` — so this action can never be pointed at another tenant's
  * knowledge base by crafting a form field.
+ *
+ * Everything from the rate-limit check onward hits Postgres (or the AI gateway), so it all
+ * lives inside one try/catch — a Neon cold start or any other unexpected DB failure returns
+ * the Portuguese error shape instead of an uncaught Server Action rejection (I2). Only
+ * `requireStaffContext()` and the synchronous form-shape checks above stay outside it, same
+ * reasoning as everywhere else in the staff area: a DB failure inside `requireStaffContext`
+ * is `src/app/staff/(dashboard)/error.tsx`'s problem (I3), not this action's.
  */
 export async function uploadDocument(_prev: UploadState, formData: FormData): Promise<UploadState> {
   const { churchId } = await requireStaffContext();
@@ -34,35 +40,43 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
   if (title.length > 300) return { error: 'Título muito longo.' };
   if (file.size > MAX_UPLOAD_BYTES) return { error: 'Arquivo maior que 5 MB.' };
 
-  const rate = await checkRateLimit(db, `staff-ingest:${churchId}`, STAFF_INGEST_LIMIT);
-  if (!rate.allowed) return { error: 'Muitos envios nesta hora. Tente mais tarde.' };
-
-  const budget = await checkBudget(
-    db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP ?? String(DEFAULT_GLOBAL_CAP_USD)),
-  );
-  if (!budget.allowed) return { error: 'O limite de uso do mês foi atingido.' };
-
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const mimeType = file.type || 'application/octet-stream';
-
-  // Parsed here — before any `documents` row exists — purely to reject an unsupported
-  // media type or unstorable text early. `runIngest` parses the same bytes again as its
-  // own first pipeline stage (see src/channels/ingest-http.ts for the same double-parse
-  // and the same reasoning: a rejected upload must leave no orphan document row behind).
   try {
-    const parsed = await parseDocument(bytes, mimeType);
+    // Shares ONE rate-limit key/bucket with `POST /api/ingest` (`ingest:${churchId}`,
+    // src/channels/ingest-http.ts) rather than a second `staff-ingest:` bucket of its own
+    // (M5): both paths run the same `runIngest` pipeline for the same tenant and are BOTH
+    // reachable by the same authenticated staff session (that route accepts the same
+    // `ccb_staff` cookie this dashboard form does) — two separate 10/hour buckets would let
+    // one session run the pipeline 20 times/hour instead of the 10 either limit intends.
+    // Reusing `INGEST_LIMIT` (not just the same key string) means the two paths also can't
+    // silently drift to different numbers later.
+    const rate = await checkRateLimit(db, `ingest:${churchId}`, INGEST_LIMIT);
+    if (!rate.allowed) return { error: 'Muitos envios nesta hora. Tente novamente mais tarde.' };
+
+    // `parseGlobalCapUsd` already falls back to its own default (DEFAULT_GLOBAL_CAP_USD)
+    // when the env var is unset — the `?? String(DEFAULT_GLOBAL_CAP_USD)` this used to carry
+    // was a redundant second default (M9); the API routes pass the raw env var through the
+    // same way.
+    const budget = await checkBudget(db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
+    if (!budget.allowed) return { error: 'O limite de uso do mês foi atingido.' };
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const mimeType = file.type || 'application/octet-stream';
+
+    // Parsed here — before any `documents` row exists — purely to reject an unsupported
+    // media type or unstorable text early. `runIngest` parses the same bytes again as its
+    // own first pipeline stage (see src/channels/ingest-http.ts for the same double-parse
+    // and the same reasoning: a rejected upload must leave no orphan document row behind).
+    let parsed: Awaited<ReturnType<typeof parseDocument>>;
+    try {
+      parsed = await parseDocument(bytes, mimeType);
+    } catch (error) {
+      if (error instanceof UnsupportedMediaTypeError) {
+        return { error: 'Formato não suportado. Envie PDF ou Markdown.' };
+      }
+      return { error: 'Não foi possível ler o arquivo.' };
+    }
     if (hasUnstorableChars(parsed.text)) return { error: 'O arquivo contém caracteres inválidos.' };
-  } catch (error) {
-    if (error instanceof UnsupportedMediaTypeError) return { error: 'Formato não suportado. Envie PDF ou Markdown.' };
-    return { error: 'Não foi possível ler o arquivo.' };
-  }
 
-  // Everything below can throw on a DB failure (e.g., Neon scale-to-zero cold start) or
-  // an unexpected pipeline failure. Wrap in try/catch to guarantee a controlled error
-  // response instead of an uncaught rejection, matching src/channels/ingest-http.ts's
-  // posture. Log the real error server-side; the staff member only sees a Portuguese
-  // message, never a stack trace.
-  try {
     const doc = await createDocument(db, { churchId, title, kind: 'upload', sourcePath: file.name });
     const result = await runIngest(
       { db, embedder: new GatewayEmbedder(), extractorModel: FAST_MODEL, verifierModel: FAST_MODEL },

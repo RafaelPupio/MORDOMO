@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { GatewayEmbedder } from '@/ai/embedder';
 import { checkBudget } from '@/ai/usage';
-import { DEFAULT_GLOBAL_CAP_USD, parseGlobalCapUsd } from '@/core/config';
+import { parseGlobalCapUsd } from '@/core/config';
 import { isUuid } from '@/core/ids';
 import { checkRateLimit } from '@/core/rate-limit';
 import { requireStaffContext } from '@/core/staff-context';
@@ -52,9 +52,10 @@ export async function suggestReply(prevState: SuggestReplyState, formData: FormD
     const rate = await checkRateLimit(db, `staff-suggest:${churchId}`, STAFF_SUGGEST_LIMIT);
     if (!rate.allowed) return { error: 'Muitas sugestões nesta hora. Tente novamente mais tarde.' };
 
-    const budget = await checkBudget(
-      db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP ?? String(DEFAULT_GLOBAL_CAP_USD)),
-    );
+    // parseGlobalCapUsd already falls back to its own default when the env var is unset — the
+    // `?? String(DEFAULT_GLOBAL_CAP_USD)` this used to carry was a redundant second default
+    // (M9); the API routes pass the raw env var through the same way.
+    const budget = await checkBudget(db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
     if (!budget.allowed) return { error: 'O limite de uso do mês foi atingido.' };
 
     const result = await suggestTicketReply(
@@ -94,8 +95,13 @@ export async function sendReply(_prevState: SendReplyState, formData: FormData):
       if (result.reason === 'not-open') return { error: 'Este atendimento já foi respondido ou encerrado.' };
       return { error: 'Não foi possível enviar a resposta agora. Tente novamente.' };
     }
-    // Nothing is actually delivered to the visitor here — the text is appended to the
-    // conversation and only reaches them the next time they open it.
+    // Nothing is PUSHED to the visitor here — no email, no WhatsApp, nothing that reaches
+    // them if they've closed the tab. The reply is appended to the conversation's own
+    // `messages` row (`sendTicketReply`, src/core/staff-operations.ts) in the same shape the
+    // secretary agent's own replies use, and GET /api/chat/history (src/channels/web.ts)
+    // serves that row back to the visitor's OWN cookie-identified conversation — so it
+    // genuinely appears in their chat transcript the next time they open `/chat`, it just
+    // doesn't summon them there.
     return { ok: 'Resposta registrada na conversa.' };
   } catch (error) {
     console.error('sendReply: unexpected failure', { churchId, ticketId, error });

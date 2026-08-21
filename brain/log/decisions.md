@@ -374,3 +374,74 @@ security posture, plus what happened to `INGEST_TOKEN`.
   return 401, exercised in `tests/channels/ingest-http.test.ts`'s `session auth` block —
   the same property `INGEST_TOKEN` used to guarantee, now guaranteed by the session
   instead of a second, parallel secret.
+
+## 2026-08-20 — Plan 3 whole-branch review: a staff reply now actually reaches the visitor
+
+The review's critical finding (C1) was that `chat.tsx` minted a brand-new
+`conversationId` with `crypto.randomUUID()` on every page load and no route ever read
+`messages` back for a visitor — so a staff-sent support reply, and the visitor's own
+prior turns, were terminal storage. Three README/spec/comment lines asserted otherwise.
+This entry records the mechanism chosen to fix it for real, and the decisions around it.
+
+- **Conversation lookup by `(churchId, visitorKey)`, not a second cookie.** The two
+  options were (a) mint a second httpOnly cookie holding the conversation id alongside
+  `ccb_visitor`, or (b) derive "which conversation is this visitor's" from the
+  `visitorKey` column already on `conversations` — the same column
+  `handleChatRequest`'s ownership check already trusts. Chose (b): a second cookie is a
+  second piece of state that can desync from the database it's supposed to describe (a
+  stale cookie pointing at a conversation that no longer resolves, or that drifts from
+  what a differently-scoped write actually created); a lookup keyed on the same column
+  ownership already uses cannot disagree with itself, because there is only one place the
+  answer lives. `getConversationByVisitor` (`src/db/repo/chat.ts`) is scoped to
+  `churchId` too (`visitorKey` alone isn't unique across tenants) and orders by
+  `desc(startedAt)` to pick the most recent conversation — needed because a visitor who
+  chatted before this fix, under the old mint-on-every-load behavior, may already have
+  several rows under the same `visitorKey`.
+- **`GET /api/chat/history` never mints a cookie and never writes a `conversations` row.**
+  Unlike `POST /api/chat`, a bare history check has no side effect worth having — a
+  visitor who has never chatted yet has no identity worth minting a cookie for, and the
+  POST path already mints one the moment there's an actual first message to attach it to.
+  Keeping the GET route strictly read-only means it can't accidentally create phantom
+  conversation rows just from a page load, and its error posture can be simpler than the
+  POST path's: every failure mode (no cookie, malformed cookie, no church seeded, no
+  conversation found, or even an unexpected DB error) degrades to the exact same
+  `{ conversationId: null, messages: [] }` shape with a 200, rather than needing to
+  distinguish "legitimately empty" from "something broke." That degrade-to-empty choice
+  is deliberate: there is no side-effecting request behind this route to fail loudly for,
+  so "start the visitor on what looks like a fresh conversation" is a strictly better
+  failure mode than a 500 that breaks the chat page from loading at all.
+- **The client fetches history on mount and only mints its own id when the server has
+  none.** `chat.tsx` was restructured into a small wrapper (`Chat`) that resolves
+  `{ conversationId, initialMessages }` — from the fetch when the server has an answer,
+  from `crypto.randomUUID()` and an empty transcript otherwise — before rendering the
+  actual session component (`ChatSession`), which is what now owns the `useChat` call
+  (seeded with `id` and `messages` from that resolution). This keeps "first-time visitor"
+  working exactly as before while making "returning visitor" resume instead of restart.
+- **`sendTicketReply`'s write needed no change.** It already persists a staff reply as
+  `{ role: 'assistant', parts: [{ type: 'text', text: trimmed }] }` — precisely the shape
+  the visitor-facing chat UI already renders as an assistant bubble. The bug was entirely
+  that nothing ever read it back to the visitor, not the shape it was written in.
+- **`INGEST_LIMIT` moved to `src/core/config.ts`, not just referenced across files
+  (M5).** The staff dashboard's upload form and `POST /api/ingest` run the identical
+  `runIngest` pipeline for the identical tenant and are both reachable by the identical
+  authenticated staff session, but rate-limited themselves against two separate keys
+  (`staff-ingest:${churchId}` vs `ingest:${church.id}`) with two separately-declared
+  `{ limit: 10, windowSeconds: 3600 }` objects — together permitting 20 ingest runs/hour
+  per session instead of either limit's intended 10. Both call sites now share one key
+  (`ingest:${churchId}`) and import the same constant from a neutral module, following
+  the exact precedent already set by `DEFAULT_GLOBAL_CAP_USD`/`parseGlobalCapUsd` (moved
+  out of `src/app/api/chat/route.ts` for the same "don't drag one route's module graph
+  into an unrelated bundle" reason, recorded as M6 in the Plan 2 ingest security review).
+  `src/channels/ingest-http.ts` re-exports `INGEST_LIMIT` for backward compatibility with
+  `tests/channels/ingest-http.test.ts`, same pattern as that earlier fix.
+- **The reply drafter's excerpt bound mirrors `trimHistoryForModel`, including "always
+  keep the newest whole" (I4).** `MAX_EXCERPT_MESSAGES` (message count) never bounded
+  prompt size — `src/channels/web.ts` accepts and persists a single message up to
+  `MODEL_HISTORY_CHARS` (24,000 characters), so 20 of those could reach ~480,000
+  characters in one `support.draft` prompt, on the order of $0.12 for a single
+  `suggestReply` call. `MAX_EXCERPT_CHARS = 8_000` now bounds the excerpt's actual size,
+  walking newest-to-oldest and keeping the newest qualifying line unconditionally even if
+  it alone exceeds the budget — the same "never trim away the current/most-recent turn"
+  invariant `trimHistoryForModel` already enforces for the model-facing chat history, for
+  the same reason: the most recent thing the visitor said is the least safe turn to drop
+  from a reply draft.
