@@ -313,3 +313,135 @@ two genuinely ambiguous ones.
   a month or year without a specific day and time. A regex now requires the full
   `YYYY-MM-DDTHH:mm` shape (with optional seconds/fraction/offset) before `Date.parse` is
   even consulted, matching what the extractor's own system prompt already asks for.
+
+## 2026-08-20 — Plan 3: staff operations, and retiring `INGEST_TOKEN`
+
+Plan 3 adds a password-gated staff area (login, guarded route group, documents + upload,
+agenda with extraction provenance, prayer and support inboxes with human-approved AI
+drafts) and a usage page. This entry records the WHY behind the decisions that shape its
+security posture, plus what happened to `INGEST_TOKEN`.
+
+- **`churchId` comes ONLY from the signed, httpOnly session — never from a form field or
+  query parameter.** `requireStaffContext()` (`src/core/staff-context.ts`) is the single
+  place every staff page and Server Action gets its tenant id from, and it derives that
+  id by reading the verified session cookie and cross-checking it against the actual
+  `churches` row (`church.id !== session.churchId` → redirect), not by trusting whatever
+  the caller claims. The alternative — accepting a `churchId` the client supplies, even
+  just to prefill a form — turns every staff mutation into a potential cross-tenant write:
+  a crafted form field would let a signed-in staff member of one church touch another
+  church's documents, tickets, or prayer requests. There is only one church in this demo
+  today, so this bug has no visible symptom yet — which is exactly why it has to be
+  structural (one function, reused everywhere) rather than something each page remembers
+  to do correctly on its own.
+- **The AI reply is a draft a human edits, never an auto-send.** `draftReply`
+  (`src/agent/reply-drafter.ts`) proposes a Portuguese reply grounded in the knowledge
+  base; the support inbox (`src/app/staff/(dashboard)/atendimentos`) always renders it
+  into an editable textarea, and sending is a separate, explicit staff action. A support
+  ticket is by definition a question the visitor-facing agent could not answer on its own
+  — the harder tail of the request distribution, and the one most likely to contain
+  something a model gets subtly wrong (a promise the church can't keep, a wrong time, a
+  tone mismatch). Auto-sending there would spend the trust a human reply carries on
+  exactly the cases least suited to it. A human in the loop is not a stopgap for a future
+  "smarter" model; it is the right shape for this feature.
+- **The drafter returns an empty draft instead of throwing on failure.** If the embedder
+  or the model call fails, `draftReply` catches it and returns `{ reply: '', sources: [] }`
+  rather than letting the exception propagate. The support inbox is a queue a staff member
+  already has to work — a broken drafter must degrade to "write it yourself," the same
+  as the inbox looked like before this feature existed, never to "the inbox is down." The
+  failure is still logged server-side for debugging; it is only the staff member's path
+  that is protected from it.
+- **Staff actions remain rate-limited and budget-gated despite being authenticated.**
+  Every staff mutation that touches the LLM/embedding gateway — upload (`uploadDocument`),
+  the reply drafter — goes through the same `checkRateLimit` / `checkBudget` gates as the
+  public chat and ingest paths, scoped per church. Authentication answers "is this
+  request from staff," not "is this request cheap to trust with unlimited spend" — this is
+  a public portfolio demo, so a leaked or reused `STAFF_PASSWORD` (there is exactly one,
+  no per-user accounts yet) becoming a route to an unmetered gateway bill is a real
+  failure mode, not a hypothetical one. The gates cost nothing when they're not being hit
+  and stop that failure mode cold when they are.
+- **`INGEST_TOKEN` is retired, not stacked.** The 2026-08-20 Plan 2 decision above
+  recorded this token as an explicit placeholder for real staff auth and said plainly:
+  "when Plan 3 ships real staff auth, the correct move is to delete the bearer-token
+  check and the env var, not leave both bolted on underneath the new auth as a second
+  gate nobody remembers the purpose of." That is what happened. `POST /api/ingest`
+  (`src/channels/ingest-http.ts`) now reads the same `ccb_staff` session cookie every
+  other staff mutation uses — verified with the same `readStaffSession` helper, and, like
+  `requireStaffContext`, cross-checked against the live `churches` row so a session signed
+  for a re-seeded church id cannot be replayed. `INGEST_TOKEN` is gone from the route's
+  dependencies, from `.env.example`, and from the deployment checklist in
+  `brain/status.md`. Fail-closed did not change shape: no cookie, an unconfigured session
+  secret, a bad signature, an expired session, or a session for the wrong church all still
+  return 401, exercised in `tests/channels/ingest-http.test.ts`'s `session auth` block —
+  the same property `INGEST_TOKEN` used to guarantee, now guaranteed by the session
+  instead of a second, parallel secret.
+
+## 2026-08-20 — Plan 3 whole-branch review: a staff reply now actually reaches the visitor
+
+The review's critical finding (C1) was that `chat.tsx` minted a brand-new
+`conversationId` with `crypto.randomUUID()` on every page load and no route ever read
+`messages` back for a visitor — so a staff-sent support reply, and the visitor's own
+prior turns, were terminal storage. Three README/spec/comment lines asserted otherwise.
+This entry records the mechanism chosen to fix it for real, and the decisions around it.
+
+- **Conversation lookup by `(churchId, visitorKey)`, not a second cookie.** The two
+  options were (a) mint a second httpOnly cookie holding the conversation id alongside
+  `ccb_visitor`, or (b) derive "which conversation is this visitor's" from the
+  `visitorKey` column already on `conversations` — the same column
+  `handleChatRequest`'s ownership check already trusts. Chose (b): a second cookie is a
+  second piece of state that can desync from the database it's supposed to describe (a
+  stale cookie pointing at a conversation that no longer resolves, or that drifts from
+  what a differently-scoped write actually created); a lookup keyed on the same column
+  ownership already uses cannot disagree with itself, because there is only one place the
+  answer lives. `getConversationByVisitor` (`src/db/repo/chat.ts`) is scoped to
+  `churchId` too (`visitorKey` alone isn't unique across tenants) and orders by
+  `desc(startedAt)` to pick the most recent conversation — needed because a visitor who
+  chatted before this fix, under the old mint-on-every-load behavior, may already have
+  several rows under the same `visitorKey`.
+- **`GET /api/chat/history` never mints a cookie and never writes a `conversations` row.**
+  Unlike `POST /api/chat`, a bare history check has no side effect worth having — a
+  visitor who has never chatted yet has no identity worth minting a cookie for, and the
+  POST path already mints one the moment there's an actual first message to attach it to.
+  Keeping the GET route strictly read-only means it can't accidentally create phantom
+  conversation rows just from a page load, and its error posture can be simpler than the
+  POST path's: every failure mode (no cookie, malformed cookie, no church seeded, no
+  conversation found, or even an unexpected DB error) degrades to the exact same
+  `{ conversationId: null, messages: [] }` shape with a 200, rather than needing to
+  distinguish "legitimately empty" from "something broke." That degrade-to-empty choice
+  is deliberate: there is no side-effecting request behind this route to fail loudly for,
+  so "start the visitor on what looks like a fresh conversation" is a strictly better
+  failure mode than a 500 that breaks the chat page from loading at all.
+- **The client fetches history on mount and only mints its own id when the server has
+  none.** `chat.tsx` was restructured into a small wrapper (`Chat`) that resolves
+  `{ conversationId, initialMessages }` — from the fetch when the server has an answer,
+  from `crypto.randomUUID()` and an empty transcript otherwise — before rendering the
+  actual session component (`ChatSession`), which is what now owns the `useChat` call
+  (seeded with `id` and `messages` from that resolution). This keeps "first-time visitor"
+  working exactly as before while making "returning visitor" resume instead of restart.
+- **`sendTicketReply`'s write needed no change.** It already persists a staff reply as
+  `{ role: 'assistant', parts: [{ type: 'text', text: trimmed }] }` — precisely the shape
+  the visitor-facing chat UI already renders as an assistant bubble. The bug was entirely
+  that nothing ever read it back to the visitor, not the shape it was written in.
+- **`INGEST_LIMIT` moved to `src/core/config.ts`, not just referenced across files
+  (M5).** The staff dashboard's upload form and `POST /api/ingest` run the identical
+  `runIngest` pipeline for the identical tenant and are both reachable by the identical
+  authenticated staff session, but rate-limited themselves against two separate keys
+  (`staff-ingest:${churchId}` vs `ingest:${church.id}`) with two separately-declared
+  `{ limit: 10, windowSeconds: 3600 }` objects — together permitting 20 ingest runs/hour
+  per session instead of either limit's intended 10. Both call sites now share one key
+  (`ingest:${churchId}`) and import the same constant from a neutral module, following
+  the exact precedent already set by `DEFAULT_GLOBAL_CAP_USD`/`parseGlobalCapUsd` (moved
+  out of `src/app/api/chat/route.ts` for the same "don't drag one route's module graph
+  into an unrelated bundle" reason, recorded as M6 in the Plan 2 ingest security review).
+  `src/channels/ingest-http.ts` re-exports `INGEST_LIMIT` for backward compatibility with
+  `tests/channels/ingest-http.test.ts`, same pattern as that earlier fix.
+- **The reply drafter's excerpt bound mirrors `trimHistoryForModel`, including "always
+  keep the newest whole" (I4).** `MAX_EXCERPT_MESSAGES` (message count) never bounded
+  prompt size — `src/channels/web.ts` accepts and persists a single message up to
+  `MODEL_HISTORY_CHARS` (24,000 characters), so 20 of those could reach ~480,000
+  characters in one `support.draft` prompt, on the order of $0.12 for a single
+  `suggestReply` call. `MAX_EXCERPT_CHARS = 8_000` now bounds the excerpt's actual size,
+  walking newest-to-oldest and keeping the newest qualifying line unconditionally even if
+  it alone exceeds the budget — the same "never trim away the current/most-recent turn"
+  invariant `trimHistoryForModel` already enforces for the model-facing chat history, for
+  the same reason: the most recent thing the visitor said is the least safe turn to drop
+  from a reply draft.

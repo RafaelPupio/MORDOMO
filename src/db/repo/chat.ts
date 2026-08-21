@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { conversations, messages } from '@/db/schema';
 
@@ -18,6 +18,26 @@ export async function ensureConversation(
 // insert.
 export async function getConversation(db: Db, id: string) {
   const [row] = await db.select().from(conversations).where(eq(conversations.id, id));
+  return row;
+}
+
+// Lets a returning visitor resume their own thread without a second cookie: `visitorKey` is
+// already the sole ownership authority `getConversation`'s caller (src/channels/web.ts) checks
+// against, so deriving "which conversation is this visitor's" from the same column, instead of
+// minting and trusting a separate `conversationId` cookie, means there is exactly one place
+// ownership can ever disagree with itself, not two that could drift apart. Scoped to `churchId`
+// too, since `visitorKey` alone is not guaranteed unique across tenants. `desc(startedAt)` picks
+// the most recently started conversation — before this history route existed, the client minted
+// a fresh `conversationId` on every page load, so a visitor who has been chatting since before
+// this fix may already have several rows under the same `visitorKey`; resuming the newest one is
+// the only sensible choice among them.
+export async function getConversationByVisitor(db: Db, churchId: string, visitorKey: string) {
+  const [row] = await db
+    .select()
+    .from(conversations)
+    .where(and(eq(conversations.churchId, churchId), eq(conversations.visitorKey, visitorKey)))
+    .orderBy(desc(conversations.startedAt))
+    .limit(1);
   return row;
 }
 

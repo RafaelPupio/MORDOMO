@@ -37,14 +37,16 @@ carries a visible *fictional demo congregation* disclaimer). The bot:
 
 ### 2.2 Staff dashboard (one-click demo login)
 
-English UI (per §7), entered via a "View as staff" demo button (no signup). Sections:
+Portuguese UI (revised — see §7), entered by password. Sections:
 
 - **Knowledge base** — documents, chunks, ingest status; upload is enabled in demo but
   sandboxed to the demo tenant and rate-limited.
 - **Calendar** — events extracted from bulletins by the ingest pipeline, editable.
 - **Prayer inbox** — structured prayer requests captured by the bot.
 - **Support inbox** — escalated conversations as tickets, with an AI-suggested reply the
-  staff member can edit and send (send = visible in the member chat transcript).
+  staff member can edit and send (send = visible in the member's own chat transcript once
+  they return to it — the visitor's conversation persists across page loads for exactly
+  this reason; still not pushed by email or WhatsApp).
 - **Reports** — AI-written weekly digests: top questions, unanswered questions, prayer
   themes, usage stats.
 - **Usage meter** — tokens and cost this month, per feature, against the tenant budget.
@@ -135,7 +137,14 @@ state.
 ## 7. Language
 
 - Bot: replies in the visitor's language; church content is Portuguese.
-- Landing page, dashboard chrome, README, code, comments: English.
+- Landing page, README, code, comments: English.
+- **Staff area: Portuguese** (revised 2026-08-20, during Plan 3). The original plan put the
+  dashboard chrome in English for an international portfolio audience. Building it made the
+  cost of that obvious: every string a staff member reads sits beside Portuguese church
+  content they are acting on — a ticket topic, a prayer request, a bulletin title — and an
+  English shell around Portuguese data reads as a translation artifact, not a product a
+  Brazilian church secretary would use. The portfolio audience is served by the English
+  README, landing page, and code; the staff area is served by being believable.
 
 ## 8. Seed content
 

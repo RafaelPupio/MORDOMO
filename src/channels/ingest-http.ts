@@ -1,10 +1,13 @@
-import { timingSafeEqual } from 'node:crypto';
 import type { LanguageModel } from 'ai';
 import { checkBudget } from '@/ai/usage';
 import type { Embedder } from '@/ai/embedder';
+import { INGEST_LIMIT } from '@/core/config';
+import { readStaffSession } from '@/core/staff-auth';
+import { STAFF_COOKIE_NAME } from '@/core/staff-session';
 import { runIngest } from '@/core/ingest';
 import { parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
+import { hasUnstorableChars } from '@/core/text-safety';
 import type { Db } from '@/db/client';
 import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
 import { createDocument, getDocument } from '@/db/repo/documents';
@@ -13,8 +16,15 @@ export type IngestChannelDeps = {
   db: Db;
   embedder: Embedder;
   globalCapUsd: number;
-  /** Shared secret standing in for staff auth until Plan 3 ships the dashboard. */
-  ingestToken: string | undefined;
+  /**
+   * Secret used to verify the staff session cookie (see `src/core/staff-session.ts`).
+   * `POST /api/ingest` is authorised the same way every other staff mutation is: a valid,
+   * unexpired session, never a shared bearer token. Plan 2 shipped `INGEST_TOKEN` as an
+   * explicit placeholder for exactly this and recorded that it must be retired, not
+   * stacked, once staff auth existed — see the 2026-08-20 Plan 2 decision and the Plan 3
+   * entry in `brain/log/decisions.md`.
+   */
+  staffSessionSecret: string | undefined;
   extractorModel?: LanguageModel;
   verifierModel?: LanguageModel;
 };
@@ -29,48 +39,44 @@ const MAX_TITLE_CHARS = 300;
 // into this handler's generic 500 catch instead of the 400 a client-supplied bad value
 // deserves. Checked at the door instead, before any DB round trip.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// Exported so tests can assert against the actual value instead of duplicating a magic
-// number that could silently drift out of sync with this file (same pattern as
-// src/channels/web.ts's CHAT_LIMIT).
-export const INGEST_LIMIT = { limit: 10, windowSeconds: 3600 };
+// Re-exported for backward compatibility: this used to be declared here, and
+// tests/channels/ingest-http.test.ts still imports it from this module. The real
+// declaration now lives in src/core/config.ts — shared with the staff dashboard's own
+// upload action (src/app/staff/(dashboard)/documentos/actions.ts), which runs the same
+// pipeline behind the same session and used to rate-limit itself against a second, separate
+// key (M5) — same "one neutral module, not one route's" reasoning, and the same
+// re-export-for-compatibility pattern, as DEFAULT_GLOBAL_CAP_USD/parseGlobalCapUsd in
+// src/app/api/chat/route.ts.
+export { INGEST_LIMIT };
 
-// Constant-time comparison so, once both buffers are known to be the same length, a
-// wrong-but-close guess cannot be distinguished from a wrong-and-far guess by response
-// latency. `timingSafeEqual` requires equal-length buffers, so length is checked (and
-// rejected on mismatch) first. That pre-check itself leaks one bit over timing: whether
-// the PRESENTED token's length equals the SECRET's length — not, as an earlier version of
-// this comment claimed, the presented length itself (which the caller trivially already
-// knows). This is accepted as a small, unavoidable leak: learning the secret's length only
-// tells an attacker which length to brute-force, it does not narrow the token's contents,
-// and timingSafeEqual has no way to compare two different-length buffers without throwing.
-function tokenMatches(expected: string, presented: string): boolean {
-  const expectedBuf = Buffer.from(expected);
-  const presentedBuf = Buffer.from(presented);
-  if (expectedBuf.length !== presentedBuf.length) return false;
-  return timingSafeEqual(expectedBuf, presentedBuf);
-}
-
-// `String.prototype.isWellFormed()` (ES2024) is false exactly for strings holding an
-// unpaired UTF-16 surrogate. NUL is well-formed UTF-16 but still unstorable in a Postgres
-// text/jsonb column, so it needs its own check. Same check src/channels/web.ts applies to
-// chat message text, applied here to a parsed document's extracted text.
-function hasUnstorableChars(text: string): boolean {
-  return text.includes('\u0000') || !text.isWellFormed();
+// Minimal `Cookie` header parser — deliberately not `next/headers`' `cookies()`, so this
+// handler (and its auth check) can run against a plain `Request` in tests, the same way
+// `src/core/staff-auth.ts`'s `readStaffSession` is kept free of `next/headers` for the
+// same reason.
+function readCookie(header: string | null, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }
 
 export async function handleIngestRequest(deps: IngestChannelDeps, req: Request): Promise<Response> {
-  // Without a configured token the endpoint is closed, not open: an unset secret must
-  // never mean "anyone may ingest". `deps.ingestToken` being empty/undefined always
-  // fails this check, regardless of what the caller presents.
-  const expected = deps.ingestToken;
-  // Requires the literal "Bearer " prefix (case-insensitive) before extracting the token —
-  // `.replace(/^Bearer\s+/i, '')` on a header with NO such prefix is a no-op, not a
-  // rejection, so a bare `Authorization: <token>` used to authenticate successfully. A
-  // header that doesn't match the pattern at all now yields `undefined`, which the check
-  // below already treats as "not presented".
-  const authHeader = req.headers.get('authorization');
-  const presented = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!expected || !presented || !tokenMatches(expected, presented)) {
+  // Same session that guards every staff page and Server Action — no separate shared
+  // secret. `readStaffSession` already fails closed: a missing cookie, an unconfigured
+  // secret, a bad signature, or an expired session all return null here.
+  const session = readStaffSession(
+    readCookie(req.headers.get('cookie'), STAFF_COOKIE_NAME),
+    deps.staffSessionSecret,
+  );
+  if (!session) {
     return Response.json({ code: 'unauthorized' }, { status: 401 });
   }
 
@@ -120,6 +126,13 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
   try {
     const church = await getChurchBySlug(deps.db, DEMO_CHURCH_SLUG);
     if (!church) return Response.json({ code: 'not_seeded' }, { status: 500 });
+    // A session signed for a church that was later re-seeded (a fresh `churches` row with
+    // a new id, same demo slug) must not be silently admitted just because the cookie
+    // still verifies — same reasoning, and the same check, as `requireStaffContext` in
+    // `src/core/staff-context.ts`.
+    if (session.churchId !== church.id) {
+      return Response.json({ code: 'unauthorized' }, { status: 401 });
+    }
     churchId = church.id;
 
     // A re-ingest target must belong to THIS church. `getDocument` already scopes its

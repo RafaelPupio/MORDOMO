@@ -1,7 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, type UIMessage } from 'ai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type SourceOut = { documentTitle: string; excerpt: string };
@@ -70,13 +70,86 @@ function ErrorNotice({ error, onRetry }: { error: Error; onRetry: () => void }) 
   );
 }
 
+type HistoryResponseBody = {
+  conversationId: string | null;
+  messages: { id: string; role: string; parts: unknown }[];
+};
+
+const CHAT_SHELL_CLASS = 'mx-auto flex h-dvh max-w-2xl flex-col p-4';
+
+function ChatHeader() {
+  return (
+    <header className="border-b pb-3">
+      <h1 className="text-lg font-semibold">Secretária Virtual — Igreja da Colina</h1>
+      <p className="text-xs text-neutral-500">
+        Igreja fictícia — demonstração · Fictional church — demo. Write in any language.
+      </p>
+    </header>
+  );
+}
+
+// The server is the only party that knows whether this visitor (identified by their
+// `ccb_visitor` cookie — see src/channels/web.ts) already has a conversation: GET
+// /api/chat/history reads that same cookie and returns its id plus the transcript so far, or
+// `{ conversationId: null, messages: [] }` for a visitor with no cookie or no prior
+// conversation. Minting a fresh `conversationId` client-side (the old behavior) is now only a
+// fallback for that second case — a genuinely first-time visitor — never the default, so a
+// returning visitor resumes their own thread (including any staff reply left for them) instead
+// of starting a brand-new, empty one on every page load.
 export default function Chat() {
-  const conversationId = useMemo(() => crypto.randomUUID(), []);
+  const [session, setSession] = useState<{ conversationId: string; initialMessages: UIMessage[] } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let conversationId: string | null = null;
+      let initialMessages: UIMessage[] = [];
+      try {
+        const res = await fetch('/api/chat/history');
+        if (res.ok) {
+          const body = (await res.json()) as HistoryResponseBody;
+          conversationId = body.conversationId;
+          initialMessages = body.messages as UIMessage[];
+        }
+      } catch {
+        // Network failure, offline, etc. — fall through to the first-time-visitor path below;
+        // the conversation still works, it just starts fresh instead of resuming.
+      }
+      if (cancelled) return;
+      setSession({ conversationId: conversationId ?? crypto.randomUUID(), initialMessages });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!session) {
+    return (
+      <div className={CHAT_SHELL_CLASS}>
+        <ChatHeader />
+        <div className="flex-1 py-4">
+          <p className="text-sm text-neutral-400" aria-live="polite">…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Keying on conversationId guarantees a fresh ChatSession (and a fresh useChat instance)
+  // whenever it changes — it never does today, since the id is only assigned once per mount
+  // here, but this keeps that invariant explicit rather than implicit.
+  return <ChatSession key={session.conversationId} conversationId={session.conversationId} initialMessages={session.initialMessages} />;
+}
+
+function ChatSession({ conversationId, initialMessages }: { conversationId: string; initialMessages: UIMessage[] }) {
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/chat', body: { conversationId } }),
     [conversationId],
   );
-  const { messages, sendMessage, regenerate, status, error, clearError } = useChat({ transport });
+  const { messages, sendMessage, regenerate, status, error, clearError } = useChat({
+    id: conversationId,
+    messages: initialMessages,
+    transport,
+  });
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -106,13 +179,8 @@ export default function Chat() {
   };
 
   return (
-    <div className="mx-auto flex h-dvh max-w-2xl flex-col p-4">
-      <header className="border-b pb-3">
-        <h1 className="text-lg font-semibold">Secretária Virtual — Igreja da Colina</h1>
-        <p className="text-xs text-neutral-500">
-          Igreja fictícia — demonstração · Fictional church — demo. Write in any language.
-        </p>
-      </header>
+    <div className={CHAT_SHELL_CLASS}>
+      <ChatHeader />
 
       <div className="flex-1 space-y-4 overflow-y-auto py-4">
         {messages.length === 0 && (

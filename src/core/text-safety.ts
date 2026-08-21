@@ -1,0 +1,14 @@
+// Shared guard against text that a Postgres text/jsonb column will refuse to store.
+//
+// `String.prototype.isWellFormed()` (ES2024) is false exactly for strings holding an
+// unpaired UTF-16 surrogate. NUL is well-formed UTF-16 but still unstorable in a Postgres
+// text/jsonb column, so it needs its own check.
+//
+// Used by every entry point that writes parsed document text before a row exists for it:
+// src/channels/ingest-http.ts (the public ingest endpoint) and the staff upload action
+// (src/app/staff/(dashboard)/documentos/actions.ts). Kept here, in a dependency-free
+// module, so both import the SAME check instead of maintaining two copies that could
+// silently drift apart.
+export function hasUnstorableChars(text: string): boolean {
+  return text.includes('\u0000') || !text.isWellFormed();
+}

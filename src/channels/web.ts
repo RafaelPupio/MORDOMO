@@ -4,7 +4,10 @@ import { checkBudget } from '@/ai/usage';
 import { runSecretary, type SecretaryDeps } from '@/agent/secretary';
 import type { IncomingChat } from '@/core/channel';
 import { checkRateLimit } from '@/core/rate-limit';
-import { ensureConversation, getConversation, saveMessage } from '@/db/repo/chat';
+import type { Db } from '@/db/client';
+import {
+  ensureConversation, getConversation, getConversationByVisitor, listMessages, saveMessage,
+} from '@/db/repo/chat';
 import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
 
 export type WebChannelDeps = SecretaryDeps & { globalCapUsd: number };
@@ -414,5 +417,56 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
   } catch (err) {
     console.error('handleChatRequest: unexpected failure', { conversationId: body.conversationId, error: err });
     return jsonResponse({ code: 'internal_error' }, { status: 500 });
+  }
+}
+
+export type ChatHistoryDeps = { db: Db };
+
+export type ChatHistoryResponseBody = {
+  conversationId: string | null;
+  messages: { id: string; role: string; parts: unknown }[];
+};
+
+const EMPTY_HISTORY: ChatHistoryResponseBody = { conversationId: null, messages: [] };
+
+// Authorises a returning visitor to resume their OWN conversation, and nobody else's — using
+// the exact same identity source `handleChatRequest` already trusts for ownership: the signed,
+// httpOnly `ccb_visitor` cookie. This is deliberately a read-only lookup: unlike
+// `handleChatRequest`, it never mints a fresh visitor cookie (a bare history check from a
+// visitor who has never chatted yet has no identity worth minting one for — the POST path mints
+// it the moment there's an actual first message to attach it to) and it never writes a
+// `conversations` row.
+//
+// Every path that can't produce a real answer — no cookie, a cookie that isn't shaped like one
+// this server would have minted, no church seeded, or no conversation found for this visitor —
+// returns the exact same `EMPTY_HISTORY` shape. That's the load-bearing property: an attacker
+// probing with a missing or garbage cookie learns nothing that distinguishes "you have no
+// conversation" from "the server had a hiccup," and never receives another visitor's data.
+export async function handleChatHistoryRequest(deps: ChatHistoryDeps, req: Request): Promise<Response> {
+  const visitorId = parseCookie(req, VISITOR_COOKIE_NAME);
+  if (!visitorId || !z.uuid().safeParse(visitorId).success) {
+    return Response.json(EMPTY_HISTORY);
+  }
+
+  try {
+    const church = await getChurchBySlug(deps.db, DEMO_CHURCH_SLUG);
+    if (!church) return Response.json(EMPTY_HISTORY);
+
+    const conversation = await getConversationByVisitor(deps.db, church.id, visitorId);
+    if (!conversation) return Response.json(EMPTY_HISTORY);
+
+    const history = await listMessages(deps.db, conversation.id);
+    return Response.json({
+      conversationId: conversation.id,
+      messages: history.map((m) => ({ id: m.id, role: m.role, parts: m.parts })),
+    } satisfies ChatHistoryResponseBody);
+  } catch (error) {
+    // Same posture as handleChatRequest's catch-all: log the real error server-side, never
+    // leak a stack trace or raw SQL to the client. Unlike the POST path, there is no
+    // side-effecting request to fail loudly on — degrading to "no history" instead of a 500
+    // just means a returning visitor starts a fresh-looking thread instead of seeing an error,
+    // which is the better failure mode for a read-only convenience lookup.
+    console.error('handleChatHistoryRequest: unexpected failure', { error });
+    return Response.json(EMPTY_HISTORY);
   }
 }
