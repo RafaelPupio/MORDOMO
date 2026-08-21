@@ -445,3 +445,25 @@ This entry records the mechanism chosen to fix it for real, and the decisions ar
   invariant `trimHistoryForModel` already enforces for the model-facing chat history, for
   the same reason: the most recent thing the visitor said is the least safe turn to drop
   from a reply draft.
+
+## 2026-08-20 — Plan 4, Task 5: cron route, and a note on `vercel.json`'s schedule
+
+`GET /api/cron/weekly-report` is what Vercel Cron hits every Monday to generate last
+week's digest for the demo church. Two things worth recording:
+
+- **`vercel.json`'s cron `schedule` is UTC, full stop — there is no per-project timezone
+  setting.** `"0 9 * * 1"` (Monday 09:00) is 06:00 America/Sao_Paulo (UTC-3, no DST in
+  Brazil since 2019), chosen so a church office opening Monday morning already has the
+  digest waiting. JSON has no comment syntax, so this can't be noted next to the schedule
+  itself — recorded here instead, and in the route's own doc comment, so nobody "fixes"
+  the hour assuming it's already local time.
+- **Auth is a shared-secret Bearer header, checked before any DB read or model call —
+  same fail-closed posture as `checkStaffPassword`, and the same lessons the retired
+  `INGEST_TOKEN` left behind (see the Plan 3 entry above and the Plan 2 Task 6 entry).**
+  `isAuthorizedCron` (`src/core/cron-auth.ts`) returns `false` whenever `CRON_SECRET` is
+  unset or empty (never "everybody"), compares byte length before `timingSafeEqual` so a
+  length mismatch — including a multibyte token — can't throw, and requires an exact,
+  correctly-cased `Bearer ` prefix (a bare token or lowercase `bearer` is rejected). This
+  endpoint runs two model calls (analyst, writer) per invocation, so an auth bypass here
+  is a spend bypass, not just a data-exposure one — the 401 branch in the route returns
+  before `getDb()` is even called.
