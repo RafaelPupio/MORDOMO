@@ -5,6 +5,7 @@ import { getDb } from '@/db/client';
 import { listDocuments } from '@/db/repo/documents';
 import { listUpcomingEvents } from '@/db/repo/events';
 import { listPrayerRequests } from '@/db/repo/prayer';
+import { listReports } from '@/db/repo/reports';
 import { listTickets } from '@/db/repo/tickets';
 import { usageSummary } from '@/db/repo/usage';
 
@@ -34,7 +35,7 @@ export default async function StaffHome() {
   const { churchId, churchName } = await requireStaffContext();
   const db = getDb();
 
-  const [tickets, newPrayerRequests, docs, usage, upcomingEvents] = await Promise.all([
+  const [tickets, newPrayerRequests, docs, usage, upcomingEvents, reports] = await Promise.all([
     listTickets(db, churchId),
     listPrayerRequests(db, churchId, 'new'),
     listDocuments(db, churchId),
@@ -43,6 +44,10 @@ export default async function StaffHome() {
     // page.tsx) — this tile's count is exactly what clicking through to Agenda shows, not a
     // separate figure that could disagree with it.
     listUpcomingEvents(db, churchId, 50),
+    // Same limit the relatórios page itself uses (src/app/staff/(dashboard)/relatorios/
+    // page.tsx) — this tile's count can never claim more reports exist than that page
+    // actually lists.
+    listReports(db, churchId, 12),
   ]);
 
   const openTickets = tickets.filter((t) => t.status === 'open').length;
@@ -75,6 +80,12 @@ export default async function StaffHome() {
           href="/staff/agenda"
           label="Eventos na agenda"
           value={String(upcomingEvents.length)}
+        />
+        <Tile
+          href="/staff/relatorios"
+          label="Relatórios semanais"
+          value={String(reports.length)}
+          hint={reports.length === 0 ? 'nenhum ainda' : undefined}
         />
         <Tile
           href="/staff/uso"
