@@ -68,6 +68,17 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   remain rate-limited and budget-gated exactly like the public chat path — an
   authenticated session on a public demo is still an untrusted spend path, not a reason
   to relax the gates.
+- **Reporting + portfolio shell** (Plan 4): `gatherWeekActivity` bounds each raw activity
+  kind before the analyst sees it; the analyst produces structured findings and a separate
+  writer turns only those findings and aggregate counts into Portuguese markdown. A report
+  is never published after a failed analysis or writer call. Prayer themes are a closed
+  Portuguese vocabulary (plus `outro`), so personal names and diagnoses are structurally
+  impossible in a digest theme. The other operational fields remain free-text summaries
+  and do not make the same structural guarantee. `/staff/relatorios` shows reports and can run last week's
+  report on demand; `GET /api/cron/weekly-report` runs each Monday at 09:00 UTC behind
+  `CRON_SECRET`. The public `/` page now maps all ten built AI capabilities to the actual
+  product surfaces and explains why the visitor hot path uses one agent while ingest and
+  reporting use separate two-agent pipelines.
 
 ## Blocked — needs Rafael
 
@@ -85,10 +96,10 @@ Nothing has been deployed and no cloud resource has been created.
 
 ## Next
 
-1. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
+1. Complete the Plan 4 final review and merge it; all four product plans will then be on
+   `main`.
+2. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
    migrate, seed, benchmark against the real embedder, deploy, verify).
-2. Merge Plans 1, 2, and 3.
-3. Plan 4 — reporting (weekly AI-generated digest) and the portfolio landing page.
 
 ## Open questions
 

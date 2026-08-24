@@ -18,3 +18,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-20` Plan 3: staff operations, and retiring `INGEST_TOKEN`
 - `2026-08-20` Plan 3 whole-branch review: a staff reply now actually reaches the visit…
 - `2026-08-20` Plan 4, Task 5: cron route, and a note on `vercel.json`'s schedule
+- `2026-08-24` Plan 4: reporting pipeline and portfolio front door

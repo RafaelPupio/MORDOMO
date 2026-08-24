@@ -6,7 +6,7 @@ all invented, and no real data appears anywhere in this repo or its seed corpus.
 
 ## Status
 
-**Plans 1–3 (foundation + chat, document ingest, staff operations) are code-complete.
+**Plans 1–4 (foundation + chat, document ingest, staff operations, reporting + portfolio shell) are code-complete.
 Nothing is deployed yet.** There is no live demo URL — deployment is blocked on accepting
 Neon's Marketplace terms of service, a step that only renders in an interactive browser
 session and so cannot be driven from an unattended CLI. Everything below is built and
@@ -42,6 +42,12 @@ URL will be added here once it exists.
   actually reaches the visitor who asked.
 - A committed, runnable retrieval benchmark (`npm run benchmark:retrieval`) scoring ten
   Portuguese visitor questions against the seed corpus.
+- Weekly AI reporting: a bounded activity gatherer feeds an analyst agent that returns
+  structured findings; a separate writer agent turns only those findings and aggregate
+  counts into a Portuguese staff digest. Prayer themes use a closed vocabulary, so names
+  and diagnoses are structurally inexpressible in that sensitive part of the report.
+  Reports can be run on demand in `/staff/relatorios` or every Monday by the authenticated
+  Vercel Cron route.
 
 ## Architecture, briefly
 
@@ -58,10 +64,9 @@ on the reply in real time.
 
 ## Not built yet
 
-Plan 4 — reporting (a weekly AI-generated digest) and a portfolio landing page — is
-scoped but not started. Also deliberately out of scope for now: multiple staff accounts,
-roles, and password reset; a staff audit log; a WhatsApp channel adapter for visitors;
-self-serve church signup; and billing. A sent support reply appears in the visitor's own
+Deliberately out of scope for now: multiple staff accounts, roles, and password reset; a
+staff audit log; a WhatsApp channel adapter for visitors; self-serve church signup; and
+billing. A sent support reply appears in the visitor's own
 chat transcript the next time they open `/chat` — the visitor's conversation is now
 resumed across page loads (a returning visitor's `ccb_visitor` cookie is matched back to
 their conversation; see `GET /api/chat/history`) instead of a fresh, empty one starting
@@ -92,7 +97,8 @@ services or API keys: `npm test`.
 - Design spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`
 - Implementation plans: `docs/superpowers/plans/2026-08-19-plan-1-foundation-chat-slice.md`,
   `docs/superpowers/plans/2026-08-20-plan-2-ingest-pipeline.md`,
-  `docs/superpowers/plans/2026-08-20-plan-3-staff-operations.md`
+  `docs/superpowers/plans/2026-08-20-plan-3-staff-operations.md`,
+  `docs/superpowers/plans/2026-08-20-plan-4-reporting.md`
 - Running technical log: `brain/status.md`, `brain/log/decisions.md`
 
 ## Language
