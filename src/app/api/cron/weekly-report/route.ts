@@ -1,5 +1,7 @@
 import { generateWeeklyReport, weekStart } from '@/core/weekly-report';
 import { isAuthorizedCron } from '@/core/cron-auth';
+import { checkBudget } from '@/ai/usage';
+import { parseGlobalCapUsd } from '@/core/config';
 import { getDb } from '@/db/client';
 import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
 
@@ -29,6 +31,17 @@ export async function GET(req: Request) {
     const db = getDb();
     const church = await getChurchBySlug(db, DEMO_CHURCH_SLUG);
     if (!church) return Response.json({ code: 'not_seeded' }, { status: 500 });
+
+    // The cron has a secret rather than a staff session, but it still spends the same two
+    // metered model calls as an on-demand run. A valid cron credential must not become a
+    // way around either the tenant or global monthly caps. This is a 200 skip (not a 429)
+    // so Vercel does not repeatedly retry a job that cannot become affordable this month.
+    const budget = await checkBudget(
+      db,
+      church.id,
+      parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP),
+    );
+    if (!budget.allowed) return Response.json({ code: 'budget_exceeded', reason: budget.reason });
 
     const now = new Date();
     const periodStart = weekStart(now);

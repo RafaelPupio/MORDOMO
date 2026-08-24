@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { generateWeeklyReport, weekStart } from '@/core/weekly-report';
 import { getReport, getReportForPeriod, listReports } from '@/db/repo/reports';
-import { prayerRequests, tickets } from '@/db/schema';
+import { prayerRequests, tickets, usageLedger } from '@/db/schema';
 import { createTestDb, seedChurch } from '../helpers/db';
 
 const PERIOD_START = new Date('2026-08-10T00:00:00Z');
@@ -104,6 +104,32 @@ describe('generateWeeklyReport', () => {
     expect(analystDoGenerate).not.toHaveBeenCalled();
     expect(writerDoGenerate).not.toHaveBeenCalled();
     expect(await getReportForPeriod(db, church.id, PERIOD_START)).toBeUndefined();
+  });
+
+  it('publishes a cost-only week so the digest accounts for what the church spent', async () => {
+    const db = await createTestDb();
+    const church = await seedChurch(db);
+    await db.insert(usageLedger).values({
+      churchId: church.id,
+      feature: 'chat.reply',
+      model: 'test/model',
+      inputTokens: 1,
+      outputTokens: 1,
+      costUsd: 1.75,
+      createdAt: IN_WINDOW,
+    });
+
+    const result = await generateWeeklyReport(
+      {
+        db,
+        analystModel: await findingsModel(),
+        writerModel: await textModel('## Resumo\n\nCusto semanal registrado.'),
+      },
+      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+    );
+
+    expect(result.status).toBe('published');
+    expect(await getReportForPeriod(db, church.id, PERIOD_START)).toBeDefined();
   });
 
   it('fails and publishes nothing when the analyst fails', async () => {

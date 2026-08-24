@@ -15,8 +15,8 @@ export type ReportWriterInput = {
 };
 
 // This is the SECOND of the weekly digest's two agents (Plan 4). The analyst
-// (src/agent/analyst.ts) already decided what is TRUE — structured, privacy-scrubbed
-// `WeekFindings` — from the week's real activity. The writer's only job is deciding how
+// (src/agent/analyst.ts) already decided what is TRUE — structured, bounded `WeekFindings`
+// from the week's real activity. The writer's only job is deciding how
 // to SAY it: turn those findings into the Portuguese markdown a church office actually
 // reads. Splitting the two is deliberate so neither has to do the other's job: the
 // analyst never has to write nicely, and the writer never has to decide what is true —
@@ -31,7 +31,8 @@ function formatList(items: string[]): string {
 // `.prayerRequests`, and `.ticketTopics` are the RAW samples gatherWeekActivity pulled
 // straight from the database (see src/core/week-activity.ts) and are never touched by
 // this function or included in the prompt. The analyst already reduced that raw text
-// into `findings` (aggregate labels and counts, e.g. `prayerThemes`), which is the ONLY
+// into `findings` (short labels and counts; `prayerThemes` alone is a closed, aggregate
+// vocabulary), which is the ONLY
 // source of "what happened this week" the writer is given. Reaching into `activity` for
 // prose fodder would reintroduce exactly the identifiable detail the analyst's privacy
 // rule exists to strip out — see the PRIVACY line in SYSTEM below.
@@ -41,6 +42,7 @@ function buildPrompt(input: ReportWriterInput): string {
     `IGREJA: ${churchName}`,
     `PERÍODO: ${activity.periodStart.toISOString()} a ${activity.periodEnd.toISOString()}`,
     `CONTAGENS DA SEMANA: ${JSON.stringify(activity.counts)}`,
+    `CUSTO DE IA DA SEMANA (USD): US$ ${activity.costUsd.toFixed(4)}`,
     '',
     'PERGUNTAS MAIS FREQUENTES DOS VISITANTES:',
     findings.topQuestions.length > 0
@@ -65,11 +67,11 @@ function buildPrompt(input: ReportWriterInput): string {
 const SYSTEM = [
   'Você é o estágio de redação de um resumo semanal em dois estágios para a secretaria de uma igreja. Um agente analista separado já leu a atividade real da semana e produziu "findings" — rótulos, contagens e frases curtas, estruturados. Você não viu essa atividade bruta e não precisa dela: escreva SOMENTE a partir dos findings fornecidos abaixo, em português do Brasil, em markdown, com tom caloroso e claro, adequado para uma secretaria de igreja ler rapidamente.',
   '',
-  'PRIVACY: os findings que você recebeu já removeram qualquer texto bruto de pedidos de oração, mensagens ou tickets — os temas de oração são categorias agregadas (ex.: "saúde", "família"), nunca uma citação ou paráfrase de um pedido específico. Nunca invente, reconstrua ou tente adivinhar um detalhe identificável (um nome, um diagnóstico, um relacionamento) para qualquer tema, pergunta ou ticket — escreva apenas os rótulos e contagens fornecidos, nada mais específico.',
+  'PRIVACY: os findings não incluem amostras brutas de pedidos de oração, mensagens ou tickets. Os temas de oração são categorias agregadas de vocabulário fechado (ex.: "saúde", "família"), nunca uma citação ou paráfrase de um pedido específico. As perguntas e tickets são rótulos operacionais curtos fornecidos pelo analista, não uma garantia estrutural de anonimização. Nunca invente, reconstrua ou tente adivinhar um detalhe identificável (um nome, um diagnóstico, um relacionamento) para qualquer tema, pergunta ou ticket — escreva apenas os rótulos e contagens fornecidos, nada mais específico.',
   '',
   'Não invente nenhum fato, número ou tópico que não esteja presente nos findings abaixo. Se uma lista estiver vazia ou marcada "(nenhuma)"/"(nenhum)", diga isso de forma simples ou omita essa seção — nunca a preencha para parecer mais completa.',
   '',
-  'Estrutura sugerida: uma linha de abertura curta nomeando a igreja e o período; uma seção com as perguntas mais frequentes dos visitantes; uma seção sinalizando perguntas sem resposta clara para a equipe acompanhar; uma seção de temas de oração (somente agregados); uma seção de tickets notáveis; e um fechamento com a estatística-resumo. Use títulos em markdown e parágrafos curtos ou listas — isto é lido por uma secretaria ocupada, não é um relatório para ser admirado.',
+  'Estrutura sugerida: uma linha de abertura curta nomeando a igreja e o período; uma seção com as perguntas mais frequentes dos visitantes; uma seção sinalizando perguntas sem resposta clara para a equipe acompanhar; uma seção de temas de oração (somente agregados); uma seção de tickets notáveis; e um fechamento com a estatística-resumo e o custo de IA da semana fornecido. Use títulos em markdown e parágrafos curtos ou listas — isto é lido por uma secretaria ocupada, não é um relatório para ser admirado.',
   '',
   'Responda apenas com o texto do resumo em markdown — sem preâmbulo, sem comentários fora do resumo em si.',
 ].join('\n');

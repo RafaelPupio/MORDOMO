@@ -58,7 +58,8 @@ export async function generateWeeklyReport(
   const hasActivity = activity.counts.conversations > 0
     || activity.counts.visitorMessages > 0
     || activity.counts.prayerRequests > 0
-    || activity.counts.tickets > 0;
+    || activity.counts.tickets > 0
+    || activity.costUsd > 0;
   if (!hasActivity) {
     console.log('report.generate: skipped, no activity this week', {
       churchId: input.churchId, periodStart: input.periodStart,

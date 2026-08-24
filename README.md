@@ -43,8 +43,8 @@ URL will be added here once it exists.
 - A committed, runnable retrieval benchmark (`npm run benchmark:retrieval`) scoring ten
   Portuguese visitor questions against the seed corpus.
 - Weekly AI reporting: a bounded activity gatherer feeds an analyst agent that returns
-  structured findings; a separate writer agent turns only those findings and aggregate
-  counts into a Portuguese staff digest. Prayer themes use a closed vocabulary, so names
+  structured findings; a separate writer agent turns only those findings, aggregate counts,
+  and the week's metered AI cost into a Portuguese staff digest. Prayer themes use a closed vocabulary, so names
   and diagnoses are structurally inexpressible in that sensitive part of the report.
   Reports can be run on demand in `/staff/relatorios` or every Monday by the authenticated
   Vercel Cron route.

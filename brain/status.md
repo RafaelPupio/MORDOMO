@@ -70,8 +70,9 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   to relax the gates.
 - **Reporting + portfolio shell** (Plan 4): `gatherWeekActivity` bounds each raw activity
   kind before the analyst sees it; the analyst produces structured findings and a separate
-  writer turns only those findings and aggregate counts into Portuguese markdown. A report
-  is never published after a failed analysis or writer call. Prayer themes are a closed
+  writer turns only those findings, aggregate counts, and the week's AI cost into Portuguese
+  markdown. A report is never published after a failed analysis or writer call. The cron
+  checks the same monthly tenant/global budget before either model runs. Prayer themes are a closed
   Portuguese vocabulary (plus `outro`), so personal names and diagnoses are structurally
   impossible in a digest theme. The other operational fields remain free-text summaries
   and do not make the same structural guarantee. `/staff/relatorios` shows reports and can run last week's
@@ -96,8 +97,7 @@ Nothing has been deployed and no cloud resource has been created.
 
 ## Next
 
-1. Complete the Plan 4 final review and merge it; all four product plans will then be on
-   `main`.
+1. Merge the reviewed Plan 4 branch; all four product plans will then be on `main`.
 2. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
    migrate, seed, benchmark against the real embedder, deploy, verify).
 

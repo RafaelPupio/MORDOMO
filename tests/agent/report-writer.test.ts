@@ -113,6 +113,7 @@ describe('writeReport', () => {
       visitorQuestions: ['RAW_VISITOR_MARKER_1'],
       prayerRequests: ['RAW_PRAYER_MARKER_2'],
       ticketTopics: ['RAW_TICKET_MARKER_3'],
+      costUsd: 1.75,
     });
 
     await writeReport(
@@ -126,6 +127,7 @@ describe('writeReport', () => {
     expect(sentToModel).not.toContain('RAW_VISITOR_MARKER_1');
     expect(sentToModel).not.toContain('RAW_PRAYER_MARKER_2');
     expect(sentToModel).not.toContain('RAW_TICKET_MARKER_3');
+    expect(sentToModel).toContain('US$ 1.7500');
   });
 
   it('does not discard a successful draft when the ledger write fails', async () => {

@@ -113,6 +113,7 @@ function buildPrompt(activity: WeekActivity): string {
   return [
     `PERÍODO: ${activity.periodStart.toISOString()} a ${activity.periodEnd.toISOString()}`,
     `CONTAGENS REAIS DA SEMANA (não estão limitadas pela amostra abaixo): ${JSON.stringify(activity.counts)}`,
+    `CUSTO DE IA DA SEMANA (USD): US$ ${activity.costUsd.toFixed(4)}`,
     '',
     'PERGUNTAS DOS VISITANTES (amostra, mais recentes primeiro):',
     formatList(activity.visitorQuestions),
@@ -149,7 +150,8 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
   const hasActivity = activity.counts.conversations > 0
     || activity.counts.visitorMessages > 0
     || activity.counts.prayerRequests > 0
-    || activity.counts.tickets > 0;
+    || activity.counts.tickets > 0
+    || activity.costUsd > 0;
   if (!hasActivity) return emptyFindings();
 
   const model = deps.model ?? FAST_MODEL;
