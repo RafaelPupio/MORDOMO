@@ -26,8 +26,8 @@ function formatList(items: string[]): string {
 }
 
 // PRIVACY: `activity` is part of this agent's input type (so the digest can state which
-// week it covers), but only `periodStart`/`periodEnd`/`counts` — aggregate numbers, none
-// of them free text — are ever read here. `activity.visitorQuestions`,
+// week it covers), but only `periodStart`/`periodEnd`/`counts`/`costUsd` — aggregate
+// numbers, none of them free text — are ever read here. `activity.visitorQuestions`,
 // `.prayerRequests`, and `.ticketTopics` are the RAW samples gatherWeekActivity pulled
 // straight from the database (see src/core/week-activity.ts) and are never touched by
 // this function or included in the prompt. The analyst already reduced that raw text
