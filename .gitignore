@@ -17,3 +17,5 @@ next-env.d.ts
 
 # SDD scratch
 .superpowers/
+.vercel
+.env*

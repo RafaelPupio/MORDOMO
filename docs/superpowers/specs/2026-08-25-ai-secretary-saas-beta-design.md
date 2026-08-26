@@ -24,7 +24,7 @@ The beta explicitly excludes checkout, subscriptions, invoices, phone/SMS, outbo
 
 ## Integration choices
 
-- **Authentication and membership:** Clerk, provisioned through the Vercel Marketplace. Clerk Organizations supplies sign-in, invitations, workspace membership, and owner/admin/member roles.
+- **Authentication and membership:** Clerk, provisioned through the Vercel Marketplace on its Hobby plan. Clerk Organizations supplies sign-in, invitations, and standard admin/member membership. Neon stores the workspace owner’s Clerk user ID so the beta can distinguish the owner without Clerk’s paid custom-role add-on.
 - **Database:** existing Neon Postgres. Application-owned organization data remains in Neon and maps one-to-one to a Clerk Organization ID.
 - **Billing:** Stripe is the future subscription provider, also through the Vercel Marketplace. It is not provisioned or implemented in the beta because pricing and paid-plan limits are intentionally deferred.
 - **AI:** the existing Vercel AI Gateway integration remains the only model path. Tests use mocks and must not consume gateway credit.
@@ -36,17 +36,11 @@ The application domain changes from `church` to `organization` throughout schema
 New organization fields:
 
 - `clerk_organization_id` (unique, nullable only during seeded-data migration)
+- `owner_clerk_user_id`
 - `slug` and `name`
-- `industry` (preset identifier)
-- `default_locale`
-- `assistant_name`
-- `reply_tone`
-- `greeting`
-- `escalation_copy`
-- `enabled_capabilities` (validated JSON/enum set)
 - timestamps
 
-A dedicated `organization_profiles` table is preferred if these settings grow beyond a compact profile; otherwise the migration keeps the fields on `organizations` and exposes them through one typed profile module. Each remaining record (`documents`, `chunks`, `events`, `conversations`, `messages`, confidential requests, tickets, usage, budgets, and reports) references `organization_id`.
+A dedicated `organization_profiles` table stores `industry`, `default_locale`, `assistant_name`, `reply_tone`, `greeting`, `escalation_copy`, and validated `enabled_capabilities`. Each remaining record (`documents`, `chunks`, `events`, `conversations`, `messages`, confidential requests, tickets, usage, budgets, and reports) references `organization_id`.
 
 The seed creates the Igreja da Colina organization as a church preset and maps it to a Clerk development organization only after the account integration is provisioned. No existing staff cookie is accepted after the migration.
 
@@ -58,9 +52,9 @@ Public visitor chat is deliberately separate from staff identity. Its route incl
 
 Roles:
 
-- **Owner:** organization settings, invitations, profile, documents, reports, and staff workflows.
-- **Admin:** all operational staff functions except ownership/invitation administration.
-- **Member:** operational inbox and document work permitted by the selected beta policy.
+- **Owner:** the trusted `owner_clerk_user_id`; organization settings, invitations, profile, documents, reports, and staff workflows.
+- **Admin:** a Clerk `org:admin`; all operational staff functions except ownership/invitation administration.
+- **Member:** a Clerk `org:member`; operational inbox and document work permitted by the selected beta policy.
 
 The public marketing site and localized public secretary pages are unauthenticated. Invite-only beta enrollment uses Clerk invitations; no anonymous workspace creation is exposed.
 
