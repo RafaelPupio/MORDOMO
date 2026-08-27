@@ -10,23 +10,26 @@ authentication, saved profiles, and five localized interfaces.
 - `04574d1` — public technical design for the SaaS beta.
 - `135a38b` — execution plan, corrected for Clerk Hobby's default roles, and safe local-env
   ignore rules.
+- `de806ac` — Clerk provider, protected-route proxy, and real Development sign-in/sign-up
+  shell. Focused auth tests, TypeScript, production build, and the full test suite passed.
 - Clerk is provisioned and connected to the Vercel Development environment only; Neon remains
   Development-only. No billing or production configuration was added.
 
 ## Next action
 
-Resume from `/Users/rafaelpupiovieira/Desktop/Tech/ChurchChatBoxV2-saas-beta` (or obtain
-explicit approval to execute inline from the current session), then perform Task 1 from
-`docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md` with TDD and task review.
+Perform Task 2 from `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: preserve
+the existing data while renaming church tenancy to organization tenancy and adding the saved
+secretary-profile model. Begin with the specified failing profile/schema tests.
 
 ## Files in play
 
 - `docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md` — approved contract.
 - `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md` — task-by-task execution plan.
-- `.superpowers/sdd/2026-08-26-ai-secretary-saas-beta/progress.md` — execution ledger; Task 1
-  is blocked solely by the spawned-worker filesystem scope.
-- `src/app/layout.tsx`, `src/core/staff-context.ts`, `src/channels/web.ts`, and
-  `src/db/schema.ts` — first implementation seams named by the plan.
+- `src/db/schema.ts` and `drizzle/` — tenant schema and additive-safe migration seams.
+- `src/db/repo/`, `src/core/channel.ts`, `src/ai/usage.ts`, and `src/core/rate-limit.ts` —
+  organization-scoped domain operations to rename coherently.
+- `tests/db/schema.test.ts`, `tests/db/repos.test.ts`, and
+  `tests/core/organization-profile.test.ts` — Task 2 test-first starting point.
 
 ## Ruled out
 
@@ -37,6 +40,7 @@ explicit approval to execute inline from the current session), then perform Task
 
 ## Verify
 
-Run `npm test`, `npm run typecheck`, and the focused Task 1 auth-shell tests after the
-implementation. Before any live browser test, enable Clerk Organizations on the Development
-instance and use a single controlled chat request only after the full suite is green.
+Run the focused Task 2 tests, `npm run typecheck`, and the full suite. Verify the migration in
+PGlite or an isolated Neon branch before any live organization-aware browser test. Before that
+live test, enable Clerk Organizations with the intended invite-only membership mode in the
+Development instance.
