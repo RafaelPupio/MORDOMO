@@ -12,24 +12,28 @@ authentication, saved profiles, and five localized interfaces.
   ignore rules.
 - `de806ac` — Clerk provider, protected-route proxy, and real Development sign-in/sign-up
   shell. Focused auth tests, TypeScript, production build, and the full test suite passed.
+- `2568416` — safe organization-tenancy migration, repository rename, and persisted,
+  validated secretary profiles. Full tests, TypeScript, production build, and a legacy-data
+  PGlite migration regression passed; Development Neon remains unchanged.
 - Clerk is provisioned and connected to the Vercel Development environment only; Neon remains
   Development-only. No billing or production configuration was added.
 
 ## Next action
 
-Perform Task 2 from `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: preserve
-the existing data while renaming church tenancy to organization tenancy and adding the saved
-secretary-profile model. Begin with the specified failing profile/schema tests.
+Perform Task 3 from `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: replace
+the legacy staff password/cookie boundary with trusted Clerk organization context, and resolve
+public chat from a validated organization slug exactly once per request.
 
 ## Files in play
 
 - `docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md` — approved contract.
 - `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md` — task-by-task execution plan.
-- `src/db/schema.ts` and `drizzle/` — tenant schema and additive-safe migration seams.
-- `src/db/repo/`, `src/core/channel.ts`, `src/ai/usage.ts`, and `src/core/rate-limit.ts` —
-  organization-scoped domain operations to rename coherently.
-- `tests/db/schema.test.ts`, `tests/db/repos.test.ts`, and
-  `tests/core/organization-profile.test.ts` — Task 2 test-first starting point.
+- `src/core/organization-context.ts` and `src/core/public-organization.ts` — Task 3 trusted
+  staff/public resolution helpers to add.
+- `src/channels/web.ts`, `src/channels/ingest-http.ts`, staff routes/actions, and chat routes —
+  current callers of the legacy boundary to replace.
+- `src/db/schema.ts`, `drizzle/0005_rename_churches_to_organizations.sql`, and
+  `src/db/repo/organization-profiles.ts` — completed tenancy/profile foundation.
 
 ## Ruled out
 
@@ -40,7 +44,7 @@ secretary-profile model. Begin with the specified failing profile/schema tests.
 
 ## Verify
 
-Run the focused Task 2 tests, `npm run typecheck`, and the full suite. Verify the migration in
-PGlite or an isolated Neon branch before any live organization-aware browser test. Before that
-live test, enable Clerk Organizations with the intended invite-only membership mode in the
-Development instance.
+Run Task 3 ownership and API tests, `npm run typecheck`, and the full suite. Before a live
+organization-aware browser test, enable Clerk Organizations with the intended invite-only
+membership mode in the Development instance. Apply the migration to a disposable Neon branch
+before any Development-database migration.
