@@ -16,7 +16,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 - Branch `codex/ai-secretary-saas-beta` contains the approved public technical design,
   Clerk shell, organization-tenancy migration, saved secretary profiles, and MORDOMO rebrand.
-  It is isolated from the original V2 worktree; V1 remains untouched and church-focused.
+  It is isolated from the original V2 worktree; V1 remains untouched and church-focused. Its
+  remote repository is `RafaelPupio/MORDOMO`; Vercel infrastructure deliberately remains
+  linked as `churchchatboxv2`.
 - Clerk is connected to Vercel **Development only** on the free Hobby plan. The project has
   `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in Development; no secret is
   committed.

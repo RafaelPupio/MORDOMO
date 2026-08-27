@@ -17,6 +17,9 @@ and five-language public presentation.
 - `77551b1` — typed MORDOMO brand and locale foundation.
 - `dae14e9` — shared MORDOMO presentation at `/`, `/pt`, `/es`, `/fr`, and `/de`,
   with localized metadata and a tested 404 boundary.
+- `281498d` — active package metadata, public technical docs, and delivery records renamed
+  to MORDOMO. The GitHub repository is now `RafaelPupio/MORDOMO`; the Vercel project name was
+  intentionally left as deployment infrastructure.
 - Clerk is provisioned and connected to Vercel Development only; Neon remains unchanged.
   No billing or production configuration was added.
 

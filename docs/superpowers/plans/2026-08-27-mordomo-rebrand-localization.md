@@ -223,13 +223,13 @@ Change the npm package name to `mordomo`. Update the current README, project rul
 
 Append one concise Q3 decision stating that the V2 product identity is MORDOMO, public marketing is localized in five languages, the Vercel project remains `churchchatboxv2` as deployment infrastructure, and V1 stays separate.
 
-- [ ] **Step 3: Run the complete local verification suite**
+- [x] **Step 3: Run the complete local verification suite**
 
 Run: `npm test && npm run typecheck && npm run build`
 
 Expected: all tests pass, TypeScript emits no errors, and Next.js builds the five public presentation routes.
 
-- [ ] **Step 4: Commit active identity and delivery state**
+- [x] **Step 4: Commit active identity and delivery state**
 
 ```bash
 git add package.json package-lock.json README.md CLAUDE.md brain docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md
@@ -241,12 +241,12 @@ git commit -m "chore: rename V2 product to Mordomo"
 Run:
 
 ```bash
-gh repo rename MORDOMO --repo RafaelPupio/ChurchChatBoxV2
-git remote set-url origin https://github.com/RafaelPupio/MORDOMO.git
+gh repo rename MORDOMO --repo RafaelPupio/<former-v2-repository>
+git remote set-url origin git@github.com:RafaelPupio/MORDOMO.git
 git push -u origin codex/ai-secretary-saas-beta
 ```
 
-Expected: GitHub redirects the old repository URL, `git remote -v` shows the MORDOMO URL, and the beta branch is available on the renamed repository. Do not rename the Vercel project or move either local worktree; those names are deployment and workspace infrastructure, not user-facing product identity.
+Expected: GitHub redirects the previous repository URL, `git remote -v` shows the MORDOMO URL, and the beta branch is available on the renamed repository. Do not rename the Vercel project or move either local worktree; those names are deployment and workspace infrastructure, not user-facing product identity.
 
 - [ ] **Step 6: Record the final state and push it**
 
