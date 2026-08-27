@@ -1,109 +1,43 @@
 # Status
 
-_Present state only. The dated build chronology is in [[log/status-archive]]._
+_Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## What runs today
 
-The whole chat path exists and is tested end to end against an in-memory Postgres:
+- The original V2 church-secretary demo remains functional on `main`: cited RAG chat,
+  document ingest/extraction/verification, password-gated staff operations, weekly reports,
+  cost metering, and the public AI-systems portfolio page.
+- The Vercel **Development** environment is linked to Neon and has the fictional Igreja da
+  Colina corpus seeded. A controlled live chat request retrieved cited source material and
+  recorded its cost in `usage_ledger`.
+- No Production or Preview environment is configured for the new SaaS work, and no billing
+  integration, Stripe resource, checkout, or price UI exists.
 
-- `POST /api/chat` → rate limit → budget gate → conversation ownership → secretary agent
-  → streamed reply, with the user turn and the assistant turn persisted.
-- `GET /api/chat/history` resumes a returning visitor's own conversation (matched by the
-  same `ccb_visitor` cookie the POST path trusts for ownership) instead of the client
-  starting a fresh, empty one on every page load — this is also how a staff-sent support
-  reply actually reaches the visitor who asked, the next time they open `/chat`.
-- The secretary is one tool-using agent: `searchKnowledge`, `getCalendar`,
-  `createPrayerRequest`, `escalateToHuman`.
-- RAG over pgvector with citation excerpts centred on the matching text.
-- Seed corpus for the fictional *Igreja da Colina*: 3 Portuguese documents + 6 events.
-  `scripts/retrieval-benchmark.ts` (`npm run benchmark:retrieval`) scores 10/10 on the ten
-  benchmark visitor questions — but only measured offline, against the deterministic
-  bag-of-words `HashEmbedder`. It has NOT yet been run against the real embedder
-  (`GatewayEmbedder`, `openai/text-embedding-3-small`) that will actually serve visitors.
-  Re-running it with `BENCHMARK_REAL_EMBEDDER=1` against the real production seed is a gate
-  before the demo is public.
-- Cost controls: `usage_ledger` on every LLM/embedding call, per-tenant monthly budget
-  (fails closed), atomic per-visitor rate limit, request-size bounds.
-- Chat UI at `/chat` with source chips, bilingual disclaimer, and error recovery.
-- **Document ingest pipeline** (`runIngest`, Plan 2): upload → parse → chunk → embed →
-  extract → verify → publish, driving each document through an explicit `ingest_status`
-  state machine (`uploaded → parsing → extracting → verifying → published`, `failed`
-  reachable from any non-terminal state, `published` terminal so a served document is
-  never silently pulled back into the pipeline). An extractor agent pulls candidate
-  calendar events out of the document text; a separate verifier agent — a distinct model
-  call, prompted to disprove each candidate rather than confirm it — audits every
-  candidate against the source before anything reaches the calendar. The pipeline fails
-  closed throughout: a verification-call outage rejects that candidate instead of
-  publishing it unchecked, and any unhandled failure parks the document at `failed` with
-  the error recorded rather than leaving it stuck mid-run. Fail-closed does NOT mean
-  fail-destructive: an agent-stage outage on re-ingest (extractor or verifier) leaves the
-  document's previously verified events untouched rather than replacing them with an
-  empty set — `IngestResult.eventsReplaced` says whether this run's outcome was trustworthy
-  enough to actually replace them. `events.verified` is enforced at read time
-  (`listUpcomingEvents`), not just written by the verifier and trusted. `POST /api/ingest`
-  runs this inline (`maxDuration = 300`, no queue yet) behind the staff session cookie
-  (see below) — an unset session secret, a missing cookie, a bad signature, an expired
-  session, or a session signed for a different church all fail closed with 401 — and
-  returns a non-201 status when the run itself ends `failed`. An optional `documentId`
-  form field re-ingests (replaces) that document instead of creating a new one, rejecting
-  one that doesn't belong to the caller's church. Proven end to end in
-  `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin is retrievable via the
-  secretary's `searchKnowledge` tool, cited to the right document, and its verified event
-  shows up in `getCalendar`.
-- **Staff area** (`/staff`, Plan 3): a password check (`STAFF_PASSWORD`, fails closed
-  when unset) signs an HMAC-signed, httpOnly session cookie; the `(dashboard)` route
-  group re-checks that cookie on every request and redirects to `/staff/login` otherwise
-  — `/staff/login` itself sits outside the guarded group, so an unauthenticated visit
-  redirects exactly once, never loops. Every staff page and Server Action derives
-  `churchId` from that session alone (`requireStaffContext()`), never from a form field.
-  Documents: list, upload (through the same `runIngest` pipeline `POST /api/ingest`
-  uses), per-document ingest status. Agenda: verified events with their extraction
-  provenance (source quote + verifier note). Prayer requests and support tickets: status
-  workflow, plus a reply-drafter agent (`draftReply`) that proposes a grounded Portuguese
-  reply for a ticket — a staff member always edits and sends it; the drafter returns an
-  empty draft rather than throwing if retrieval or generation fails, so a broken drafter
-  never blocks the inbox. Usage page: month-to-date cost per feature
-  (`chat.reply`, `chat.retrieval`, `ingest.embed`, `ingest.extract`, `ingest.verify`,
-  `support.draft`, `support.retrieval`) against the tenant's budget. All staff mutations
-  remain rate-limited and budget-gated exactly like the public chat path — an
-  authenticated session on a public demo is still an untrusted spend path, not a reason
-  to relax the gates.
-- **Reporting + portfolio shell** (Plan 4): `gatherWeekActivity` bounds each raw activity
-  kind before the analyst sees it; the analyst produces structured findings and a separate
-  writer turns only those findings, aggregate counts, and the week's AI cost into Portuguese
-  markdown. A report is never published after a failed analysis or writer call. The cron
-  checks the same monthly tenant/global budget before either model runs. Prayer themes are a closed
-  Portuguese vocabulary (plus `outro`), so personal names and diagnoses are structurally
-  impossible in a digest theme. The other operational fields remain free-text summaries
-  and do not make the same structural guarantee. `/staff/relatorios` shows reports and can run last week's
-  report on demand; `GET /api/cron/weekly-report` runs each Monday at 09:00 UTC behind
-  `CRON_SECRET`. The public `/` page now maps all ten built AI capabilities to the actual
-  product surfaces and explains why the visitor hot path uses one agent while ingest and
-  reporting use separate two-agent pipelines.
+## AI Secretary SaaS beta
 
-## Blocked — needs Rafael
+- Branch `codex/ai-secretary-saas-beta` contains the approved public technical design
+  (`04574d1`) and execution plan (`135a38b`). It is isolated from the original V2 worktree.
+- Clerk is connected to Vercel **Development only** on the free Hobby plan. The project has
+  `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in Development; no secret is
+  committed.
+- The beta target is invite-only, multi-organization workspaces with a saved secretary
+  profile and five interface locales: English, Portuguese, Spanish, French, and German.
+- The planned authorization model uses Clerk's default `org:admin` and `org:member` roles;
+  Neon stores the workspace owner's Clerk user ID. This avoids paid custom-role features.
 
-**Deployment (plan Task 13) is blocked on Neon Marketplace terms-of-service acceptance,
-which needs a browser.** Provisioning the production database via
-`vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
-interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
-accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
-the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
-`STAFF_PASSWORD`, and `STAFF_SESSION_SECRET`, `BENCHMARK_REAL_EMBEDDER=1 npm run
-benchmark:retrieval` against that real seed to confirm retrieval quality holds with real
-embeddings (not just the offline HashEmbedder number), `vercel deploy --prod`.
+## Blocked / next action
 
-Nothing has been deployed and no cloud resource has been created.
+1. The current Codex session is rooted in the V1 folder, so spawned workers can read but
+   cannot write the isolated V2 worktree. Resume from the V2 worktree or explicitly choose
+   inline execution before Task 1 can begin.
+2. Before organization-aware flows are tested live, enable Clerk Organizations with the
+   intended invite-only membership mode in the Development Clerk instance.
+3. Execute Task 1 in
+   `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: install Clerk SDK, add
+   provider/proxy/sign-in shell through TDD, review, and commit.
 
-## Next
+## Repository hygiene
 
-1. Merge the reviewed Plan 4 branch; all four product plans will then be on `main`.
-2. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
-   migrate, seed, benchmark against the real embedder, deploy, verify).
-
-## Open questions
-
-- Final name for the fictional demo church (currently *Igreja da Colina*, disclaimed
-  everywhere as fictional).
-- Pricing / competitor comparison — deferred until after the build; that analysis is
-  business-sensitive and lives in the private V1 repo, not here.
+- `.env*` and `.vercel` are ignored. Generated Clerk agent-skill files remain uncommitted.
+- The public brain contains technical architecture and delivery state only; customer data,
+  secrets, pricing strategy, and competitor analysis remain outside this repository.
