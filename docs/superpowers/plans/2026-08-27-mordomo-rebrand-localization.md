@@ -236,7 +236,7 @@ git add package.json package-lock.json README.md CLAUDE.md brain docs/superpower
 git commit -m "chore: rename V2 product to Mordomo"
 ```
 
-- [ ] **Step 5: Rename the authorized GitHub repository and update origin**
+- [x] **Step 5: Rename the authorized GitHub repository and update origin**
 
 Run:
 
@@ -248,6 +248,6 @@ git push -u origin codex/ai-secretary-saas-beta
 
 Expected: GitHub redirects the previous repository URL, `git remote -v` shows the MORDOMO URL, and the beta branch is available on the renamed repository. Do not rename the Vercel project or move either local worktree; those names are deployment and workspace infrastructure, not user-facing product identity.
 
-- [ ] **Step 6: Record the final state and push it**
+- [x] **Step 6: Record the final state and push it**
 
 Update `brain/status.md` and `brain/handoff.md` with the rebrand/localization result and the next beta action (Clerk Organizations + trusted context). Commit that record, push it to the renamed origin, and report the five local URLs plus the GitHub URL.

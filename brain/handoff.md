@@ -20,6 +20,8 @@ and five-language public presentation.
 - `281498d` — active package metadata, public technical docs, and delivery records renamed
   to MORDOMO. The GitHub repository is now `RafaelPupio/MORDOMO`; the Vercel project name was
   intentionally left as deployment infrastructure.
+- `af3d825` — review hardening: localized accessible navigation, all localized metadata
+  variants, and unsupported-locale metadata regression coverage. The beta branch is pushed.
 - Clerk is provisioned and connected to Vercel Development only; Neon remains unchanged.
   No billing or production configuration was added.
 
