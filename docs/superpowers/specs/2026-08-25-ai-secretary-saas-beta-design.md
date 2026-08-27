@@ -6,7 +6,7 @@
 
 ## Goal
 
-Evolve ChurchChatBox V2 from a single fictional church demo into a configurable, multilingual AI Secretary that real beta clients can access through isolated organization workspaces. Igreja da Colina remains a seeded church preset and portfolio example; it is no longer the product's only domain.
+**MORDOMO** is a configurable, multilingual AI Secretary that real beta clients can access through isolated organization workspaces. Igreja da Colina remains a seeded church preset and portfolio example; it is no longer the product's only domain.
 
 The beta proves onboarding, configuration, grounded public chat, staff workflows, and tenant isolation before pricing or payment collection. English remains available alongside Portuguese, Spanish, French, and German.
 

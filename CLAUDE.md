@@ -1,7 +1,8 @@
-# ChurchChatBoxV2 — project rules
+# MORDOMO — project rules
 
-AI-powered successor to ChurchChatBox (V1): a portfolio-grade showcase of an AI church
-secretary, architected so it can become V1's next generation later.
+MORDOMO is the AI-powered successor to ChurchChatBox (V1): a portfolio-grade AI secretary
+for organizations. V1 remains a separate, church-focused product; this repository is where
+the broader MORDOMO beta evolves.
 
 ## Brain first
 
@@ -24,13 +25,13 @@ This is a portfolio repo. "Show our work without showing too much":
 
 ## The spec is the contract
 
-`docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md` is the approved design.
+`docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md` is the approved design.
 The brain is the fast path; the spec is the authority.
 
 ## Stack conventions
 
 - Next.js App Router on Vercel, TypeScript, Drizzle ORM, Vitest.
-- Neon Postgres + pgvector. Every table keyed by `church_id` from day one.
+- Neon Postgres + pgvector. Every tenant table is keyed by `organization_id`.
 - AI SDK v6 through Vercel AI Gateway with plain `"anthropic/claude-*"` model strings.
   Sonnet where quality shows (member chat), Haiku for routing/extraction/background work.
 - All scheduled work runs on Vercel Cron (cloud). No local schedulers — this is why the

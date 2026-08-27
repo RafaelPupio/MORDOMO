@@ -1,17 +1,16 @@
-# ChurchChatBoxV2
+# MORDOMO
 
-An AI church secretary for a fictional Brazilian church, **Igreja da Colina**. This is a
-portfolio project, not a real product: the church, its documents, staff, and members are
-all invented, and no real data appears anywhere in this repo or its seed corpus.
+MORDOMO is a multilingual AI secretary for organizations. It began as a portfolio prototype
+for the fictional Brazilian church **Igreja da Colina**, which remains an invented demo preset;
+the product, however, is designed for isolated organization workspaces. No real data appears
+anywhere in this repository or its seed corpus.
 
 ## Status
 
-**Plans 1–4 (foundation + chat, document ingest, staff operations, reporting + portfolio shell) are code-complete.
-Nothing is deployed yet.** There is no live demo URL — deployment is blocked on accepting
-Neon's Marketplace terms of service, a step that only renders in an interactive browser
-session and so cannot be driven from an unattended CLI. Everything below is built and
-covered by an automated test suite (`npm test`), but none of it has run in production. A
-URL will be added here once it exists.
+**The original portfolio foundation is code-complete, and the MORDOMO beta branch adds Clerk
+authentication, organization-ready tenancy, secretary profiles, and a five-language public
+presentation.** Development services are configured separately; the invite-only beta is not a
+public production service. Everything below is covered by the automated suite (`npm test`).
 
 ## What works today
 
@@ -94,7 +93,7 @@ services or API keys: `npm test`.
 
 ## Design & plan
 
-- Design spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`
+- Active beta design: `docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md`
 - Implementation plans: `docs/superpowers/plans/2026-08-19-plan-1-foundation-chat-slice.md`,
   `docs/superpowers/plans/2026-08-20-plan-2-ingest-pipeline.md`,
   `docs/superpowers/plans/2026-08-20-plan-3-staff-operations.md`,
@@ -103,5 +102,6 @@ services or API keys: `npm test`.
 
 ## Language
 
-The bot answers in whatever language the visitor writes in. Church content (the seed
-corpus) is Portuguese; all code, comments, and docs are English.
+The public MORDOMO presentation is available in English, Portuguese, Spanish, French, and
+German. The secretary answers in the visitor's language. The fictional seed corpus remains
+Portuguese; stored organization data and source documents are not machine-translated at rest.
