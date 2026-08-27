@@ -42,7 +42,7 @@ export async function setIngestStatus(
   opts: { error?: string | null } = {},
 ) {
   const current = await getDocument(db, organizationId, documentId);
-  if (!current) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
+  if (!current) throw new Error(`Document ${documentId} not found for organization ${organizationId}`);
   assertTransition(current.ingestStatus as IngestStatus, status);
   await db
     .update(documents)
@@ -69,7 +69,7 @@ export async function setIngestStatus(
  */
 export async function beginIngestRun(db: Db, organizationId: string, documentId: string): Promise<void> {
   const current = await getDocument(db, organizationId, documentId);
-  if (!current) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
+  if (!current) throw new Error(`Document ${documentId} not found for organization ${organizationId}`);
 
   if (current.ingestStatus === 'published') {
     await db

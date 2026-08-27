@@ -29,7 +29,8 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 - Task 2 is complete in the beta branch: the existing tenant domain is renamed to
   organizations, the database migration preserves legacy UUIDs and foreign keys in PGlite,
   and each organization has a validated, persisted secretary profile. The migration has not
-  been applied to Development Neon yet.
+  been applied to Development Neon yet. Its Drizzle snapshot and constraint names match the
+  renamed schema, and a regression covers every migrated child relation.
 
 ## Blocked / next action
 

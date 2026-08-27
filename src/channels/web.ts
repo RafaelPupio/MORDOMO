@@ -310,8 +310,8 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
   // client. Validation itself (the parse above) is intentionally outside this try/catch so a
   // 400 for a malformed body stays a 400, not a 500.
   try {
-    const church = await getOrganizationBySlug(deps.db, DEMO_ORGANIZATION_SLUG);
-    if (!church) return jsonResponse({ code: 'not_seeded' }, { status: 500 });
+    const organization = await getOrganizationBySlug(deps.db, DEMO_ORGANIZATION_SLUG);
+    if (!organization) return jsonResponse({ code: 'not_seeded' }, { status: 500 });
 
     // Scope the rate-limit key by tenant: `rate_limits` is a tenant-agnostic table keyed by
     // an opaque string, so the tenant must live in the key itself — otherwise visitors of
@@ -320,20 +320,20 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
     // is what makes visitorId a stable, caller-honoured identity rather than a fresh
     // one-off UUID.
     const rateLimitId = resolveRateLimitIdentity(req, visitorId, !mintedCookieHeader);
-    const rate = await checkRateLimit(deps.db, `chat:${church.id}:${rateLimitId}`, CHAT_LIMIT);
+    const rate = await checkRateLimit(deps.db, `chat:${organization.id}:${rateLimitId}`, CHAT_LIMIT);
     if (!rate.allowed) return jsonResponse({ code: 'rate_limited' }, { status: 429 });
 
-    const budget = await checkBudget(deps.db, church.id, deps.globalCapUsd);
+    const budget = await checkBudget(deps.db, organization.id, deps.globalCapUsd);
     if (!budget.allowed) return jsonResponse({ code: 'budget_exhausted', reason: budget.reason }, { status: 402 });
 
-    await ensureConversation(deps.db, { id: body.conversationId, organizationId: church.id, visitorKey: visitorId });
+    await ensureConversation(deps.db, { id: body.conversationId, organizationId: organization.id, visitorKey: visitorId });
 
     // ensureConversation uses onConflictDoNothing, so a client-supplied conversationId that
     // already belongs to someone else silently no-ops the insert instead of erroring. Load
-    // the row as it actually exists and verify it belongs to this church AND this
+    // the row as it actually exists and verify it belongs to this organization AND this
     // cookie-identified visitor before letting the request read or append to it.
     const conversation = await getConversation(deps.db, body.conversationId);
-    if (!conversation || conversation.organizationId !== church.id || conversation.visitorKey !== visitorId) {
+    if (!conversation || conversation.organizationId !== organization.id || conversation.visitorKey !== visitorId) {
       return jsonResponse({ code: 'conversation_forbidden' }, { status: 403 });
     }
 
@@ -353,7 +353,7 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
       // onConflictDoNothing skip the repeat makes the write idempotent per (conversation,
       // client message) instead of per HTTP call.
       await saveMessage(deps.db, {
-        organizationId: church.id,
+        organizationId: organization.id,
         conversationId: body.conversationId,
         role: 'user',
         parts: last.parts,
@@ -370,14 +370,14 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
     // exactly as a WhatsApp adapter would hand its own resolved envelope. Everything above
     // this point (cookies, headers, JSON body shape) is web-specific and stops here.
     const incoming: IncomingChat = {
-      organizationId: church.id,
+      organizationId: organization.id,
       conversationId: body.conversationId,
       visitorKey: visitorId,
       uiMessages,
     };
 
     // convertToModelMessages is async in ai@7.0.68, so runSecretary returns a Promise.
-    const result = await runSecretary(deps, { ...incoming, organizationName: church.name });
+    const result = await runSecretary(deps, { ...incoming, organizationName: organization.name });
 
     const streamHeaders = new Headers();
     if (mintedCookieHeader) streamHeaders.append('Set-Cookie', mintedCookieHeader);
@@ -394,7 +394,7 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
         // forever. There is nothing worth saving, so skip the write entirely.
         if (responseMessage.parts.length === 0) return;
         await saveMessage(deps.db, {
-          organizationId: church.id,
+          organizationId: organization.id,
           conversationId: body.conversationId,
           role: 'assistant',
           parts: responseMessage.parts,
@@ -408,7 +408,7 @@ export async function handleChatRequest(deps: WebChannelDeps, req: Request): Pro
       onError: (error) => {
         console.error('handleChatRequest: model/stream failure', {
           conversationId: body.conversationId,
-          organizationId: church.id,
+          organizationId: organization.id,
           error,
         });
         return 'An error occurred.';
@@ -438,7 +438,7 @@ const EMPTY_HISTORY: ChatHistoryResponseBody = { conversationId: null, messages:
 // `conversations` row.
 //
 // Every path that can't produce a real answer — no cookie, a cookie that isn't shaped like one
-// this server would have minted, no church seeded, or no conversation found for this visitor —
+// this server would have minted, no organization seeded, or no conversation found for this visitor —
 // returns the exact same `EMPTY_HISTORY` shape. That's the load-bearing property: an attacker
 // probing with a missing or garbage cookie learns nothing that distinguishes "you have no
 // conversation" from "the server had a hiccup," and never receives another visitor's data.
@@ -449,10 +449,10 @@ export async function handleChatHistoryRequest(deps: ChatHistoryDeps, req: Reque
   }
 
   try {
-    const church = await getOrganizationBySlug(deps.db, DEMO_ORGANIZATION_SLUG);
-    if (!church) return Response.json(EMPTY_HISTORY);
+    const organization = await getOrganizationBySlug(deps.db, DEMO_ORGANIZATION_SLUG);
+    if (!organization) return Response.json(EMPTY_HISTORY);
 
-    const conversation = await getConversationByVisitor(deps.db, church.id, visitorId);
+    const conversation = await getConversationByVisitor(deps.db, organization.id, visitorId);
     if (!conversation) return Response.json(EMPTY_HISTORY);
 
     const history = await listMessages(deps.db, conversation.id);
