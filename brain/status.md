@@ -24,17 +24,16 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   profile and five interface locales: English, Portuguese, Spanish, French, and German.
 - The planned authorization model uses Clerk's default `org:admin` and `org:member` roles;
   Neon stores the workspace owner's Clerk user ID. This avoids paid custom-role features.
+- Task 1 is complete: the root app is wrapped in Clerk, protected beta routes pass through
+  Clerk's proxy, and real Clerk sign-in/sign-up routes run locally at Development scope.
 
 ## Blocked / next action
 
-1. The current Codex session is rooted in the V1 folder, so spawned workers can read but
-   cannot write the isolated V2 worktree. Resume from the V2 worktree or explicitly choose
-   inline execution before Task 1 can begin.
-2. Before organization-aware flows are tested live, enable Clerk Organizations with the
+1. Before organization-aware flows are tested live, enable Clerk Organizations with the
    intended invite-only membership mode in the Development Clerk instance.
-3. Execute Task 1 in
-   `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: install Clerk SDK, add
-   provider/proxy/sign-in shell through TDD, review, and commit.
+2. Execute Task 2 in
+   `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: migrate persistent
+   church tenancy to organization tenancy and add the saved secretary profile.
 
 ## Repository hygiene
 

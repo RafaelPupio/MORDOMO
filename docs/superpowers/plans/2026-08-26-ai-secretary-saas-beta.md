@@ -27,7 +27,7 @@
 **Files:**
 - Modify: `package.json`, `package-lock.json`, `src/app/layout.tsx`
 - Create: `src/proxy.ts`, `src/app/sign-in/[[...sign-in]]/page.tsx`, `src/app/sign-up/[[...sign-up]]/page.tsx`
-- Test: `tests/app/auth-shell.test.tsx`
+- Test: `tests/app/auth-shell.test.ts`
 
 **Interfaces:**
 - Consumes: `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` from Development `.env.local`.
@@ -58,7 +58,7 @@ vi.mock('@clerk/nextjs', () => ({
 
 - [ ] **Step 3: Run the focused test to verify it fails.**
 
-Run: `npm test -- tests/app/auth-shell.test.tsx`
+Run: `npm test -- tests/app/auth-shell.test.ts`
 
 Expected: FAIL because the provider and auth pages do not exist.
 
@@ -79,7 +79,7 @@ export default clerkMiddleware(async (auth, request) => {
 
 Run:
 ```bash
-npm test -- tests/app/auth-shell.test.tsx
+npm test -- tests/app/auth-shell.test.ts
 npm run typecheck
 ```
 
@@ -88,7 +88,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit the isolated authentication shell.**
 
 ```bash
-git add package.json package-lock.json src/app/layout.tsx src/proxy.ts src/app/sign-in src/app/sign-up tests/app/auth-shell.test.tsx
+git add package.json package-lock.json src/app/layout.tsx src/proxy.ts src/app/sign-in src/app/sign-up tests/app/auth-shell.test.ts
 git commit -m "feat(auth): add clerk application shell"
 ```
 
