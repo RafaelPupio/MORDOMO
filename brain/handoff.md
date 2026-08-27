@@ -15,6 +15,8 @@ authentication, saved profiles, and five localized interfaces.
 - `2568416` — safe organization-tenancy migration, repository rename, and persisted,
   validated secretary profiles. Full tests, TypeScript, production build, and a legacy-data
   PGlite migration regression passed; Development Neon remains unchanged.
+- `29f73d6` — review hardening for that migration: complete child-FK preservation regression,
+  renamed database constraints, matching Drizzle snapshot, and organization terminology cleanup.
 - Clerk is provisioned and connected to the Vercel Development environment only; Neon remains
   Development-only. No billing or production configuration was added.
 
