@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChurchChatBox V2",
-  description: "AI church secretary — a portfolio project (fictional demo church).",
+  title: 'MORDOMO — accountable AI secretary',
+  description: 'A multilingual AI secretary for organizations that answers from verified knowledge and keeps people in control.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
