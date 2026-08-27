@@ -11,6 +11,7 @@ describe('MORDOMO home messages', () => {
       expect(messages.hero.title).toContain(PRODUCT_NAME);
       expect(messages.capabilities).toHaveLength(10);
       expect(messages.languageLabel).not.toHaveLength(0);
+      expect(messages.navigationLabel).not.toHaveLength(0);
     }
   });
 

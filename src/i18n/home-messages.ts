@@ -17,6 +17,7 @@ type Capability = {
 
 export type HomeMessages = {
   metadata: { title: string; description: string };
+  navigationLabel: string;
   languageLabel: string;
   languageOptions: Array<{ locale: Locale; label: string }>;
   codeLink: string;
@@ -54,6 +55,7 @@ const languageOptions: HomeMessages['languageOptions'] = [
 export const HOME_MESSAGES: Record<Locale, HomeMessages> = {
   en: {
     metadata: { title: 'MORDOMO — accountable AI secretary', description: 'A multilingual AI secretary for organizations that answers from verified knowledge and keeps people in control.' },
+    navigationLabel: 'Primary navigation',
     languageLabel: 'Choose presentation language',
     languageOptions,
     codeLink: 'View the code',
@@ -103,6 +105,7 @@ export const HOME_MESSAGES: Record<Locale, HomeMessages> = {
   },
   pt: {
     metadata: { title: 'MORDOMO — secretaria de IA responsável', description: 'Uma secretaria de IA multilíngue para organizações, baseada em conhecimento verificado e com pessoas no controle.' },
+    navigationLabel: 'Navegação principal',
     languageLabel: 'Escolha o idioma da apresentação',
     languageOptions,
     codeLink: 'Ver o código',
@@ -145,6 +148,7 @@ export const HOME_MESSAGES: Record<Locale, HomeMessages> = {
   },
   es: {
     metadata: { title: 'MORDOMO — secretaría de IA responsable', description: 'Una secretaría de IA multilingüe para organizaciones que responde con conocimiento verificado y mantiene a las personas al mando.' },
+    navigationLabel: 'Navegación principal',
     languageLabel: 'Elige el idioma de la presentación',
     languageOptions,
     codeLink: 'Ver el código',
@@ -161,6 +165,7 @@ export const HOME_MESSAGES: Record<Locale, HomeMessages> = {
   },
   fr: {
     metadata: { title: 'MORDOMO — secrétariat IA responsable', description: 'Un secrétariat IA multilingue pour les organisations, fondé sur des connaissances vérifiées et laissant la décision aux personnes.' },
+    navigationLabel: 'Navigation principale',
     languageLabel: 'Choisir la langue de présentation',
     languageOptions,
     codeLink: 'Voir le code',
@@ -177,6 +182,7 @@ export const HOME_MESSAGES: Record<Locale, HomeMessages> = {
   },
   de: {
     metadata: { title: 'MORDOMO — verantwortliche KI-Sekretariatsassistenz', description: 'Eine mehrsprachige KI-Sekretariatsassistenz für Organisationen, die auf geprüftem Wissen basiert und Menschen die Kontrolle lässt.' },
+    navigationLabel: 'Hauptnavigation',
     languageLabel: 'Präsentationssprache wählen',
     languageOptions,
     codeLink: 'Code ansehen',

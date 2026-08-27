@@ -11,11 +11,23 @@ describe('localized MORDOMO home route', () => {
     ]);
   });
 
-  it('uses the requested locale for document metadata', async () => {
-    const metadata = await generateMetadata({ params: Promise.resolve({ locale: 'fr' }) });
-    expect(metadata).toMatchObject({
-      title: 'MORDOMO — secrétariat IA responsable',
-      description: expect.stringContaining('multilingue'),
-    });
+  it('uses each requested locale for document metadata', async () => {
+    const expectations = [
+      ['pt', 'MORDOMO — secretaria de IA responsável', 'multilíngue'],
+      ['es', 'MORDOMO — secretaría de IA responsable', 'multilingüe'],
+      ['fr', 'MORDOMO — secrétariat IA responsable', 'multilingue'],
+      ['de', 'MORDOMO — verantwortliche KI-Sekretariatsassistenz', 'mehrsprachige'],
+    ] as const;
+
+    for (const [locale, title, description] of expectations) {
+      await expect(generateMetadata({ params: Promise.resolve({ locale }) })).resolves.toMatchObject({
+        title,
+        description: expect.stringContaining(description),
+      });
+    }
+  });
+
+  it('rejects unsupported locale metadata with a not-found response', async () => {
+    await expect(generateMetadata({ params: Promise.resolve({ locale: 'it' }) })).rejects.toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
   });
 });

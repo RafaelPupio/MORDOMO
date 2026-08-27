@@ -37,7 +37,7 @@ export function MordomoHome({ locale }: { locale: Locale }) {
         <div className="absolute top-0 right-[-12rem] h-[32rem] w-[32rem] rounded-full bg-emerald-400/15 blur-3xl" />
         <div className="absolute bottom-[-16rem] left-[22%] h-[34rem] w-[34rem] rounded-full bg-sky-400/10 blur-3xl" />
         <div className="relative mx-auto max-w-6xl">
-          <nav className="flex flex-wrap items-center justify-between gap-4" aria-label="Primary navigation">
+          <nav className="flex flex-wrap items-center justify-between gap-4" aria-label={messages.navigationLabel}>
             <Link href={localizedPath(locale)} className="flex items-center gap-2 text-sm font-semibold tracking-tight text-white"><span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-300 font-serif text-lg font-semibold text-[#102421]">M</span>{PRODUCT_NAME}</Link>
             <div className="flex items-center gap-4">
               <div className="flex flex-wrap justify-end gap-x-2 gap-y-1 text-xs" aria-label={messages.languageLabel}>
@@ -90,4 +90,3 @@ export function MordomoHome({ locale }: { locale: Locale }) {
     </main>
   );
 }
-
