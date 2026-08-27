@@ -6,7 +6,7 @@ import { MAX_CANDIDATES, MAX_EXTRACTION_CHARS, runIngest } from '@/core/ingest';
 import { createDocument, getDocument } from '@/db/repo/documents';
 import { listUpcomingEvents } from '@/db/repo/events';
 import { chunks, documents, events, usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 const DOC = [
   '# Boletim de Outubro',
@@ -73,8 +73,8 @@ const TWO_CANDIDATES = {
 describe('runIngest', () => {
   it('parses, chunks, embeds, extracts, verifies and publishes', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     const result = await runIngest(
       {
@@ -86,7 +86,7 @@ describe('runIngest', () => {
           { decision: 'rejected', note: 'Nao confere.' },
         ]),
       },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
 
     expect(result.status).toBe('published');
@@ -106,7 +106,7 @@ describe('runIngest', () => {
     // Chunks are searchable and tenant-scoped.
     const storedChunks = await db.select().from(chunks);
     expect(storedChunks.length).toBe(result.chunkCount);
-    expect(storedChunks.every((c) => c.churchId === church.id)).toBe(true);
+    expect(storedChunks.every((c) => c.organizationId === church.id)).toBe(true);
 
     // The document ends in a terminal state.
     const after = await getDocument(db, church.id, doc.id);
@@ -123,8 +123,8 @@ describe('runIngest', () => {
 
   it('publishes no events when every candidate is rejected, but still publishes the document', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     const result = await runIngest(
       {
@@ -132,7 +132,7 @@ describe('runIngest', () => {
         extractorModel: await objectModel([TWO_CANDIDATES]),
         verifierModel: await objectModel([{ decision: 'rejected', note: 'Nao confere.' }]),
       },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
 
     expect(result.published).toBe(0);
@@ -145,13 +145,13 @@ describe('runIngest', () => {
 
   it('marks the document failed and records the reason when parsing fails', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Imagem', kind: 'upload' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Imagem', kind: 'upload' });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await runIngest(
       { db, embedder: new HashEmbedder() },
-      { churchId: church.id, documentId: doc.id, bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' },
+      { organizationId: church.id, documentId: doc.id, bytes: new Uint8Array([1, 2, 3]), mimeType: 'image/png' },
     );
 
     expect(result.status).toBe('failed');
@@ -164,13 +164,13 @@ describe('runIngest', () => {
 
   it('re-ingesting replaces the previous chunks instead of duplicating them', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
     const deps = () => ({
       db, embedder: new HashEmbedder(),
       extractorModel: undefined, verifierModel: undefined,
     });
-    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+    const input = { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
 
     const first = await runIngest({ ...deps(), extractorModel: undefined }, input);
     const countAfterFirst = (await db.select().from(chunks)).length;
@@ -184,9 +184,9 @@ describe('runIngest', () => {
 
   it('a failed re-ingest does not destroy the document’s existing, previously published chunks', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
-    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
 
     // First ingest succeeds and publishes with real, retrievable chunks.
     const first = await runIngest({ db, embedder: new HashEmbedder() }, input);
@@ -217,20 +217,20 @@ describe('runIngest', () => {
 
   it('never touches another tenant’s data', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
-    const docB = await createDocument(db, { churchId: b.id, title: 'B', kind: 'bulletin' });
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
+    const docB = await createDocument(db, { organizationId: b.id, title: 'B', kind: 'bulletin' });
 
     await expect(
       runIngest({ db, embedder: new HashEmbedder() },
-        { churchId: a.id, documentId: docB.id, bytes: bytes(), mimeType: 'text/markdown' }),
+        { organizationId: a.id, documentId: docB.id, bytes: bytes(), mimeType: 'text/markdown' }),
     ).rejects.toThrow(/not found/i);
   });
 
   it('a corrupted ingest_status is parked in failed, with a diagnostic, instead of stuck forever', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     // Simulate a hand-edited or stale row: a value outside the known IngestStatus set.
     await db.update(documents).set({ ingestStatus: 'archived' }).where(eq(documents.id, doc.id));
@@ -238,7 +238,7 @@ describe('runIngest', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = await runIngest(
       { db, embedder: new HashEmbedder() },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
     errSpy.mockRestore();
 
@@ -251,8 +251,8 @@ describe('runIngest', () => {
 
   it('does not falsely claim failed when the forced recovery write itself fails', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     // Corrupt the status first (this write must succeed)...
     await db.update(documents).set({ ingestStatus: 'archived' }).where(eq(documents.id, doc.id));
@@ -268,7 +268,7 @@ describe('runIngest', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = await runIngest(
       { db, embedder: new HashEmbedder() },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
     errSpy.mockRestore();
     updateSpy.mockRestore();
@@ -289,8 +289,8 @@ describe('runIngest', () => {
   // non-terminal status (`parsing`, here) forever instead of ever reaching 'failed'.
   it('sanitizes an error message that itself contains unstorable bytes, so the recovery write cannot fail the same way the original write did', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     const throwingEmbedder: Embedder = {
       model: 'throwing-embedder',
@@ -301,7 +301,7 @@ describe('runIngest', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = await runIngest(
       { db, embedder: throwingEmbedder },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
     errSpy.mockRestore();
 
@@ -319,8 +319,8 @@ describe('runIngest', () => {
   // document even though the agent stages only saw the first MAX_EXTRACTION_CHARS of it.
   it('bounds the text handed to the extractor when the document exceeds MAX_EXTRACTION_CHARS, while chunking still covers the whole document', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim Longo', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim Longo', kind: 'bulletin' });
 
     const filler = 'lorem ipsum dolor sit amet consectetur adipiscing elit ';
     const paragraphs = Array.from({ length: 250 }, (_, i) => `Paragrafo ${i}: ${filler.repeat(6)}`);
@@ -344,7 +344,7 @@ describe('runIngest', () => {
 
     const result = await runIngest(
       { db, embedder: new HashEmbedder(), extractorModel: capturingModel },
-      { churchId: church.id, documentId: doc.id, bytes: new TextEncoder().encode(longText), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: new TextEncoder().encode(longText), mimeType: 'text/markdown' },
     );
 
     expect(result.status).toBe('published');
@@ -370,9 +370,9 @@ describe('runIngest', () => {
   // document's previously verified events and reporting success.
   it('an extraction outage leaves the document’s previously published events untouched (C1)', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
-    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
 
     const first = await runIngest(
       {
@@ -421,9 +421,9 @@ describe('runIngest', () => {
   // not "the document doesn't support it".
   it('a verification outage leaves previously published events untouched even though every candidate is (correctly) rejected (C1)', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
-    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
 
     const first = await runIngest(
       {
@@ -466,9 +466,9 @@ describe('runIngest', () => {
   // verification stage that never ran.
   it('omitting verifierModel while candidates exist rejects them as an outage instead of making a live gateway call (I2)', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
-    const input = { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const input = { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' };
 
     const first = await runIngest(
       {
@@ -507,8 +507,8 @@ describe('runIngest', () => {
   // verifier, regardless of how many the extractor returned.
   it('bounds candidate fan-out into the verifier at MAX_CANDIDATES, however many the extractor returns (I3)', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim', kind: 'bulletin' });
+    const church = await seedOrganization(db);
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim', kind: 'bulletin' });
 
     const manyCandidates = {
       events: Array.from({ length: MAX_CANDIDATES + 5 }, (_, i) => ({
@@ -537,7 +537,7 @@ describe('runIngest', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await runIngest(
       { db, embedder: new HashEmbedder(), extractorModel: await objectModel([manyCandidates]), verifierModel },
-      { churchId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
+      { organizationId: church.id, documentId: doc.id, bytes: bytes(), mimeType: 'text/markdown' },
     );
     warnSpy.mockRestore();
 

@@ -7,7 +7,7 @@ import { chunkMarkdown } from '@/core/chunking';
 import { listPrayerRequests } from '@/db/repo/prayer';
 import { listTickets } from '@/db/repo/tickets';
 import { chunks, documents, events, usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // The installed `ai` version types a tool's `execute` return as
 // `AsyncIterable<OUTPUT> | PromiseLike<OUTPUT> | OUTPUT` (streaming tool results are
@@ -18,13 +18,13 @@ type ToolOutput<T> = T extends (...args: never[]) => infer R ? Exclude<Awaited<R
 
 async function setup() {
   const db = await createTestDb();
-  const church = await seedChurch(db, 'Igreja da Colina');
+  const church = await seedOrganization(db, 'Igreja da Colina');
   const conversationId = crypto.randomUUID();
   const { ensureConversation } = await import('@/db/repo/chat');
-  await ensureConversation(db, { id: conversationId, churchId: church.id, visitorKey: 'test' });
+  await ensureConversation(db, { id: conversationId, organizationId: church.id, visitorKey: 'test' });
   const tools = secretaryTools(
     { db, embedder: new HashEmbedder() },
-    { churchId: church.id, conversationId },
+    { organizationId: church.id, conversationId },
   );
   return { db, church, conversationId, tools };
 }
@@ -33,10 +33,10 @@ describe('secretaryTools', () => {
   it('searchKnowledge returns sources and meters the embedding call', async () => {
     const { db, church, tools } = await setup();
     const embedder = new HashEmbedder();
-    const [doc] = await db.insert(documents).values({ churchId: church.id, title: 'Horários', kind: 'schedule' }).returning();
+    const [doc] = await db.insert(documents).values({ organizationId: church.id, title: 'Horários', kind: 'schedule' }).returning();
     const pieces = chunkMarkdown('## Culto\n\nCulto de domingo às 10h.');
     const { embeddings } = await embedder.embed(pieces.map((p) => p.content));
-    await db.insert(chunks).values(pieces.map((p, i) => ({ churchId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })));
+    await db.insert(chunks).values(pieces.map((p, i) => ({ organizationId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })));
 
     const out = (await tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)) as ToolOutput<
       typeof tools.searchKnowledge.execute
@@ -52,11 +52,11 @@ describe('secretaryTools', () => {
   // the ledger write to fail without touching retrieval itself.
   it('still returns sources when metering the retrieval fails', async () => {
     const { db, church } = await setup();
-    const [doc] = await db.insert(documents).values({ churchId: church.id, title: 'Horários', kind: 'schedule' }).returning();
+    const [doc] = await db.insert(documents).values({ organizationId: church.id, title: 'Horários', kind: 'schedule' }).returning();
     const realEmbedder = new HashEmbedder();
     const pieces = chunkMarkdown('## Culto\n\nCulto de domingo às 10h.');
     const { embeddings } = await realEmbedder.embed(pieces.map((p) => p.content));
-    await db.insert(chunks).values(pieces.map((p, i) => ({ churchId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })));
+    await db.insert(chunks).values(pieces.map((p, i) => ({ organizationId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })));
 
     class UnpricedEmbedder implements Embedder {
       readonly model = 'test/unpriced-embedder'; // deliberately absent from src/ai/pricing.ts
@@ -64,7 +64,7 @@ describe('secretaryTools', () => {
         return realEmbedder.embed(texts); // real vectors, so retrieval still matches
       }
     }
-    const tools = secretaryTools({ db, embedder: new UnpricedEmbedder() }, { churchId: church.id, conversationId: crypto.randomUUID() });
+    const tools = secretaryTools({ db, embedder: new UnpricedEmbedder() }, { organizationId: church.id, conversationId: crypto.randomUUID() });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const out = (await tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)) as ToolOutput<
@@ -89,19 +89,19 @@ describe('secretaryTools', () => {
         return Promise.reject(new Error('embedder unavailable'));
       }
     }
-    const tools = secretaryTools({ db, embedder: new ThrowingEmbedder() }, { churchId: church.id, conversationId: crypto.randomUUID() });
+    const tools = secretaryTools({ db, embedder: new ThrowingEmbedder() }, { organizationId: church.id, conversationId: crypto.randomUUID() });
     await expect(tools.searchKnowledge.execute!({ query: 'culto de domingo' }, {} as never)).rejects.toThrow('embedder unavailable');
   });
 
   it('getCalendar lists upcoming, verified events', async () => {
     const { db, church, tools } = await setup();
     await db.insert(events).values({
-      churchId: church.id, title: 'Retiro', startsAt: new Date(Date.now() + 86_400_000), verified: true,
+      organizationId: church.id, title: 'Retiro', startsAt: new Date(Date.now() + 86_400_000), verified: true,
     });
     // An unverified event (the schema default) must never show up here — events.verified
     // is the verifier's whole guarantee; see tests/db/repos.test.ts for the dedicated test.
     await db.insert(events).values({
-      churchId: church.id, title: 'Nao verificado', startsAt: new Date(Date.now() + 86_400_000),
+      organizationId: church.id, title: 'Nao verificado', startsAt: new Date(Date.now() + 86_400_000),
     });
     const out = (await tools.getCalendar.execute!({}, {} as never)) as ToolOutput<typeof tools.getCalendar.execute>;
     expect(out.events.map((e: { title: string }) => e.title)).toContain('Retiro');
@@ -168,8 +168,8 @@ describe('runSecretary', () => {
 
   // Mirrors the searchKnowledge ledger-write-guard test above, but for the OTHER recordUsage
   // call in this file — the one runSecretary's onFinish makes for 'chat.reply', which must
-  // not throw or go unlogged either. "Poisoning the insert" here means a churchId that
-  // doesn't exist in `churches`, so usage_ledger's church_id foreign key fails on write — a
+  // not throw or go unlogged either. "Poisoning the insert" here means a organizationId that
+  // doesn't exist in `organizations`, so usage_ledger's organization_id foreign key fails on write — a
   // failure independent of model pricing, unlike the searchKnowledge test's approach.
   it('logs, rather than throws, when recording chat.reply usage fails — the failure is never silent', async () => {
     const db = await createTestDb();
@@ -181,8 +181,8 @@ describe('runSecretary', () => {
       const result = await runSecretary(
         { db, embedder: new HashEmbedder(), model },
         {
-          churchId: missingChurchId,
-          churchName: 'Igreja Inexistente',
+          organizationId: missingChurchId,
+          organizationName: 'Igreja Inexistente',
           conversationId,
           visitorKey: 'test',
           uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,
@@ -193,7 +193,7 @@ describe('runSecretary', () => {
 
       expect(errorSpy).toHaveBeenCalledWith(
         'runSecretary: failed to record usage ledger entry',
-        expect.objectContaining({ churchId: missingChurchId, conversationId, model: CHAT_MODEL }),
+        expect.objectContaining({ organizationId: missingChurchId, conversationId, model: CHAT_MODEL }),
       );
       const ledger = await db.select().from(usageLedger);
       expect(ledger.some((u) => u.feature === 'chat.reply')).toBe(false); // the record never landed
@@ -204,13 +204,13 @@ describe('runSecretary', () => {
 
   it('still records chat.reply usage normally when nothing is poisoned (regression guard)', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await mockModel();
     const result = await runSecretary(
       { db, embedder: new HashEmbedder(), model },
       {
-        churchId: church.id,
-        churchName: church.name,
+        organizationId: church.id,
+        organizationName: church.name,
         conversationId: crypto.randomUUID(),
         visitorKey: 'test',
         uiMessages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'Oi' }] }] as never,

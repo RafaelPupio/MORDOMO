@@ -7,7 +7,7 @@ import type { Db } from '@/db/client';
 
 export type ExtractorDeps = { db: Db; model?: LanguageModel };
 export type ExtractorInput = {
-  churchId: string;
+  organizationId: string;
   documentId: string;
   text: string;
   /** ISO date the document is relative to, so "domingo que vem" can be resolved. */
@@ -86,7 +86,7 @@ export async function extractEvents(
     // shape) must not take down the whole document: the surrounding ingest pipeline can
     // still publish its chunks even with zero extracted events.
     console.error('ingest.extract: generateObject failed, returning no candidates for this document', {
-      churchId: input.churchId, documentId: input.documentId, error,
+      organizationId: input.organizationId, documentId: input.documentId, error,
     });
     // NoObjectGeneratedError sometimes still carries `usage` for the failed attempt (the
     // call was made and billed even though the output was unusable) — record it when
@@ -96,7 +96,7 @@ export async function extractEvents(
     if (failureUsage && ((failureUsage.inputTokens ?? 0) > 0 || (failureUsage.outputTokens ?? 0) > 0)) {
       try {
         await recordUsage(deps.db, {
-          churchId: input.churchId,
+          organizationId: input.organizationId,
           feature: 'ingest.extract',
           model: pricedModel,
           inputTokens: failureUsage.inputTokens ?? 0,
@@ -104,12 +104,12 @@ export async function extractEvents(
         });
       } catch (usageError) {
         console.error('ingest.extract usage not recorded after generateObject failure', {
-          churchId: input.churchId, documentId: input.documentId, error: usageError,
+          organizationId: input.organizationId, documentId: input.documentId, error: usageError,
         });
       }
     } else {
       console.error('ingest.extract call went unmetered: generateObject failed with no usage to record', {
-        churchId: input.churchId, documentId: input.documentId,
+        organizationId: input.organizationId, documentId: input.documentId,
       });
     }
     return { candidates: [], failed: true };
@@ -117,7 +117,7 @@ export async function extractEvents(
 
   try {
     await recordUsage(deps.db, {
-      churchId: input.churchId,
+      organizationId: input.organizationId,
       feature: 'ingest.extract',
       model: pricedModel,
       inputTokens: usage.inputTokens ?? 0,
@@ -125,7 +125,7 @@ export async function extractEvents(
     });
   } catch (error) {
     console.error('ingest.extract usage not recorded', {
-      churchId: input.churchId, documentId: input.documentId, error,
+      organizationId: input.organizationId, documentId: input.documentId, error,
     });
   }
 

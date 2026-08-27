@@ -5,7 +5,7 @@ import { HashEmbedder } from '@/ai/embedder';
 import { handleIngestRequest, INGEST_LIMIT } from '@/channels/ingest-http';
 import { SESSION_TTL_SECONDS, signSession, STAFF_COOKIE_NAME } from '@/core/staff-session';
 import { createDocument } from '@/db/repo/documents';
-import { budgets, chunks, churches, documents } from '@/db/schema';
+import { budgets, chunks, organizations, documents } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
 // parseDocument is mocked at the module level, by default delegating to the real
@@ -30,8 +30,8 @@ const SECRET = 'test-staff-session-secret';
 
 async function setupDemo() {
   const db = await createTestDb();
-  const [church] = await db.insert(churches).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
-  await db.insert(budgets).values({ churchId: church.id, monthlyUsd: 40 });
+  const [church] = await db.insert(organizations).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
+  await db.insert(budgets).values({ organizationId: church.id, monthlyUsd: 40 });
   const cookie = sessionCookieFor(church.id);
   return { db, church, cookie };
 }
@@ -41,12 +41,12 @@ function deps(db: unknown, over: Record<string, unknown> = {}) {
 }
 
 function sessionCookieFor(
-  churchId: string,
+  organizationId: string,
   opts: { secret?: string; expired?: boolean } = {},
 ): string {
   const issuedAt = Date.now();
   const expiresAt = opts.expired ? issuedAt - 1000 : issuedAt + SESSION_TTL_SECONDS * 1000;
-  return signSession({ churchId, issuedAt, expiresAt }, opts.secret ?? SECRET);
+  return signSession({ organizationId, issuedAt, expiresAt }, opts.secret ?? SECRET);
 }
 
 // `cookie` defaults to a valid session for the demo church, matching the previous helper's
@@ -99,7 +99,7 @@ describe('handleIngestRequest', () => {
       expect(res.status).toBe(401);
     });
 
-    // A session's churchId must match the actual church row, not just verify — the same
+    // A session's organizationId must match the actual church row, not just verify — the same
     // check `requireStaffContext` (src/core/staff-context.ts) makes, guarding against a
     // session signed for a church that was later re-seeded under a fresh id.
     it('rejects a session signed for a different church', async () => {
@@ -215,7 +215,7 @@ describe('handleIngestRequest', () => {
     it('rate-limit write fails', async () => {
       const { db, cookie } = await setupDemo();
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      // getChurchBySlug uses db.select (must succeed to reach checkRateLimit); checkRateLimit
+      // getOrganizationBySlug uses db.select (must succeed to reach checkRateLimit); checkRateLimit
       // is the only db.insert call reached before the handler would otherwise return.
       const insertSpy = vi.spyOn(db, 'insert').mockImplementation(() => {
         throw new Error('connection terminated unexpectedly');
@@ -233,7 +233,7 @@ describe('handleIngestRequest', () => {
     it('budget check fails', async () => {
       const { db, cookie } = await setupDemo();
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      // Call 1 is getChurchBySlug's own select, which must succeed so the flow actually
+      // Call 1 is getOrganizationBySlug's own select, which must succeed so the flow actually
       // reaches checkBudget; call 2 is checkBudget's first select, which is the one made to
       // fail here. (checkRateLimit, in between, uses db.insert, not db.select.)
       const originalSelect = db.select.bind(db);
@@ -350,8 +350,8 @@ describe('handleIngestRequest', () => {
 
     it('a documentId belonging to another church is rejected with 404 and nothing is written', async () => {
       const { db, church, cookie } = await setupDemo();
-      const [otherChurch] = await db.insert(churches).values({ slug: 'outra-igreja', name: 'Outra Igreja' }).returning();
-      const otherDoc = await createDocument(db, { churchId: otherChurch.id, title: 'Documento de outra igreja', kind: 'upload' });
+      const [otherChurch] = await db.insert(organizations).values({ slug: 'outra-igreja', name: 'Outra Igreja' }).returning();
+      const otherDoc = await createDocument(db, { organizationId: otherChurch.id, title: 'Documento de outra igreja', kind: 'upload' });
 
       const res = await handleIngestRequest(
         deps(db), ingestReq(form('# Boletim\n\nTexto.', 'boletim.md', 'text/markdown', 'Boletim', otherDoc.id), cookie),
@@ -359,7 +359,7 @@ describe('handleIngestRequest', () => {
 
       expect(res.status).toBe(404);
       // Nothing was written for the demo church, and the other church's document is untouched.
-      expect(await db.select().from(documents).where(eq(documents.churchId, church.id))).toHaveLength(0);
+      expect(await db.select().from(documents).where(eq(documents.organizationId, church.id))).toHaveLength(0);
       const otherAfter = await db.select().from(documents).where(eq(documents.id, otherDoc.id));
       expect(otherAfter).toHaveLength(1);
       expect(otherAfter[0].ingestStatus).toBe(otherDoc.ingestStatus);

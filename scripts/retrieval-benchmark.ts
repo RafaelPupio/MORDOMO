@@ -9,7 +9,7 @@ import { GatewayEmbedder, HashEmbedder, type Embedder } from '@/ai/embedder';
 import { chunkMarkdown } from '@/core/chunking';
 import { searchKnowledgeBase } from '@/core/retrieval';
 import type { Db } from '@/db/client';
-import { chunks, churches, documents } from '@/db/schema';
+import { chunks, organizations, documents } from '@/db/schema';
 
 config({ path: '.env.local' });
 
@@ -74,16 +74,16 @@ async function main() {
   for (const { question, expectedContains } of QUESTIONS) assertUniqueMatch(question, expectedContains, allChunkContents);
 
   const db = await createBenchmarkDb();
-  const [church] = await db.insert(churches).values({ slug: 'benchmark', name: 'Igreja da Colina (benchmark)' }).returning();
+  const [church] = await db.insert(organizations).values({ slug: 'benchmark', name: 'Igreja da Colina (benchmark)' }).returning();
   for (const { file, markdown, pieces } of perFile) {
     const title = markdown.split('\n')[0].replace(/^#\s*/, '');
     const [doc] = await db
       .insert(documents)
-      .values({ churchId: church.id, title, kind: 'bulletin', sourcePath: `content/seed/${file}` })
+      .values({ organizationId: church.id, title, kind: 'bulletin', sourcePath: `content/seed/${file}` })
       .returning();
     const { embeddings } = await embedder.embed(pieces.map((p) => p.content));
     await db.insert(chunks).values(
-      pieces.map((p, i) => ({ churchId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })),
+      pieces.map((p, i) => ({ organizationId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })),
     );
   }
 

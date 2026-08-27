@@ -8,7 +8,7 @@ import type { Db } from '@/db/client';
 
 export type VerifierDeps = { db: Db; model?: LanguageModel };
 export type VerifierInput = {
-  churchId: string;
+  organizationId: string;
   documentId: string;
   text: string;
   events: ExtractedEvent[];
@@ -93,7 +93,7 @@ export async function verifyEvents(
 
       try {
         await recordUsage(deps.db, {
-          churchId: input.churchId,
+          organizationId: input.organizationId,
           feature: 'ingest.verify',
           model: pricedModel,
           inputTokens: usage.inputTokens ?? 0,
@@ -101,7 +101,7 @@ export async function verifyEvents(
         });
       } catch (error) {
         console.error('ingest.verify usage not recorded', {
-          churchId: input.churchId, documentId: input.documentId, error,
+          organizationId: input.organizationId, documentId: input.documentId, error,
         });
       }
 
@@ -114,7 +114,7 @@ export async function verifyEvents(
       // still safe to replace the document's previously verified events with this run's
       // (empty-of-confirmations) result.
       console.error('ingest.verify failed; rejecting candidate', {
-        churchId: input.churchId, documentId: input.documentId, title: event.title, error,
+        organizationId: input.organizationId, documentId: input.documentId, title: event.title, error,
       });
       return {
         ...event,

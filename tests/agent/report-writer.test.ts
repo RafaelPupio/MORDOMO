@@ -3,7 +3,7 @@ import type { WeekFindings } from '@/agent/analyst';
 import { writeReport } from '@/agent/report-writer';
 import type { WeekActivity } from '@/core/week-activity';
 import { usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // Same mock-model shape used by tests/agent/analyst.test.ts and
 // tests/agent/reply-drafter.test.ts: this installed SDK version's LanguageModelV3Usage
@@ -49,14 +49,14 @@ const FINDINGS: WeekFindings = {
 describe('writeReport', () => {
   it('produces Portuguese prose from findings and meters one report.write call', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db, 'Igreja da Colina');
+    const church = await seedOrganization(db, 'Igreja da Colina');
     const model = await textModel(
       '## Resumo da Semana — Igreja da Colina\n\nCinco pessoas perguntaram sobre o horário do culto de domingo.',
     );
 
     const body = await writeReport(
       { db, model },
-      { churchId: church.id, churchName: church.name, findings: FINDINGS, activity: activity() },
+      { organizationId: church.id, organizationName: church.name, findings: FINDINGS, activity: activity() },
     );
 
     expect(body).toContain('Resumo da Semana');
@@ -68,14 +68,14 @@ describe('writeReport', () => {
 
   it('returns an empty string and logs, without throwing, when the model call fails', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     const model = new MockLanguageModelV3({ doGenerate: async () => { throw new Error('gateway down'); } });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const body = await writeReport(
       { db, model },
-      { churchId: church.id, churchName: church.name, findings: FINDINGS, activity: activity() },
+      { organizationId: church.id, organizationName: church.name, findings: FINDINGS, activity: activity() },
     );
 
     expect(body).toBe('');
@@ -91,7 +91,7 @@ describe('writeReport', () => {
   // /`periodEnd`/`counts` (aggregate numbers, not text) are meant to reach the prompt.
   it('sends the analyst findings to the model, and never the raw activity samples', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     const capturingModel = new MockLanguageModelV3({
       doGenerate: async () => ({
@@ -118,7 +118,7 @@ describe('writeReport', () => {
 
     await writeReport(
       { db, model: capturingModel },
-      { churchId: church.id, churchName: church.name, findings: distinctiveFindings, activity: rawActivity },
+      { organizationId: church.id, organizationName: church.name, findings: distinctiveFindings, activity: rawActivity },
     );
 
     expect(capturingModel.doGenerateCalls).toHaveLength(1);
@@ -135,11 +135,11 @@ describe('writeReport', () => {
     const model = await textModel('Resumo da semana.');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    // churchId never seeded -> usage_ledger insert violates the FK on church_id ->
+    // organizationId never seeded -> usage_ledger insert violates the FK on organization_id ->
     // recordUsage throws, same trigger tests/agent/analyst.test.ts uses.
     const body = await writeReport(
       { db, model },
-      { churchId: crypto.randomUUID(), churchName: 'Igreja Fantasma', findings: FINDINGS, activity: activity() },
+      { organizationId: crypto.randomUUID(), organizationName: 'Igreja Fantasma', findings: FINDINGS, activity: activity() },
     );
 
     expect(body).toBe('Resumo da semana.');

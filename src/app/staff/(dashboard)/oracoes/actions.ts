@@ -16,7 +16,7 @@ function isPrayerStatus(value: string): value is PrayerStatus {
 export type PrayerStatusState = { error?: string };
 
 /**
- * Thin Server Action wrapper: `churchId` comes ONLY from `requireStaffContext()` — never
+ * Thin Server Action wrapper: `organizationId` comes ONLY from `requireStaffContext()` — never
  * from `formData` — so posting an `id` that belongs to another church cannot move that
  * church's request; `applyPrayerStatus` (src/core/staff-operations.ts) scopes the update to
  * this church and no-ops otherwise. `id` and `status` are both validated against their
@@ -29,18 +29,18 @@ export async function updatePrayerStatus(
   _prevState: PrayerStatusState,
   formData: FormData,
 ): Promise<PrayerStatusState> {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const id = String(formData.get('id') ?? '');
   const status = String(formData.get('status') ?? '');
   if (!isUuid(id)) return { error: 'Pedido de oração inválido.' };
   if (!isPrayerStatus(status)) return { error: 'Status inválido.' };
 
   try {
-    await applyPrayerStatus(getDb(), churchId, id, status);
+    await applyPrayerStatus(getDb(), organizationId, id, status);
     revalidatePath('/staff/oracoes');
     return {};
   } catch (error) {
-    console.error('updatePrayerStatus: unexpected failure', { churchId, id, status, error });
+    console.error('updatePrayerStatus: unexpected failure', { organizationId, id, status, error });
     return { error: 'Não foi possível atualizar o pedido agora. Tente novamente.' };
   }
 }

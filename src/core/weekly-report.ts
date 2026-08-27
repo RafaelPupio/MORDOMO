@@ -14,8 +14,8 @@ export type WeeklyReportDeps = {
 };
 
 export type WeeklyReportInput = {
-  churchId: string;
-  churchName: string;
+  organizationId: string;
+  organizationName: string;
   periodStart: Date;
   periodEnd: Date;
 };
@@ -41,7 +41,7 @@ export type WeeklyReportResult = {
  * "successful" digest nobody can read) — both failure branches return before
  * `upsertReport` is ever called, so there is no code path that writes a partial row.
  *
- * `upsertReport` itself replaces any existing row for `(churchId, periodStart)` rather
+ * `upsertReport` itself replaces any existing row for `(organizationId, periodStart)` rather
  * than duplicating it, so re-running the same week (a retry, or a manual "generate now"
  * after a scheduled run) always converges on one row per week, not a growing pile.
  */
@@ -49,7 +49,7 @@ export async function generateWeeklyReport(
   deps: WeeklyReportDeps,
   input: WeeklyReportInput,
 ): Promise<WeeklyReportResult> {
-  const activity = await gatherWeekActivity(deps.db, input.churchId, input.periodStart, input.periodEnd);
+  const activity = await gatherWeekActivity(deps.db, input.organizationId, input.periodStart, input.periodEnd);
 
   // A week where nothing happened costs nothing to report: skip before either agent is
   // ever invoked, so this path makes ZERO model calls, not merely a cheap one. Mirrors
@@ -62,35 +62,35 @@ export async function generateWeeklyReport(
     || activity.costUsd > 0;
   if (!hasActivity) {
     console.log('report.generate: skipped, no activity this week', {
-      churchId: input.churchId, periodStart: input.periodStart,
+      organizationId: input.organizationId, periodStart: input.periodStart,
     });
     return { status: 'skipped-no-activity' };
   }
 
   const findings = await analyzeWeek(
     { db: deps.db, model: deps.analystModel },
-    { churchId: input.churchId, activity },
+    { organizationId: input.organizationId, activity },
   );
   if (!findings) {
     console.error('report.generate: analysis failed, declining to publish a report for this week', {
-      churchId: input.churchId, periodStart: input.periodStart,
+      organizationId: input.organizationId, periodStart: input.periodStart,
     });
     return { status: 'failed', reason: 'analysis-failed' };
   }
 
   const body = await writeReport(
     { db: deps.db, model: deps.writerModel },
-    { churchId: input.churchId, churchName: input.churchName, findings, activity },
+    { organizationId: input.organizationId, organizationName: input.organizationName, findings, activity },
   );
   if (!body) {
     console.error('report.generate: writing failed, declining to publish a report for this week', {
-      churchId: input.churchId, periodStart: input.periodStart,
+      organizationId: input.organizationId, periodStart: input.periodStart,
     });
     return { status: 'failed', reason: 'writer-failed' };
   }
 
   const row = await upsertReport(deps.db, {
-    churchId: input.churchId,
+    organizationId: input.organizationId,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     findings,
@@ -98,7 +98,7 @@ export async function generateWeeklyReport(
   });
 
   console.log('report.generate: published', {
-    churchId: input.churchId, periodStart: input.periodStart, reportId: row.id,
+    organizationId: input.organizationId, periodStart: input.periodStart, reportId: row.id,
   });
   return { status: 'published', reportId: row.id };
 }
@@ -108,7 +108,7 @@ export async function generateWeeklyReport(
  * containing `now` (default `weeksAgo = 1`: "last week"). Exported so a cron job and a
  * manual "generate now" both compute the same boundary from the same `now` — if they
  * disagreed even by one day, they would write two different `reports` rows for what a
- * human calls "the same week" (see `upsertReport`'s replace-by-`(churchId, periodStart)`
+ * human calls "the same week" (see `upsertReport`'s replace-by-`(organizationId, periodStart)`
  * key), instead of one row that a re-run correctly replaces.
  *
  * The week is Monday-through-Sunday: `now` first snaps DOWN to the Monday of its own

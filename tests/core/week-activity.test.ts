@@ -2,33 +2,33 @@ import { describe, expect, it } from 'vitest';
 import { gatherWeekActivity, MAX_ITEM_CHARS, MAX_ITEMS_PER_KIND } from '@/core/week-activity';
 import type { Db } from '@/db/client';
 import { conversations, messages, prayerRequests, tickets, usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 const PERIOD_START = new Date('2026-08-10T00:00:00Z');
 const PERIOD_END = new Date('2026-08-17T00:00:00Z');
 const IN_WINDOW = new Date('2026-08-12T12:00:00Z');
 
-async function seedConversation(db: Db, churchId: string, visitorKey = 'v1') {
+async function seedConversation(db: Db, organizationId: string, visitorKey = 'v1') {
   const id = crypto.randomUUID();
-  await db.insert(conversations).values({ id, churchId, visitorKey });
+  await db.insert(conversations).values({ id, organizationId, visitorKey });
   return id;
 }
 
 async function seedMessage(
   db: Db,
-  churchId: string,
+  organizationId: string,
   conversationId: string,
   role: 'user' | 'assistant',
   parts: unknown,
   createdAt: Date,
 ) {
-  await db.insert(messages).values({ churchId, conversationId, role, parts, createdAt });
+  await db.insert(messages).values({ organizationId, conversationId, role, parts, createdAt });
 }
 
 describe('gatherWeekActivity', () => {
   it('only includes role: user messages as visitorQuestions — assistant turns are excluded', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const convId = await seedConversation(db, church.id);
     await seedMessage(db, church.id, convId, 'user', [{ type: 'text', text: 'Qual o horário do culto?' }], IN_WINDOW);
     await seedMessage(db, church.id, convId, 'assistant', [{ type: 'text', text: 'O culto é às 10h.' }], IN_WINDOW);
@@ -41,7 +41,7 @@ describe('gatherWeekActivity', () => {
 
   it('excludes a row exactly at periodEnd and includes a row exactly at periodStart', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const convId = await seedConversation(db, church.id);
 
     await seedMessage(db, church.id, convId, 'user', [{ type: 'text', text: 'antes do início' }], new Date(PERIOD_START.getTime() - 1));
@@ -56,17 +56,17 @@ describe('gatherWeekActivity', () => {
 
   it('never includes another church’s rows', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
     const convA = await seedConversation(db, a.id);
     const convB = await seedConversation(db, b.id);
 
     await seedMessage(db, a.id, convA, 'user', [{ type: 'text', text: 'pergunta da igreja A' }], IN_WINDOW);
     await seedMessage(db, b.id, convB, 'user', [{ type: 'text', text: 'pergunta da igreja B' }], IN_WINDOW);
-    await db.insert(prayerRequests).values({ churchId: b.id, request: 'oração de B', createdAt: IN_WINDOW });
-    await db.insert(tickets).values({ churchId: b.id, topic: 'ticket de B', createdAt: IN_WINDOW });
+    await db.insert(prayerRequests).values({ organizationId: b.id, request: 'oração de B', createdAt: IN_WINDOW });
+    await db.insert(tickets).values({ organizationId: b.id, topic: 'ticket de B', createdAt: IN_WINDOW });
     await db.insert(usageLedger).values({
-      churchId: b.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 9.99, createdAt: IN_WINDOW,
+      organizationId: b.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 9.99, createdAt: IN_WINDOW,
     });
 
     const activity = await gatherWeekActivity(db, a.id, PERIOD_START, PERIOD_END);
@@ -80,7 +80,7 @@ describe('gatherWeekActivity', () => {
 
   it('counts match what was seeded, across all four kinds', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const conv1 = await seedConversation(db, church.id, 'v1');
     const conv2 = await seedConversation(db, church.id, 'v2');
 
@@ -89,10 +89,10 @@ describe('gatherWeekActivity', () => {
     await seedMessage(db, church.id, conv2, 'user', [{ type: 'text', text: 'pergunta 2' }], IN_WINDOW);
 
     await db.insert(prayerRequests).values([
-      { churchId: church.id, request: 'oração 1', createdAt: IN_WINDOW },
-      { churchId: church.id, request: 'oração 2', createdAt: IN_WINDOW },
+      { organizationId: church.id, request: 'oração 1', createdAt: IN_WINDOW },
+      { organizationId: church.id, request: 'oração 2', createdAt: IN_WINDOW },
     ]);
-    await db.insert(tickets).values({ churchId: church.id, topic: 'ticket 1', createdAt: IN_WINDOW });
+    await db.insert(tickets).values({ organizationId: church.id, topic: 'ticket 1', createdAt: IN_WINDOW });
 
     const activity = await gatherWeekActivity(db, church.id, PERIOD_START, PERIOD_END);
 
@@ -106,16 +106,16 @@ describe('gatherWeekActivity', () => {
 
   it('costUsd sums only that church’s usage_ledger rows inside the window', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
 
     await db.insert(usageLedger).values([
-      { churchId: a.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 1.5, createdAt: IN_WINDOW },
-      { churchId: a.id, feature: 'chat.retrieval', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 0.25, createdAt: IN_WINDOW },
+      { organizationId: a.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 1.5, createdAt: IN_WINDOW },
+      { organizationId: a.id, feature: 'chat.retrieval', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 0.25, createdAt: IN_WINDOW },
       // Outside the window — must not be summed.
-      { churchId: a.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 100, createdAt: new Date(PERIOD_START.getTime() - 1) },
+      { organizationId: a.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 100, createdAt: new Date(PERIOD_START.getTime() - 1) },
       // Another church, inside the window — must not be summed.
-      { churchId: b.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 50, createdAt: IN_WINDOW },
+      { organizationId: b.id, feature: 'chat.reply', model: 'x', inputTokens: 1, outputTokens: 1, costUsd: 50, createdAt: IN_WINDOW },
     ]);
 
     const activity = await gatherWeekActivity(db, a.id, PERIOD_START, PERIOD_END);
@@ -125,7 +125,7 @@ describe('gatherWeekActivity', () => {
 
   it('caps each list at MAX_ITEMS_PER_KIND and truncates a long item to MAX_ITEM_CHARS', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const convId = await seedConversation(db, church.id);
 
     const total = MAX_ITEMS_PER_KIND + 10;
@@ -135,7 +135,7 @@ describe('gatherWeekActivity', () => {
       await seedMessage(db, church.id, convId, 'user', [{ type: 'text', text: `pergunta ${i}` }], createdAt);
     }
     const longRequest = 'a'.repeat(MAX_ITEM_CHARS + 500);
-    await db.insert(prayerRequests).values({ churchId: church.id, request: longRequest, createdAt: IN_WINDOW });
+    await db.insert(prayerRequests).values({ organizationId: church.id, request: longRequest, createdAt: IN_WINDOW });
 
     const activity = await gatherWeekActivity(db, church.id, PERIOD_START, PERIOD_END);
 
@@ -156,7 +156,7 @@ describe('gatherWeekActivity', () => {
   // and count only conversations with a visitor message in the window.
   it('counts.conversations only counts conversations with a visitor message in the window', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const convWithVisitor = await seedConversation(db, church.id, 'v1');
     const staffOnlyConv = await seedConversation(db, church.id, 'v2');
 
@@ -171,7 +171,7 @@ describe('gatherWeekActivity', () => {
 
   it('extracts text from AI-SDK parts; a message with only a tool part yields nothing', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const convId = await seedConversation(db, church.id);
 
     await seedMessage(db, church.id, convId, 'user', [{ type: 'text', text: 'com texto' }], IN_WINDOW);

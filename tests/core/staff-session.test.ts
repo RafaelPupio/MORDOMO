@@ -5,11 +5,11 @@ import {
 } from '@/core/staff-session';
 
 const SECRET = 'test-secret-value';
-const churchId = '11111111-1111-1111-1111-111111111111';
+const organizationId = '11111111-1111-1111-1111-111111111111';
 
 function session(now = new Date('2026-08-20T12:00:00Z')): StaffSession {
   return {
-    churchId,
+    organizationId,
     issuedAt: now.getTime(),
     expiresAt: now.getTime() + SESSION_TTL_SECONDS * 1000,
   };
@@ -63,7 +63,7 @@ describe('session signing', () => {
     const token = signSession(session(), SECRET);
     const [payload, sig] = token.split('.');
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    decoded.churchId = '22222222-2222-2222-2222-222222222222';
+    decoded.organizationId = '22222222-2222-2222-2222-222222222222';
     const forged = `${Buffer.from(JSON.stringify(decoded)).toString('base64url')}.${sig}`;
     expect(verifySession(forged, SECRET)).toBeNull();
   });
@@ -86,7 +86,7 @@ describe('session signing', () => {
 
   it('rejects expiresAt: Infinity even with now far in the past', () => {
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: new Date('2026-08-20T12:00:00Z').getTime(),
       expiresAt: 1e999, // parses to Infinity
     };
@@ -98,7 +98,7 @@ describe('session signing', () => {
   it('rejects expiresAt: NaN', () => {
     // JSON cannot directly encode NaN; construct a payload that parses to NaN
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: new Date('2026-08-20T12:00:00Z').getTime(),
       expiresAt: NaN,
     };
@@ -108,7 +108,7 @@ describe('session signing', () => {
 
   it('rejects a negative expiresAt', () => {
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: new Date('2026-08-20T12:00:00Z').getTime(),
       expiresAt: -1000,
     };
@@ -118,7 +118,7 @@ describe('session signing', () => {
 
   it('rejects issuedAt missing from a correctly-signed token', () => {
     const payload = {
-      churchId,
+      organizationId,
       expiresAt: new Date('2026-08-20T20:00:00Z').getTime(),
       // issuedAt intentionally omitted
     };
@@ -128,7 +128,7 @@ describe('session signing', () => {
 
   it('rejects issuedAt as a string in a correctly-signed token', () => {
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: '2026-08-20T12:00:00Z', // string instead of number
       expiresAt: new Date('2026-08-20T20:00:00Z').getTime(),
     };
@@ -138,7 +138,7 @@ describe('session signing', () => {
 
   it('rejects issuedAt as an object in a correctly-signed token', () => {
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: { time: 1234567890 }, // object instead of number
       expiresAt: new Date('2026-08-20T20:00:00Z').getTime(),
     };
@@ -149,7 +149,7 @@ describe('session signing', () => {
   it('returns only the three allowed fields when a token carries extra claims', () => {
     const now = new Date('2026-08-20T12:00:00Z');
     const payload = {
-      churchId,
+      organizationId,
       issuedAt: now.getTime(),
       expiresAt: now.getTime() + SESSION_TTL_SECONDS * 1000,
       role: 'superadmin', // forged extra claim
@@ -162,12 +162,12 @@ describe('session signing', () => {
     // Verify that only the three expected fields are present
     expect(verified).not.toBeNull();
     expect(verified).toEqual({
-      churchId,
+      organizationId,
       issuedAt: now.getTime(),
       expiresAt: now.getTime() + SESSION_TTL_SECONDS * 1000,
     });
     // Explicitly check that forged claims are not present
-    expect(Object.keys(verified!)).toEqual(['churchId', 'issuedAt', 'expiresAt']);
+    expect(Object.keys(verified!)).toEqual(['organizationId', 'issuedAt', 'expiresAt']);
     expect((verified as Record<string, unknown>)?.role).toBeUndefined();
     expect((verified as Record<string, unknown>)?.permissions).toBeUndefined();
   });

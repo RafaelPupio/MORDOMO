@@ -22,7 +22,7 @@ export type IngestDeps = {
 };
 
 export type IngestInput = {
-  churchId: string;
+  organizationId: string;
   documentId: string;
   bytes: Uint8Array;
   mimeType: string;
@@ -135,10 +135,10 @@ function sanitizeForStorage(message: string): string {
  */
 export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<IngestResult> {
   const { db, embedder } = deps;
-  const { churchId, documentId } = input;
+  const { organizationId, documentId } = input;
 
-  const doc = await getDocument(db, churchId, documentId);
-  if (!doc) throw new Error(`Document ${documentId} not found for church ${churchId}`);
+  const doc = await getDocument(db, organizationId, documentId);
+  if (!doc) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
 
   const result: IngestResult = {
     documentId, status: doc.ingestStatus as IngestStatus,
@@ -147,7 +147,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
   };
 
   try {
-    await beginIngestRun(db, churchId, documentId);
+    await beginIngestRun(db, organizationId, documentId);
     result.status = 'parsing';
 
     const parsed = await parseDocument(input.bytes, input.mimeType);
@@ -172,11 +172,11 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     // transaction, is what keeps a failure from ever landing between the two writes.
     // (PGlite, the test driver, does support `db.transaction`, but wrapping only the
     // test path would protect nothing in production, so it is not used here.)
-    await db.delete(chunks).where(and(eq(chunks.churchId, churchId), eq(chunks.documentId, documentId)));
+    await db.delete(chunks).where(and(eq(chunks.organizationId, organizationId), eq(chunks.documentId, documentId)));
     if (pieces.length > 0) {
       await db.insert(chunks).values(
         pieces.map((piece, i) => ({
-          churchId, documentId, seq: piece.seq, content: piece.content, embedding: embeddings[i],
+          organizationId, documentId, seq: piece.seq, content: piece.content, embedding: embeddings[i],
         })),
       );
     }
@@ -184,15 +184,15 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     if (embedTokens > 0) {
       try {
         await recordUsage(db, {
-          churchId, feature: 'ingest.embed', model: embedder.model,
+          organizationId, feature: 'ingest.embed', model: embedder.model,
           inputTokens: embedTokens, outputTokens: 0,
         });
       } catch (error) {
-        console.error('ingest.embed usage not recorded', { churchId, documentId, error });
+        console.error('ingest.embed usage not recorded', { organizationId, documentId, error });
       }
     }
 
-    await setIngestStatus(db, churchId, documentId, 'extracting');
+    await setIngestStatus(db, organizationId, documentId, 'extracting');
     result.status = 'extracting';
 
     // Bound what the agent stages see — see the comment on MAX_EXTRACTION_CHARS above for
@@ -205,7 +205,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       // covered the whole text. console.warn, not console.error, so this doesn't read as
       // an incident in the logs.
       console.warn('ingest: text truncated before extraction/verification', {
-        churchId, documentId, fullLength: parsed.text.length, truncatedTo: MAX_EXTRACTION_CHARS,
+        organizationId, documentId, fullLength: parsed.text.length, truncatedTo: MAX_EXTRACTION_CHARS,
       });
     }
     const extractionText = result.truncatedForExtraction
@@ -217,7 +217,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     if (deps.extractorModel) {
       const extraction = await extractEvents(
         { db, model: deps.extractorModel },
-        { churchId, documentId, text: extractionText, referenceDate },
+        { organizationId, documentId, text: extractionText, referenceDate },
       );
       candidates = extraction.candidates;
       // A failed extraction is NOT the same as a clean "no events" result — see the doc
@@ -235,11 +235,11 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       : candidates;
     if (candidates.length > MAX_CANDIDATES) {
       console.warn('ingest: extracted candidates exceeded MAX_CANDIDATES, dropping the excess before verification', {
-        churchId, documentId, extracted: candidates.length, kept: MAX_CANDIDATES,
+        organizationId, documentId, extracted: candidates.length, kept: MAX_CANDIDATES,
       });
     }
 
-    await setIngestStatus(db, churchId, documentId, 'verifying');
+    await setIngestStatus(db, organizationId, documentId, 'verifying');
     result.status = 'verifying';
 
     let verified: VerifiedEvent[] = [];
@@ -247,7 +247,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       if (deps.verifierModel) {
         verified = await verifyEvents(
           { db, model: deps.verifierModel },
-          { churchId, documentId, text: extractionText, events: boundedCandidates },
+          { organizationId, documentId, text: extractionText, events: boundedCandidates },
         );
       } else {
         // Mirror the extractor's own gate (`deps.extractorModel` above): omitting
@@ -258,7 +258,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
         // failed call — verification being unconfigured is exactly as untrustworthy as
         // verification being unreachable, and gets the same fail-closed treatment.
         console.error('ingest.verify: no verifierModel configured; rejecting all candidates instead of making a live call', {
-          churchId, documentId, candidateCount: boundedCandidates.length,
+          organizationId, documentId, candidateCount: boundedCandidates.length,
         });
         const outageVerdict: Verdict = {
           decision: 'rejected', note: 'Verificador não configurado; evento não publicado.', outage: true,
@@ -288,18 +288,18 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
 
     if (skipEventsReplace) {
       console.warn('ingest: leaving existing events untouched — extraction failed or verification was entirely unavailable this run', {
-        churchId, documentId, extractionFailed: result.extractionFailed, allVerifiedWereOutage,
+        organizationId, documentId, extractionFailed: result.extractionFailed, allVerifiedWereOutage,
       });
     } else {
       // Delete-then-insert, with nothing awaitable in between: the production driver
       // (neon-http; see src/db/client.ts) does not support `db.transaction` — it throws
       // "No transactions support in neon-http driver" — so this ordering, not a
       // transaction, is what keeps a failure from ever landing between the two writes.
-      await db.delete(events).where(and(eq(events.churchId, churchId), eq(events.sourceDocumentId, documentId)));
+      await db.delete(events).where(and(eq(events.organizationId, organizationId), eq(events.sourceDocumentId, documentId)));
       if (confirmed.length > 0) {
         await db.insert(events).values(
           confirmed.map((e) => ({
-            churchId,
+            organizationId,
             title: e.title,
             startsAt: new Date(e.startsAt),
             location: e.location,
@@ -314,14 +314,14 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       }
     }
 
-    await setIngestStatus(db, churchId, documentId, 'published');
+    await setIngestStatus(db, organizationId, documentId, 'published');
     result.status = 'published';
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('ingest failed', { churchId, documentId, error });
+    console.error('ingest failed', { organizationId, documentId, error });
     try {
-      const current = await getDocument(db, churchId, documentId);
+      const current = await getDocument(db, organizationId, documentId);
       if (current && current.ingestStatus !== 'published') {
         // `setIngestStatus` cannot be used for this recovery write: it re-checks
         // `assertTransition` against whatever status the row currently holds, and if
@@ -331,7 +331,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
         // on purpose, for exactly this one caller. `message` is sanitized first (see
         // `sanitizeForStorage` above) so THIS write cannot fail for the same reason the
         // original one did.
-        await forceIngestFailed(db, churchId, documentId, sanitizeForStorage(message));
+        await forceIngestFailed(db, organizationId, documentId, sanitizeForStorage(message));
         result.status = 'failed';
       }
     } catch (statusError) {
@@ -339,7 +339,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
       // keeps whatever value it was last set to (the most recent stage transition that
       // really did persist, or the document's original status if we never got that
       // far), which is the true, currently-persisted state.
-      console.error('could not mark document failed', { churchId, documentId, statusError });
+      console.error('could not mark document failed', { organizationId, documentId, statusError });
     }
     return result;
   }

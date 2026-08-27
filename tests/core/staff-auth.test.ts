@@ -3,17 +3,17 @@ import { readStaffSession, staffCookieOptions } from '@/core/staff-auth';
 import { SESSION_TTL_SECONDS, signSession } from '@/core/staff-session';
 
 const SECRET = 'a-secret';
-const churchId = '11111111-1111-1111-1111-111111111111';
+const organizationId = '11111111-1111-1111-1111-111111111111';
 const now = new Date('2026-08-20T12:00:00Z');
 const valid = () =>
   signSession(
-    { churchId, issuedAt: now.getTime(), expiresAt: now.getTime() + SESSION_TTL_SECONDS * 1000 },
+    { organizationId, issuedAt: now.getTime(), expiresAt: now.getTime() + SESSION_TTL_SECONDS * 1000 },
     SECRET,
   );
 
 describe('readStaffSession', () => {
   it('returns the session for a valid cookie', () => {
-    expect(readStaffSession(valid(), SECRET, now)?.churchId).toBe(churchId);
+    expect(readStaffSession(valid(), SECRET, now)?.organizationId).toBe(organizationId);
   });
 
   it('returns null when the cookie is absent', () => {

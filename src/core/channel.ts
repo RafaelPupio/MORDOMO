@@ -9,7 +9,7 @@ import type { UIMessage } from 'ai';
 // agent, core retrieval/chunking code, and the db repos never import anything transport-
 // specific — they only ever see this type.
 export type IncomingChat = {
-  churchId: string;
+  organizationId: string;
   conversationId: string;
   visitorKey: string;
   uiMessages: UIMessage[];

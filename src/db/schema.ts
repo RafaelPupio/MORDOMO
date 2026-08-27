@@ -2,16 +2,31 @@ import {
   boolean, index, integer, jsonb, pgTable, real, text, timestamp, unique, uniqueIndex, uuid, vector,
 } from 'drizzle-orm/pg-core';
 
-export const churches = pgTable('churches', {
+export const organizations = pgTable('organizations', {
   id: uuid('id').primaryKey().defaultRandom(),
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
+  clerkOrganizationId: text('clerk_organization_id').unique(),
+  ownerClerkUserId: text('owner_clerk_user_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const organizationProfiles = pgTable('organization_profiles', {
+  organizationId: uuid('organization_id').primaryKey().references(() => organizations.id),
+  industry: text('industry').notNull(),
+  defaultLocale: text('default_locale').notNull(),
+  assistantName: text('assistant_name').notNull(),
+  replyTone: text('reply_tone').notNull(),
+  greeting: text('greeting').notNull(),
+  escalationCopy: text('escalation_copy').notNull(),
+  enabledCapabilities: jsonb('enabled_capabilities').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
 export const documents = pgTable('documents', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   title: text('title').notNull(),
   kind: text('kind').notNull(), // 'schedule' | 'bulletin' | 'ministry' | 'statute' | 'faq' | 'upload'
   sourcePath: text('source_path'),
@@ -27,17 +42,17 @@ export const documents = pgTable('documents', {
 
 export const chunks = pgTable('chunks', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   documentId: uuid('document_id').notNull().references(() => documents.id),
   seq: integer('seq').notNull(),
   content: text('content').notNull(),
   embedding: vector('embedding', { dimensions: 1536 }).notNull(),
-}, (t) => [index('chunks_church_idx').on(t.churchId)]);
+}, (t) => [index('chunks_organization_idx').on(t.organizationId)]);
 // No vector index: demo-scale corpora (hundreds of chunks) are fine with exact scans.
 
 export const events = pgTable('events', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   title: text('title').notNull(),
   startsAt: timestamp('starts_at').notNull(),
   location: text('location'),
@@ -52,7 +67,7 @@ export const events = pgTable('events', {
 
 export const conversations = pgTable('conversations', {
   id: uuid('id').primaryKey(), // client-supplied UUID
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   channel: text('channel').notNull().default('web'),
   visitorKey: text('visitor_key').notNull(),
   startedAt: timestamp('started_at').notNull().defaultNow(),
@@ -60,7 +75,7 @@ export const conversations = pgTable('conversations', {
 
 export const messages = pgTable('messages', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   conversationId: uuid('conversation_id').notNull().references(() => conversations.id),
   seq: integer('seq').notNull().generatedAlwaysAsIdentity(),
   role: text('role').notNull(), // 'user' | 'assistant'
@@ -84,7 +99,7 @@ export const messages = pgTable('messages', {
 
 export const prayerRequests = pgTable('prayer_requests', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   conversationId: uuid('conversation_id').references(() => conversations.id),
   name: text('name'),
   request: text('request').notNull(),
@@ -94,7 +109,7 @@ export const prayerRequests = pgTable('prayer_requests', {
 
 export const tickets = pgTable('tickets', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   conversationId: uuid('conversation_id').references(() => conversations.id),
   topic: text('topic').notNull(),
   status: text('status').notNull().default('open'), // Plan 3: inbox workflow
@@ -104,7 +119,7 @@ export const tickets = pgTable('tickets', {
 
 export const usageLedger = pgTable('usage_ledger', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   feature: text('feature').notNull(), // e.g. 'chat.reply', 'chat.retrieval', 'ingest.embed'
   model: text('model').notNull(),
   inputTokens: integer('input_tokens').notNull(),
@@ -114,7 +129,7 @@ export const usageLedger = pgTable('usage_ledger', {
 });
 
 export const budgets = pgTable('budgets', {
-  churchId: uuid('church_id').primaryKey().references(() => churches.id),
+  organizationId: uuid('organization_id').primaryKey().references(() => organizations.id),
   monthlyUsd: real('monthly_usd').notNull(),
 });
 
@@ -126,10 +141,10 @@ export const rateLimits = pgTable('rate_limits', {
 
 export const reports = pgTable('reports', {
   id: uuid('id').primaryKey().defaultRandom(),
-  churchId: uuid('church_id').notNull().references(() => churches.id),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
   periodStart: timestamp('period_start').notNull(),
   periodEnd: timestamp('period_end').notNull(),
   findings: jsonb('findings').notNull(),
   body: text('body').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-}, (t) => [unique('reports_church_period_key').on(t.churchId, t.periodStart)]);
+}, (t) => [unique('reports_organization_period_key').on(t.organizationId, t.periodStart)]);

@@ -26,14 +26,20 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   Neon stores the workspace owner's Clerk user ID. This avoids paid custom-role features.
 - Task 1 is complete: the root app is wrapped in Clerk, protected beta routes pass through
   Clerk's proxy, and real Clerk sign-in/sign-up routes run locally at Development scope.
+- Task 2 is complete in the beta branch: the existing tenant domain is renamed to
+  organizations, the database migration preserves legacy UUIDs and foreign keys in PGlite,
+  and each organization has a validated, persisted secretary profile. The migration has not
+  been applied to Development Neon yet.
 
 ## Blocked / next action
 
 1. Before organization-aware flows are tested live, enable Clerk Organizations with the
    intended invite-only membership mode in the Development Clerk instance.
-2. Execute Task 2 in
-   `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: migrate persistent
-   church tenancy to organization tenancy and add the saved secretary profile.
+2. Execute Task 3 in
+   `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: bind authenticated staff
+   and public chat to trusted Clerk organizations.
+3. Apply the reviewed organization migration to a disposable Neon branch before it is ever
+   applied to the Development database.
 
 ## Repository hygiene
 

@@ -39,14 +39,14 @@ function truncate(text: string): string {
  * included. Purely deterministic and read-only (no model calls) — this is the raw material the
  * analyst agent reasons over, not the analysis itself.
  *
- * Every query below is scoped to `churchId` AND the window in SQL, and every list-producing
+ * Every query below is scoped to `organizationId` AND the window in SQL, and every list-producing
  * query applies `LIMIT MAX_ITEMS_PER_KIND` in SQL (not after fetching everything) — a busy week
  * never loads unbounded rows into memory just to gather one digest. `counts`, by contrast, come
  * from plain SQL aggregates (COUNT/SUM), which never load per-row data at all.
  */
 export async function gatherWeekActivity(
   db: Db,
-  churchId: string,
+  organizationId: string,
   periodStart: Date,
   periodEnd: Date,
 ): Promise<WeekActivity> {
@@ -65,7 +65,7 @@ export async function gatherWeekActivity(
       .select({ parts: messages.parts })
       .from(messages)
       .where(and(
-        eq(messages.churchId, churchId),
+        eq(messages.organizationId, organizationId),
         eq(messages.role, 'user'),
         gte(messages.createdAt, periodStart),
         lt(messages.createdAt, periodEnd),
@@ -78,7 +78,7 @@ export async function gatherWeekActivity(
       .select({ count: sql<number>`count(*)` })
       .from(messages)
       .where(and(
-        eq(messages.churchId, churchId),
+        eq(messages.organizationId, organizationId),
         eq(messages.role, 'user'),
         gte(messages.createdAt, periodStart),
         lt(messages.createdAt, periodEnd),
@@ -94,7 +94,7 @@ export async function gatherWeekActivity(
       .select({ count: sql<number>`count(distinct ${messages.conversationId})` })
       .from(messages)
       .where(and(
-        eq(messages.churchId, churchId),
+        eq(messages.organizationId, organizationId),
         eq(messages.role, 'user'),
         gte(messages.createdAt, periodStart),
         lt(messages.createdAt, periodEnd),
@@ -104,7 +104,7 @@ export async function gatherWeekActivity(
       .select({ request: prayerRequests.request })
       .from(prayerRequests)
       .where(and(
-        eq(prayerRequests.churchId, churchId),
+        eq(prayerRequests.organizationId, organizationId),
         gte(prayerRequests.createdAt, periodStart),
         lt(prayerRequests.createdAt, periodEnd),
       ))
@@ -115,7 +115,7 @@ export async function gatherWeekActivity(
       .select({ count: sql<number>`count(*)` })
       .from(prayerRequests)
       .where(and(
-        eq(prayerRequests.churchId, churchId),
+        eq(prayerRequests.organizationId, organizationId),
         gte(prayerRequests.createdAt, periodStart),
         lt(prayerRequests.createdAt, periodEnd),
       )),
@@ -124,7 +124,7 @@ export async function gatherWeekActivity(
       .select({ topic: tickets.topic })
       .from(tickets)
       .where(and(
-        eq(tickets.churchId, churchId),
+        eq(tickets.organizationId, organizationId),
         gte(tickets.createdAt, periodStart),
         lt(tickets.createdAt, periodEnd),
       ))
@@ -135,7 +135,7 @@ export async function gatherWeekActivity(
       .select({ count: sql<number>`count(*)` })
       .from(tickets)
       .where(and(
-        eq(tickets.churchId, churchId),
+        eq(tickets.organizationId, organizationId),
         gte(tickets.createdAt, periodStart),
         lt(tickets.createdAt, periodEnd),
       )),
@@ -146,7 +146,7 @@ export async function gatherWeekActivity(
       .select({ total: sql<number>`coalesce(sum(${usageLedger.costUsd}), 0)` })
       .from(usageLedger)
       .where(and(
-        eq(usageLedger.churchId, churchId),
+        eq(usageLedger.organizationId, organizationId),
         gte(usageLedger.createdAt, periodStart),
         lt(usageLedger.createdAt, periodEnd),
       )),

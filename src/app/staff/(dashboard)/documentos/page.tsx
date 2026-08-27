@@ -37,8 +37,8 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default async function DocumentsPage() {
-  const { churchId } = await requireStaffContext();
-  const docs = await listDocuments(getDb(), churchId);
+  const { organizationId } = await requireStaffContext();
+  const docs = await listDocuments(getDb(), organizationId);
 
   return (
     <div className="flex flex-col gap-6">

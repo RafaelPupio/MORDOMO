@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 // Catches a thrown error anywhere below this route group's layout — most concretely, a DB
 // failure inside `requireStaffContext()` (src/core/staff-context.ts), which every staff
-// page and Server Action calls to resolve `churchId` and which is deliberately called OUTSIDE
+// page and Server Action calls to resolve `organizationId` and which is deliberately called OUTSIDE
 // each Server Action's own try/catch so that `redirect('/staff/login')` isn't swallowed as if
 // it were a caught error (see that function's doc comment). Without this boundary, a Neon
 // cold start or any other DB outage inside that call surfaced as a raw `NeonDbError` stack in

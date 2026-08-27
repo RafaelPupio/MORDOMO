@@ -19,7 +19,7 @@ export type UploadState = { error?: string; ok?: string };
 
 /**
  * Runs an uploaded file through the SAME pipeline the public ingest endpoint uses
- * (`runIngest`, src/core/ingest.ts). `churchId` comes ONLY from `requireStaffContext()` —
+ * (`runIngest`, src/core/ingest.ts). `organizationId` comes ONLY from `requireStaffContext()` —
  * never from `formData` — so this action can never be pointed at another tenant's
  * knowledge base by crafting a form field.
  *
@@ -31,7 +31,7 @@ export type UploadState = { error?: string; ok?: string };
  * is `src/app/staff/(dashboard)/error.tsx`'s problem (I3), not this action's.
  */
 export async function uploadDocument(_prev: UploadState, formData: FormData): Promise<UploadState> {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const db = getDb();
 
   const file = formData.get('file');
@@ -41,7 +41,7 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
   if (file.size > MAX_UPLOAD_BYTES) return { error: 'Arquivo maior que 5 MB.' };
 
   try {
-    // Shares ONE rate-limit key/bucket with `POST /api/ingest` (`ingest:${churchId}`,
+    // Shares ONE rate-limit key/bucket with `POST /api/ingest` (`ingest:${organizationId}`,
     // src/channels/ingest-http.ts) rather than a second `staff-ingest:` bucket of its own
     // (M5): both paths run the same `runIngest` pipeline for the same tenant and are BOTH
     // reachable by the same authenticated staff session (that route accepts the same
@@ -49,14 +49,14 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     // one session run the pipeline 20 times/hour instead of the 10 either limit intends.
     // Reusing `INGEST_LIMIT` (not just the same key string) means the two paths also can't
     // silently drift to different numbers later.
-    const rate = await checkRateLimit(db, `ingest:${churchId}`, INGEST_LIMIT);
+    const rate = await checkRateLimit(db, `ingest:${organizationId}`, INGEST_LIMIT);
     if (!rate.allowed) return { error: 'Muitos envios nesta hora. Tente novamente mais tarde.' };
 
     // `parseGlobalCapUsd` already falls back to its own default (DEFAULT_GLOBAL_CAP_USD)
     // when the env var is unset — the `?? String(DEFAULT_GLOBAL_CAP_USD)` this used to carry
     // was a redundant second default (M9); the API routes pass the raw env var through the
     // same way.
-    const budget = await checkBudget(db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
+    const budget = await checkBudget(db, organizationId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
     if (!budget.allowed) return { error: 'O limite de uso do mês foi atingido.' };
 
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -77,10 +77,10 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     }
     if (hasUnstorableChars(parsed.text)) return { error: 'O arquivo contém caracteres inválidos.' };
 
-    const doc = await createDocument(db, { churchId, title, kind: 'upload', sourcePath: file.name });
+    const doc = await createDocument(db, { organizationId, title, kind: 'upload', sourcePath: file.name });
     const result = await runIngest(
       { db, embedder: new GatewayEmbedder(), extractorModel: FAST_MODEL, verifierModel: FAST_MODEL },
-      { churchId, documentId: doc.id, bytes, mimeType },
+      { organizationId, documentId: doc.id, bytes, mimeType },
     );
 
     revalidatePath('/staff/documentos');
@@ -91,7 +91,7 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
       ok: `Documento processado: ${result.chunkCount} trechos, ${result.published} evento(s) publicado(s).`,
     };
   } catch (error) {
-    console.error('uploadDocument: unexpected failure', { churchId, fileName: file.name, error });
+    console.error('uploadDocument: unexpected failure', { organizationId, fileName: file.name, error });
     return { error: 'Não foi possível processar o documento. Tente novamente.' };
   }
 }

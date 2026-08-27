@@ -3,7 +3,7 @@ import type { Db } from '@/db/client';
 import { reports } from '@/db/schema';
 
 /**
- * Writes a report for `(churchId, periodStart)`, replacing any existing row for that
+ * Writes a report for `(organizationId, periodStart)`, replacing any existing row for that
  * same period instead of duplicating it. Keyed on the `reports_church_period_key`
  * unique constraint (see schema.ts), so a re-run of the same week's digest overwrites
  * `findings`, `body`, and `periodEnd` in place.
@@ -11,7 +11,7 @@ import { reports } from '@/db/schema';
 export async function upsertReport(
   db: Db,
   input: {
-    churchId: string;
+    organizationId: string;
     periodStart: Date;
     periodEnd: Date;
     findings: unknown;
@@ -22,7 +22,7 @@ export async function upsertReport(
     .insert(reports)
     .values(input)
     .onConflictDoUpdate({
-      target: [reports.churchId, reports.periodStart],
+      target: [reports.organizationId, reports.periodStart],
       set: {
         periodEnd: input.periodEnd,
         findings: input.findings,
@@ -33,27 +33,27 @@ export async function upsertReport(
   return row;
 }
 
-export async function listReports(db: Db, churchId: string, limit?: number) {
+export async function listReports(db: Db, organizationId: string, limit?: number) {
   const query = db
     .select()
     .from(reports)
-    .where(eq(reports.churchId, churchId))
+    .where(eq(reports.organizationId, organizationId))
     .orderBy(desc(reports.periodStart));
   return limit === undefined ? query : query.limit(limit);
 }
 
-export async function getReport(db: Db, churchId: string, id: string) {
+export async function getReport(db: Db, organizationId: string, id: string) {
   const [row] = await db
     .select()
     .from(reports)
-    .where(and(eq(reports.churchId, churchId), eq(reports.id, id)));
+    .where(and(eq(reports.organizationId, organizationId), eq(reports.id, id)));
   return row;
 }
 
-export async function getReportForPeriod(db: Db, churchId: string, periodStart: Date) {
+export async function getReportForPeriod(db: Db, organizationId: string, periodStart: Date) {
   const [row] = await db
     .select()
     .from(reports)
-    .where(and(eq(reports.churchId, churchId), eq(reports.periodStart, periodStart)));
+    .where(and(eq(reports.organizationId, organizationId), eq(reports.periodStart, periodStart)));
   return row;
 }

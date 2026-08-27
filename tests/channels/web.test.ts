@@ -6,15 +6,15 @@ import {
 } from '@/channels/web';
 import { sendTicketReply } from '@/core/staff-operations';
 import { createTicket } from '@/db/repo/tickets';
-import { budgets, churches, conversations, messages, rateLimits, usageLedger } from '@/db/schema';
+import { budgets, organizations, conversations, messages, rateLimits, usageLedger } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
 const VISITOR_COOKIE = 'ccb_visitor';
 
 async function setupDemo() {
   const db = await createTestDb();
-  const [church] = await db.insert(churches).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
-  await db.insert(budgets).values({ churchId: church.id, monthlyUsd: 40 });
+  const [church] = await db.insert(organizations).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
+  await db.insert(budgets).values({ organizationId: church.id, monthlyUsd: 40 });
   return { db, church };
 }
 
@@ -234,7 +234,7 @@ describe('handleChatRequest', () => {
     expect(replyRow!.inputTokens).toBeGreaterThan(0);
     expect(replyRow!.outputTokens).toBeGreaterThan(0);
     expect(replyRow!.costUsd).toBeGreaterThan(0);
-    expect(saved.every((m) => m.churchId === church.id)).toBe(true);
+    expect(saved.every((m) => m.organizationId === church.id)).toBe(true);
   });
 
   describe('conversation ownership rests on the server-set visitor cookie', () => {
@@ -929,8 +929,8 @@ describe('handleChatHistoryRequest', () => {
 
     // Staff escalate this conversation into a ticket and send a reply to it — the exact path
     // `atendimentos/actions.ts`'s `sendReply` Server Action drives via `sendTicketReply`.
-    const church = (await db.select().from(churches))[0];
-    const ticket = await createTicket(db, { churchId: church.id, conversationId, topic: 'Dúvida sobre horário' });
+    const church = (await db.select().from(organizations))[0];
+    const ticket = await createTicket(db, { organizationId: church.id, conversationId, topic: 'Dúvida sobre horário' });
     const sendResult = await sendTicketReply(db, church.id, ticket.id, 'Nosso culto é às 10h de domingo!');
     expect(sendResult).toEqual({ sent: true });
 

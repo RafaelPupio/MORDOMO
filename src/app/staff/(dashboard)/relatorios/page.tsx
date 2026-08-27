@@ -9,11 +9,11 @@ import { ReportBody } from './report-body';
 export const metadata = { title: 'Relatórios — Secretaria' };
 
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists before
-// this renders; `requireStaffContext()` here is what supplies `churchId` for the query below
+// this renders; `requireStaffContext()` here is what supplies `organizationId` for the query below
 // — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function RelatoriosPage() {
-  const { churchId } = await requireStaffContext();
-  const reports = await listReports(getDb(), churchId, 12);
+  const { organizationId } = await requireStaffContext();
+  const reports = await listReports(getDb(), organizationId, 12);
   const [latest, ...older] = reports;
 
   return (

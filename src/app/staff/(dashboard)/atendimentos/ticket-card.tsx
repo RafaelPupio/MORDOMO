@@ -10,7 +10,7 @@ import {
 import type { SuggestReplyState } from './suggest-reply-state';
 
 // A narrow, client-safe projection of a ticket row — see atendimentos/page.tsx for why
-// `churchId`/`conversationId` are deliberately left out. `sentReply` is `null` for an `open`
+// `organizationId`/`conversationId` are deliberately left out. `sentReply` is `null` for an `open`
 // ticket (nothing to show yet) and always populated otherwise.
 export type TicketRow = {
   id: string;

@@ -7,15 +7,15 @@ import { TicketCard, type TicketRow } from './ticket-card';
 export const metadata = { title: 'Atendimentos — Secretaria' };
 
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists before
-// this renders; `requireStaffContext()` here is what supplies `churchId` for the query below
+// this renders; `requireStaffContext()` here is what supplies `organizationId` for the query below
 // — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function AtendimentosPage() {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const db = getDb();
-  const tickets = await listTickets(db, churchId);
+  const tickets = await listTickets(db, organizationId);
 
   // Project a narrow, client-safe row per ticket instead of passing the full DB row to the
-  // client component: `churchId`/`conversationId` never need to reach the browser (this is
+  // client component: `organizationId`/`conversationId` never need to reach the browser (this is
   // same-tenant data, not a cross-church leak — just unnecessary payload in the RSC stream).
   // For a ticket that has left `open`, resolve here what was ACTUALLY sent (read from its
   // conversation, not the `suggestedReply` draft column — see `getSentTicketReply`'s doc
@@ -27,7 +27,7 @@ export default async function AtendimentosPage() {
       status: ticket.status,
       createdAt: ticket.createdAt,
       suggestedReply: ticket.suggestedReply,
-      sentReply: ticket.status === 'open' ? null : await getSentTicketReply(db, churchId, ticket.id),
+      sentReply: ticket.status === 'open' ? null : await getSentTicketReply(db, organizationId, ticket.id),
     })),
   );
 

@@ -4,7 +4,7 @@ import { HashEmbedder } from '@/ai/embedder';
 import { runIngest } from '@/core/ingest';
 import { ensureConversation } from '@/db/repo/chat';
 import { createDocument } from '@/db/repo/documents';
-import { churches } from '@/db/schema';
+import { organizations } from '@/db/schema';
 import { createTestDb } from '../helpers/db';
 
 // The installed `ai` version types a tool's `execute` return as
@@ -74,8 +74,8 @@ async function objectModel(payloads: unknown[]) {
 describe('ingest → answer', () => {
   it('a freshly ingested bulletin is retrievable by the secretary and its event reaches the calendar', async () => {
     const db = await createTestDb();
-    const [church] = await db.insert(churches).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
-    const doc = await createDocument(db, { churchId: church.id, title: 'Boletim de Novembro', kind: 'bulletin' });
+    const [church] = await db.insert(organizations).values({ slug: 'demo', name: 'Igreja da Colina' }).returning();
+    const doc = await createDocument(db, { organizationId: church.id, title: 'Boletim de Novembro', kind: 'bulletin' });
 
     const result = await runIngest(
       {
@@ -94,7 +94,7 @@ describe('ingest → answer', () => {
         verifierModel: await objectModel([{ decision: 'confirmed', note: 'Data e local conferem.' }]),
       },
       {
-        churchId: church.id, documentId: doc.id,
+        organizationId: church.id, documentId: doc.id,
         bytes: new TextEncoder().encode(BULLETIN), mimeType: 'text/markdown',
         referenceDate: REFERENCE_DATE,
       },
@@ -104,10 +104,10 @@ describe('ingest → answer', () => {
     expect(result.published).toBe(1);
 
     const conversationId = crypto.randomUUID();
-    await ensureConversation(db, { id: conversationId, churchId: church.id, visitorKey: 'e2e' });
+    await ensureConversation(db, { id: conversationId, organizationId: church.id, visitorKey: 'e2e' });
     const tools = secretaryTools(
       { db, embedder: new HashEmbedder() },
-      { churchId: church.id, conversationId },
+      { organizationId: church.id, conversationId },
     );
 
     // The knowledge base answers from the newly ingested document...

@@ -7,7 +7,7 @@ import {
   checkStaffPassword, SESSION_TTL_SECONDS, signSession, STAFF_COOKIE_NAME,
 } from '@/core/staff-session';
 import { getDb } from '@/db/client';
-import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
+import { DEMO_ORGANIZATION_SLUG, getOrganizationBySlug } from '@/db/repo/organizations';
 
 export async function signIn(_prev: { error?: string }, formData: FormData) {
   const password = String(formData.get('password') ?? '');
@@ -20,12 +20,12 @@ export async function signIn(_prev: { error?: string }, formData: FormData) {
   const secret = process.env.STAFF_SESSION_SECRET;
   if (!secret) return { error: 'Senha inválida.' };
 
-  const church = await getChurchBySlug(getDb(), DEMO_CHURCH_SLUG);
+  const church = await getOrganizationBySlug(getDb(), DEMO_ORGANIZATION_SLUG);
   if (!church) return { error: 'A igreja demo ainda não foi carregada.' };
 
   const issuedAt = Date.now();
   const token = signSession(
-    { churchId: church.id, issuedAt, expiresAt: issuedAt + SESSION_TTL_SECONDS * 1000 },
+    { organizationId: church.id, issuedAt, expiresAt: issuedAt + SESSION_TTL_SECONDS * 1000 },
     secret,
   );
   (await cookies()).set(STAFF_COOKIE_NAME, token, staffCookieOptions(SESSION_TTL_SECONDS));

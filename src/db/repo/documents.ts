@@ -5,7 +5,7 @@ import { documents } from '@/db/schema';
 
 export async function createDocument(
   db: Db,
-  input: { churchId: string; title: string; kind: string; sourcePath?: string },
+  input: { organizationId: string; title: string; kind: string; sourcePath?: string },
 ) {
   const [row] = await db
     .insert(documents)
@@ -14,19 +14,19 @@ export async function createDocument(
   return row;
 }
 
-export async function getDocument(db: Db, churchId: string, documentId: string) {
+export async function getDocument(db: Db, organizationId: string, documentId: string) {
   const [row] = await db
     .select()
     .from(documents)
-    .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
+    .where(and(eq(documents.organizationId, organizationId), eq(documents.id, documentId)));
   return row;
 }
 
-export async function listDocuments(db: Db, churchId: string) {
+export async function listDocuments(db: Db, organizationId: string) {
   return db
     .select()
     .from(documents)
-    .where(eq(documents.churchId, churchId))
+    .where(eq(documents.organizationId, organizationId))
     .orderBy(desc(documents.createdAt));
 }
 
@@ -36,18 +36,18 @@ export async function listDocuments(db: Db, churchId: string) {
  */
 export async function setIngestStatus(
   db: Db,
-  churchId: string,
+  organizationId: string,
   documentId: string,
   status: IngestStatus,
   opts: { error?: string | null } = {},
 ) {
-  const current = await getDocument(db, churchId, documentId);
-  if (!current) throw new Error(`Document ${documentId} not found for church ${churchId}`);
+  const current = await getDocument(db, organizationId, documentId);
+  if (!current) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
   assertTransition(current.ingestStatus as IngestStatus, status);
   await db
     .update(documents)
     .set({ ingestStatus: status, ingestError: opts.error ?? null })
-    .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
+    .where(and(eq(documents.organizationId, organizationId), eq(documents.id, documentId)));
 }
 
 /**
@@ -67,19 +67,19 @@ export async function setIngestStatus(
  * `extracting` / `verifying`) still gets a loud "illegal transition" error instead of being
  * silently restarted out from under an in-flight run.
  */
-export async function beginIngestRun(db: Db, churchId: string, documentId: string): Promise<void> {
-  const current = await getDocument(db, churchId, documentId);
-  if (!current) throw new Error(`Document ${documentId} not found for church ${churchId}`);
+export async function beginIngestRun(db: Db, organizationId: string, documentId: string): Promise<void> {
+  const current = await getDocument(db, organizationId, documentId);
+  if (!current) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
 
   if (current.ingestStatus === 'published') {
     await db
       .update(documents)
       .set({ ingestStatus: 'parsing', ingestError: null })
-      .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
+      .where(and(eq(documents.organizationId, organizationId), eq(documents.id, documentId)));
     return;
   }
 
-  await setIngestStatus(db, churchId, documentId, 'parsing');
+  await setIngestStatus(db, organizationId, documentId, 'parsing');
 }
 
 /**
@@ -101,12 +101,12 @@ export async function beginIngestRun(db: Db, churchId: string, documentId: strin
  */
 export async function forceIngestFailed(
   db: Db,
-  churchId: string,
+  organizationId: string,
   documentId: string,
   error: string,
 ): Promise<void> {
   await db
     .update(documents)
     .set({ ingestStatus: 'failed', ingestError: error })
-    .where(and(eq(documents.churchId, churchId), eq(documents.id, documentId)));
+    .where(and(eq(documents.organizationId, organizationId), eq(documents.id, documentId)));
 }

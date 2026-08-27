@@ -8,8 +8,8 @@ import type { Db } from '@/db/client';
 
 export type ReplyDrafterDeps = { db: Db; embedder: Embedder; model?: LanguageModel };
 export type ReplyDrafterInput = {
-  churchId: string;
-  churchName: string;
+  organizationId: string;
+  organizationName: string;
   ticketId: string;
   topic: string;
   conversationExcerpt?: string;
@@ -38,12 +38,12 @@ export async function draftReply(
   let retrievalSucceeded = true;
   try {
     ({ sources, embeddingTokens } = await searchKnowledgeBase(
-      deps.db, deps.embedder, input.churchId, input.topic,
+      deps.db, deps.embedder, input.organizationId, input.topic,
     ));
   } catch (error) {
     retrievalSucceeded = false;
     console.error('support.retrieval failed; continuing with empty grounding', {
-      churchId: input.churchId, ticketId: input.ticketId, error,
+      organizationId: input.organizationId, ticketId: input.ticketId, error,
     });
   }
 
@@ -52,7 +52,7 @@ export async function draftReply(
   if (retrievalSucceeded) {
     try {
       await recordUsage(deps.db, {
-        churchId: input.churchId, feature: 'support.retrieval',
+        organizationId: input.organizationId, feature: 'support.retrieval',
         model: deps.embedder.model, inputTokens: embeddingTokens, outputTokens: 0,
       });
     } catch (error) {
@@ -68,7 +68,7 @@ export async function draftReply(
     const { text, usage } = await generateText({
       model,
       system: [
-        `You draft replies for the secretary of ${input.churchName}, a Brazilian church.`,
+        `You draft replies for the secretary of ${input.organizationName}, a Brazilian church.`,
         'Write in Brazilian Portuguese, warm and brief — two or three sentences.',
         'Use ONLY the church information provided below. If it does not answer the question, say plainly that you will check and get back to them; never invent a fact.',
         'This is a DRAFT a staff member will read, edit, and send. Do not sign it, and do not promise anything the church has not stated.',
@@ -83,7 +83,7 @@ export async function draftReply(
 
     try {
       await recordUsage(deps.db, {
-        churchId: input.churchId, feature: 'support.draft',
+        organizationId: input.organizationId, feature: 'support.draft',
         model: priceableModelId(model, FAST_MODEL),
         inputTokens: usage.inputTokens ?? 0, outputTokens: usage.outputTokens ?? 0,
       });
@@ -96,7 +96,7 @@ export async function draftReply(
     return { reply: trimmedReply, sources };
   } catch (error) {
     console.error('support.draft failed; returning an empty draft', {
-      churchId: input.churchId, ticketId: input.ticketId, error,
+      organizationId: input.organizationId, ticketId: input.ticketId, error,
     });
     return { reply: '', sources };
   }

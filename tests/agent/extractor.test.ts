@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { extractEvents } from '@/agent/extractor';
 import { CHAT_MODEL } from '@/ai/pricing';
 import { usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // generateObject is mocked at the module level, by default delegating to the real
 // implementation, so most tests below still exercise the SDK's actual parsing/validation
@@ -49,7 +49,7 @@ const TEXT = '## Encontro de jovens OTB — 10/10 (sábado)\n\nÀs 19h, na quadr
 describe('extractEvents', () => {
   it('returns the extracted events and meters the call', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [{
         title: 'Encontro de jovens OTB',
@@ -62,7 +62,7 @@ describe('extractEvents', () => {
     });
 
     const out = await extractEvents({ db, model }, {
-      churchId: church.id,
+      organizationId: church.id,
       documentId: crypto.randomUUID(),
       text: TEXT,
       referenceDate: '2026-10-01',
@@ -78,10 +78,10 @@ describe('extractEvents', () => {
 
   it('returns an empty array when the document has no events', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({ events: [] });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(),
+      organizationId: church.id, documentId: crypto.randomUUID(),
       text: 'Palavra pastoral sobre gratidão.', referenceDate: '2026-10-01',
     });
     expect(out).toEqual({ candidates: [], failed: false });
@@ -89,7 +89,7 @@ describe('extractEvents', () => {
 
   it('drops events whose quote is not present in the source text', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [
         { title: 'Real', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
@@ -99,20 +99,20 @@ describe('extractEvents', () => {
       ],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates.map((e) => e.title)).toEqual(['Real']);
   });
 
   it('drops events with an unparseable date', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [{ title: 'Sem data', startsAt: 'quando der', location: null, description: null,
         confidence: 0.8, sourceQuote: 'Encontro de jovens OTB' }],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates).toEqual([]);
   });
@@ -123,7 +123,7 @@ describe('extractEvents', () => {
   // dropped here, before it costs a verifier call it could never survive on the merits.
   it('drops events whose date is only a partial value ("2026", "Jan 2026"), not a full date-and-time', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [
         { title: 'Só o ano', startsAt: '2026', location: null, description: null,
@@ -135,7 +135,7 @@ describe('extractEvents', () => {
       ],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates).toEqual([]);
   });
@@ -149,7 +149,7 @@ describe('extractEvents', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const out = await extractEvents(
       { db, model },
-      { churchId: crypto.randomUUID(), documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01' },
+      { organizationId: crypto.randomUUID(), documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01' },
     );
     expect(out.candidates).toHaveLength(1);
     expect(spy).toHaveBeenCalled();
@@ -163,7 +163,7 @@ describe('extractEvents', () => {
   // ourselves per candidate, so one out-of-range field can no longer sink the batch.
   it('keeps every candidate when one has an out-of-range confidence, clamping it into 0..1', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [
         { title: 'Confiança fora da faixa', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
@@ -173,7 +173,7 @@ describe('extractEvents', () => {
       ],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates).toHaveLength(2);
     expect(out.candidates.find((e) => e.title === 'Confiança fora da faixa')?.confidence).toBe(1);
@@ -188,11 +188,11 @@ describe('extractEvents', () => {
   // treating an outage as "nothing to publish".
   it('returns failed: true with no candidates, and logs, when generateObject fails entirely', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockRejectedValueOnce(new Error('network unreachable'));
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const out = await extractEvents({ db }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out).toEqual({ candidates: [], failed: true });
     expect(spy).toHaveBeenCalled();
@@ -204,7 +204,7 @@ describe('extractEvents', () => {
   // straightened, an accent dropped — without becoming a fuzzy match.
   it('accepts quotes that differ from the source only by em dash, curly apostrophe, or stripped accent', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const text = 'Encontro de jovens — sábado (10/10), na sala ‘Boas-vindas’, às 19h.';
     const model = await objectModel({
       events: [
@@ -215,7 +215,7 @@ describe('extractEvents', () => {
       ],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text, referenceDate: '2026-10-01',
     });
     expect(out.candidates.map((e) => e.title)).toEqual([
       'Travessão como hífen e acento removido',
@@ -228,7 +228,7 @@ describe('extractEvents', () => {
   // and a quote that genuinely does not occur in the document, must still be rejected.
   it('still rejects an empty or whitespace-only sourceQuote', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await objectModel({
       events: [
         { title: 'Vazio', startsAt: '2026-10-10T22:00:00Z', location: null, description: null,
@@ -238,7 +238,7 @@ describe('extractEvents', () => {
       ],
     });
     const out = await extractEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates).toEqual([]);
   });
@@ -249,13 +249,13 @@ describe('extractEvents', () => {
   // resolution via the module mock instead of routing a string through a live call.
   it('prices the ledger row under the actual string model id passed via deps.model, not the FAST_MODEL default', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockResolvedValueOnce({
       object: { events: [] },
       usage: { inputTokens: 42, outputTokens: 7 },
     });
     const out = await extractEvents({ db, model: CHAT_MODEL }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, referenceDate: '2026-10-01',
     });
     expect(out.candidates).toEqual([]);
     const ledger = await db.select().from(usageLedger);

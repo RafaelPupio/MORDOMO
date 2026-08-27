@@ -8,10 +8,10 @@ import { setPrayerStatus, type PrayerStatus } from '@/db/repo/prayer';
 import { getTicket, saveSuggestedReply, setTicketStatus, type TicketStatus } from '@/db/repo/tickets';
 
 // The glue between the staff area's Server Actions and the repos + the drafter. Every
-// function here takes an explicit `churchId` (never derives it) so it is testable without a
+// function here takes an explicit `organizationId` (never derives it) so it is testable without a
 // request context, and every mutation is guarded by loading the target row scoped to
-// `churchId` FIRST — a form-supplied id for another church's row is a silent no-op, never a
-// write. `requireStaffContext()` (src/core/staff-context.ts) is the only place `churchId`
+// `organizationId` FIRST — a form-supplied id for another church's row is a silent no-op, never a
+// write. `requireStaffContext()` (src/core/staff-context.ts) is the only place `organizationId`
 // is allowed to come from a real request; these functions just trust whatever they're given.
 //
 // Every id below also comes straight from untrusted `formData` upstream. Postgres rejects a
@@ -21,39 +21,39 @@ import { getTicket, saveSuggestedReply, setTicketStatus, type TicketStatus } fro
 
 /**
  * Moves a prayer request through its workflow. `setPrayerStatus` (src/db/repo/prayer.ts)
- * already scopes its UPDATE to `churchId` in SQL, so a request belonging to another church
+ * already scopes its UPDATE to `organizationId` in SQL, so a request belonging to another church
  * is a no-op there, not an error — this wrapper exists so oracoes/actions.ts has a plain,
  * unit-testable function to call instead of importing the repo directly.
  */
 export async function applyPrayerStatus(
   db: Db,
-  churchId: string,
+  organizationId: string,
   id: string,
   status: PrayerStatus,
 ): Promise<void> {
   if (!isUuid(id)) return;
-  await setPrayerStatus(db, churchId, id, status);
+  await setPrayerStatus(db, organizationId, id, status);
 }
 
 /**
  * Flips a ticket's status directly (e.g. "Encerrar sem responder" — closed without ever
  * sending a reply). Mirrors `applyPrayerStatus`: `setTicketStatus` already scopes its UPDATE
- * to `churchId`, this just adds the malformed-id guard and gives `atendimentos/actions.ts` a
+ * to `organizationId`, this just adds the malformed-id guard and gives `atendimentos/actions.ts` a
  * plain, unit-testable function instead of importing the repo directly.
  */
 export async function applyTicketStatus(
   db: Db,
-  churchId: string,
+  organizationId: string,
   id: string,
   status: TicketStatus,
 ): Promise<void> {
   if (!isUuid(id)) return;
-  await setTicketStatus(db, churchId, id, status);
+  await setTicketStatus(db, organizationId, id, status);
 }
 
 export type SuggestTicketReplyInput = {
-  churchId: string;
-  churchName: string;
+  organizationId: string;
+  organizationName: string;
   ticketId: string;
 };
 
@@ -129,7 +129,7 @@ function excerptFromMessages(history: { role: string; parts: unknown }[]): strin
 
 /**
  * Drafts (via `draftReply`) and persists a suggested reply for a ticket, editable and unsent
- * until a staff member sends it. Guards by loading the ticket scoped to `churchId` first: a
+ * until a staff member sends it. Guards by loading the ticket scoped to `organizationId` first: a
  * ticket id that doesn't belong to this church, or doesn't exist, or isn't even shaped like a
  * uuid, returns an empty, ungenerated result without touching the database.
  *
@@ -147,7 +147,7 @@ export async function suggestTicketReply(
 ): Promise<SuggestTicketReplyResult> {
   if (!isUuid(input.ticketId)) return { reply: '', sources: [], generated: false };
 
-  const ticket = await getTicket(deps.db, input.churchId, input.ticketId);
+  const ticket = await getTicket(deps.db, input.organizationId, input.ticketId);
   if (!ticket) return { reply: '', sources: [], generated: false };
 
   const conversationExcerpt = ticket.conversationId
@@ -155,15 +155,15 @@ export async function suggestTicketReply(
     : undefined;
 
   const draft = await draftReply(deps, {
-    churchId: input.churchId,
-    churchName: input.churchName,
+    organizationId: input.organizationId,
+    organizationName: input.organizationName,
     ticketId: ticket.id,
     topic: ticket.topic,
     conversationExcerpt,
   });
 
   if (draft.reply.length > 0) {
-    await saveSuggestedReply(deps.db, input.churchId, ticket.id, draft.reply);
+    await saveSuggestedReply(deps.db, input.organizationId, ticket.id, draft.reply);
     return { ...draft, generated: true };
   }
 
@@ -178,7 +178,7 @@ export type SendTicketReplyResult =
  * Sends a staff-edited reply: persists it as an assistant message on the ticket's
  * conversation, then flips the ticket to `answered`. Refuses an empty (or whitespace-only)
  * reply outright (nothing written), a malformed/non-uuid id (nothing queried), and a ticket
- * belonging to another church (loaded scoped to `churchId` first, exactly like the guard in
+ * belonging to another church (loaded scoped to `organizationId` first, exactly like the guard in
  * `suggestTicketReply` — nothing written, status unchanged).
  *
  * Also refuses to send on a ticket that isn't currently `open`. This is deliberate, not
@@ -193,7 +193,7 @@ export type SendTicketReplyResult =
  */
 export async function sendTicketReply(
   db: Db,
-  churchId: string,
+  organizationId: string,
   ticketId: string,
   reply: string,
 ): Promise<SendTicketReplyResult> {
@@ -201,20 +201,20 @@ export async function sendTicketReply(
   if (!trimmed) return { sent: false, reason: 'empty' };
   if (!isUuid(ticketId)) return { sent: false, reason: 'invalid-id' };
 
-  const ticket = await getTicket(db, churchId, ticketId);
+  const ticket = await getTicket(db, organizationId, ticketId);
   if (!ticket) return { sent: false, reason: 'not-found' };
   if (ticket.status !== 'open') return { sent: false, reason: 'not-open' };
 
   if (ticket.conversationId) {
     await saveMessage(db, {
-      churchId,
+      organizationId,
       conversationId: ticket.conversationId,
       role: 'assistant',
       parts: [{ type: 'text', text: trimmed }],
     });
   }
 
-  await setTicketStatus(db, churchId, ticketId, 'answered');
+  await setTicketStatus(db, organizationId, ticketId, 'answered');
   return { sent: true };
 }
 
@@ -242,12 +242,12 @@ export type SentTicketReply =
  */
 export async function getSentTicketReply(
   db: Db,
-  churchId: string,
+  organizationId: string,
   ticketId: string,
 ): Promise<SentTicketReply> {
   if (!isUuid(ticketId)) return { found: false, reason: 'no-conversation' };
 
-  const ticket = await getTicket(db, churchId, ticketId);
+  const ticket = await getTicket(db, organizationId, ticketId);
   if (!ticket || !ticket.conversationId) return { found: false, reason: 'no-conversation' };
 
   const history = await listMessages(db, ticket.conversationId);

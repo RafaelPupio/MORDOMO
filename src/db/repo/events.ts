@@ -9,11 +9,11 @@ import { events } from '@/db/schema';
 // see `createEvent` below) would sit in the table indistinguishable from a checked one and
 // still reach this list, making the verifier's entire guarantee a single in-memory
 // `.filter()` upstream that any other writer could bypass just by inserting a row.
-export async function listUpcomingEvents(db: Db, churchId: string, limit = 10, now = new Date()) {
+export async function listUpcomingEvents(db: Db, organizationId: string, limit = 10, now = new Date()) {
   return db
     .select()
     .from(events)
-    .where(and(eq(events.churchId, churchId), gte(events.startsAt, now), eq(events.verified, true)))
+    .where(and(eq(events.organizationId, organizationId), gte(events.startsAt, now), eq(events.verified, true)))
     .orderBy(asc(events.startsAt))
     .limit(limit);
 }
@@ -21,7 +21,7 @@ export async function listUpcomingEvents(db: Db, churchId: string, limit = 10, n
 export async function createEvent(
   db: Db,
   input: {
-    churchId: string; title: string; startsAt: Date; location?: string; description?: string;
+    organizationId: string; title: string; startsAt: Date; location?: string; description?: string;
     /** Defaults to the schema's own default (`false`) when omitted — a caller inserting an
      *  event outside the verified ingest pipeline (seeding, a future manual-entry UI) must
      *  say so explicitly to have it show up in `listUpcomingEvents`. */

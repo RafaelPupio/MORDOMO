@@ -4,7 +4,7 @@ import { budgets, usageLedger } from '@/db/schema';
 import { costUsd } from './pricing';
 
 export type UsageInput = {
-  churchId: string;
+  organizationId: string;
   feature: string;
   model: string;
   inputTokens: number;
@@ -20,12 +20,12 @@ export async function recordUsage(db: Db, input: UsageInput): Promise<void> {
   });
 }
 
-export async function monthSpendUsd(db: Db, churchId?: string): Promise<number> {
+export async function monthSpendUsd(db: Db, organizationId?: string): Promise<number> {
   const start = new Date();
   start.setUTCDate(1);
   start.setUTCHours(0, 0, 0, 0);
   const conds = [gte(usageLedger.createdAt, start)];
-  if (churchId) conds.push(eq(usageLedger.churchId, churchId));
+  if (organizationId) conds.push(eq(usageLedger.organizationId, organizationId));
   const [row] = await db
     .select({ total: sql<number>`coalesce(sum(${usageLedger.costUsd}), 0)` })
     .from(usageLedger)
@@ -33,10 +33,10 @@ export async function monthSpendUsd(db: Db, churchId?: string): Promise<number> 
   return Number(row.total);
 }
 
-export async function checkBudget(db: Db, churchId: string, globalCapUsd: number): Promise<BudgetStatus> {
-  const [budget] = await db.select().from(budgets).where(eq(budgets.churchId, churchId));
+export async function checkBudget(db: Db, organizationId: string, globalCapUsd: number): Promise<BudgetStatus> {
+  const [budget] = await db.select().from(budgets).where(eq(budgets.organizationId, organizationId));
   if (!budget) return { allowed: false, reason: 'tenant' }; // fail closed on the public demo
-  if ((await monthSpendUsd(db, churchId)) >= budget.monthlyUsd) return { allowed: false, reason: 'tenant' };
+  if ((await monthSpendUsd(db, organizationId)) >= budget.monthlyUsd) return { allowed: false, reason: 'tenant' };
   if ((await monthSpendUsd(db)) >= globalCapUsd) return { allowed: false, reason: 'global' };
   return { allowed: true };
 }
