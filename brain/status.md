@@ -38,9 +38,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Review the Corporate + Personal beta architecture in
-   `docs/superpowers/specs/2026-08-28-corporate-personal-beta-design.md`, then write its
-   implementation plan before feature work begins.
+1. Execute `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` for the
+   non-sensitive English/Portuguese Studio foundation before feature work on research or
+   private data begins.
 2. Before organization-aware flows are tested live, enable Clerk Organizations with the
    intended invite-only membership mode in the Development Clerk instance and apply the
    reviewed migration to a disposable Neon branch.

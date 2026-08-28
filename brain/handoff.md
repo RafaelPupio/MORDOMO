@@ -1,9 +1,9 @@
-# Handoff — 2026-08-27T00:00:00Z — from Codex
+# Handoff — 2026-08-28T00:00:00Z — from Codex
 
 ## Task
 
-Continue the approved invite-only, multi-organization MORDOMO beta after the product rebrand
-and five-language public presentation.
+Implement the first MORDOMO corporate/personal beta foundation: trusted contexts, EN/PT
+Studio, Organization-only versioned profiles, and deterministic tests without AI usage.
 
 ## Done
 
@@ -24,23 +24,27 @@ and five-language public presentation.
   variants, and unsupported-locale metadata regression coverage. The beta branch is pushed.
 - Clerk is provisioned and connected to Vercel Development only; Neon remains unchanged.
   No billing or production configuration was added.
+- `8bbd00c` — public roadmap and approved Personal Secretary safety boundary.
+- `37c37ba` — Corporate + Personal beta design; public sandbox design superseded.
+- `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` — reviewed,
+  task-by-task implementation plan ready to execute.
 
 ## Next action
 
-Perform Task 3 from `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: replace
-the legacy staff password/cookie boundary with trusted Clerk organization context, and resolve
-public chat from a validated organization slug exactly once per request.
+Execute Task 1 of `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` with
+TDD. Before Task 3, configure Clerk Development Organizations as membership-required,
+invite-only, with self-service Organization creation disabled.
 
 ## Files in play
 
-- `docs/superpowers/specs/2026-08-25-ai-secretary-saas-beta-design.md` — approved contract.
-- `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md` — next task-by-task plan.
-- `src/core/organization-context.ts` and `src/core/public-organization.ts` — trusted
-  staff/public resolution helpers to add.
-- `src/channels/web.ts`, `src/channels/ingest-http.ts`, staff routes/actions, and chat routes —
-  callers of the legacy boundary to replace.
-- `src/i18n/home-messages.ts` and `src/components/marketing/mordomo-home.tsx` — completed
-  public-brand and presentation foundation; use their locale boundary for later interface work.
+- `docs/superpowers/specs/2026-08-28-corporate-personal-beta-design.md` — approved product
+  boundary and security gates.
+- `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` — executable first
+  increment; Personal configuration is browser-local only.
+- `src/core/organization-profile.ts`, `src/db/schema.ts`, `src/proxy.ts` — current typed
+  profile, persistence, and Clerk-route foundations to extend.
+- `src/i18n/locales.ts` — five-language public-presentation boundary; do not reuse it as the
+  EN/PT beta interface boundary.
 
 ## Ruled out
 
@@ -49,10 +53,11 @@ public chat from a validated organization slug exactly once per request.
 - Clerk paid custom roles are not required: the app retains `owner_clerk_user_id` and uses
   Clerk Hobby's `org:admin` / `org:member` roles.
 - Do not apply the migration directly to Development Neon without the disposable-branch check.
+- No raw passwords, private notes, reminders, calendar authorization, research, exports,
+  deletion, or WhatsApp recovery in the first increment.
+- Do not provision Firecrawl or choose key management until their separate gates are reached.
 
 ## Verify
 
-Run Task 3 ownership and API tests, `npm run typecheck`, and the full suite. Before a live
-organization-aware browser test, enable Clerk Organizations with the intended invite-only
-membership mode in the Development instance. Apply the migration to a disposable Neon branch
-before any Development-database migration.
+For each task, run its focused Vitest command and `npm run typecheck`. At the end run
+`npm test -- --reporter=dot`, `npm run typecheck`, `npm run build`, and `git diff --check`.
