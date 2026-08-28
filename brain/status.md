@@ -32,6 +32,10 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 - The Personal Secretary beta is limited to encrypted private notes, reminders, and
   calendar metadata. Password storage and WhatsApp-account continuity remain explicitly
   post-beta security work; `docs/product-roadmap.md` records the product backlog.
+- Task 1 of the bilingual Studio foundation is implemented: strict non-sensitive secretary
+  profiles, EN/PT beta messages, and focused unit coverage are present. The exact npm
+  typecheck script is blocked by an unwritable pre-existing `tsconfig.tsbuildinfo`; the
+  no-incremental equivalent passes.
 - The existing tenant domain is renamed to organizations in the beta branch. Its migration
   preserves legacy UUIDs and foreign keys in PGlite, but has not been applied to Development
   Neon yet.
