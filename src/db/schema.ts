@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean, index, integer, jsonb, pgTable, real, text, timestamp, unique, uniqueIndex, uuid, vector,
 } from 'drizzle-orm/pg-core';
@@ -39,6 +40,9 @@ export const secretaryProfileVersions = pgTable('secretary_profile_versions', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   index('secretary_profile_versions_organization_created_at_idx').on(t.organizationId, t.createdAt.desc()),
+  uniqueIndex('secretary_profile_versions_one_published_organization')
+    .on(t.organizationId)
+    .where(sql`${t.status} = 'published'`),
 ]);
 
 export const documents = pgTable('documents', {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { chunks, organizations } from '@/db/schema';
+import { PgDialect, getTableConfig } from 'drizzle-orm/pg-core';
+import { chunks, organizations, secretaryProfileVersions } from '@/db/schema';
 import { createTestDb, seedOrganization } from '../helpers/db';
 
 describe('schema + migrations', () => {
@@ -22,5 +23,18 @@ describe('schema + migrations', () => {
     await db.insert(chunks).values({ organizationId: church.id, documentId: doc.id, seq: 0, content: 'hello', embedding });
     const stored = await db.select().from(chunks);
     expect(stored[0].embedding).toHaveLength(1536);
+  });
+
+  it('declares the partial unique published-profile index in Drizzle metadata', () => {
+    const index = getTableConfig(secretaryProfileVersions).indexes.find(
+      (candidate) => candidate.config.name === 'secretary_profile_versions_one_published_organization',
+    );
+
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.where).toBeDefined();
+    expect(new PgDialect().sqlToQuery(index!.config.where!)).toMatchObject({
+      sql: '"secretary_profile_versions"."status" = \'published\'',
+      params: [],
+    });
   });
 });
