@@ -38,14 +38,17 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Before organization-aware flows are tested live, enable Clerk Organizations with the
-   intended invite-only membership mode in the Development Clerk instance.
-2. Execute Task 3 in `docs/superpowers/plans/2026-08-26-ai-secretary-saas-beta.md`: bind
-   authenticated staff and public chat to trusted Clerk organizations.
-3. Apply the reviewed organization migration to a disposable Neon branch before it is ever
-   applied to the Development database.
-4. Localize the visitor chat and staff interface only after those legacy routes are replaced
-   by the trusted organization context; the public presentation localization is complete.
+1. Review the Corporate + Personal beta architecture in
+   `docs/superpowers/specs/2026-08-28-corporate-personal-beta-design.md`, then write its
+   implementation plan before feature work begins.
+2. Before organization-aware flows are tested live, enable Clerk Organizations with the
+   intended invite-only membership mode in the Development Clerk instance and apply the
+   reviewed migration to a disposable Neon branch.
+3. Provision and review the public-research integration before enabling research. Choose and
+   provision managed key management, then complete its threat model, before any sensitive
+   Personal Secretary data is persisted.
+4. Build the bilingual (English/Portuguese) Studio and trusted context boundary before
+   replacing legacy staff and visitor routes. The public presentation localization is complete.
 
 ## Repository hygiene
 

@@ -1,7 +1,8 @@
 # MORDOMO Public Sandbox — Design
 
 **Date:** 2026-08-27
-**Status:** Approved approach; ready for plan review
+**Status:** Superseded by `2026-08-28-corporate-personal-beta-design.md`; retained as the
+original public-demo proposal.
 **Scope:** Public, deterministic demonstration of how an organization tailors its MORDOMO secretary.
 
 ## Goal
