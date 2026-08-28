@@ -43,6 +43,13 @@
       "when": 1787272919143,
       "tag": "0005_rename_churches_to_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787272919144,
+      "tag": "0006_bilingual_personal_studio",
+      "breakpoints": true
     }
   ]
 }

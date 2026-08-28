@@ -24,6 +24,23 @@ export const organizationProfiles = pgTable('organization_profiles', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const personalContexts = pgTable('personal_contexts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  clerkUserId: text('clerk_user_id').notNull().unique(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const secretaryProfileVersions = pgTable('secretary_profile_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  status: text('status').notNull().default('draft'),
+  profile: jsonb('profile').$type<unknown>().notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  index('secretary_profile_versions_organization_created_at_idx').on(t.organizationId, t.createdAt.desc()),
+]);
+
 export const documents = pgTable('documents', {
   id: uuid('id').primaryKey().defaultRandom(),
   organizationId: uuid('organization_id').notNull().references(() => organizations.id),
