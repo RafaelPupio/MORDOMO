@@ -24,9 +24,14 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   committed.
 - The public presentation is live locally at `/`, `/pt`, `/es`, `/fr`, and `/de`.
   Typed in-repository dictionaries set copy and metadata; invalid locale paths return 404.
-- The beta target is invite-only, multi-organization workspaces with a saved secretary
-  profile. The planned authorization model uses Clerk's default `org:admin` and
-  `org:member` roles; Neon stores the workspace owner's Clerk user ID.
+- The beta target now spans invite-only organization workspaces and a Personal Secretary
+  context. The trial product experience will be English and Portuguese; the five-language
+  public presentation remains unchanged. The planned authorization model uses Clerk's
+  default `org:admin` and `org:member` roles; Neon stores the workspace owner's Clerk user
+  ID.
+- The Personal Secretary beta is limited to encrypted private notes, reminders, and
+  calendar metadata. Password storage and WhatsApp-account continuity remain explicitly
+  post-beta security work; `docs/product-roadmap.md` records the product backlog.
 - The existing tenant domain is renamed to organizations in the beta branch. Its migration
   preserves legacy UUIDs and foreign keys in PGlite, but has not been applied to Development
   Neon yet.
