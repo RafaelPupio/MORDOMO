@@ -20,8 +20,10 @@ import {
 export type StudioActionState = {
   ok?: 'draftSaved' | 'published';
   error?: 'forbidden' | 'invalid' | 'notFound' | 'personalNotSaved';
-  fieldErrors?: Partial<Record<keyof SecretaryProfile, string>>;
+  fieldErrors?: Partial<Record<keyof SecretaryProfile, StudioFieldErrorCode>>;
 };
+
+export type StudioFieldErrorCode = 'reviewField' | 'personalPreviewOnly';
 
 const versionIdSchema = z.uuid();
 const PROFILE_FIELDS = new Set<keyof SecretaryProfile>([
@@ -39,7 +41,7 @@ function toFieldErrors(error: z.ZodError): StudioActionState['fieldErrors'] {
   for (const issue of error.issues) {
     const field = issue.path[0];
     if (typeof field === 'string' && PROFILE_FIELDS.has(field as keyof SecretaryProfile)) {
-      errors[field as keyof SecretaryProfile] ??= 'Review this field.';
+      errors[field as keyof SecretaryProfile] ??= 'reviewField';
     }
   }
   return errors;
@@ -94,7 +96,7 @@ export async function saveStudioDraft(
   if (parsed.data.segment === 'personal') {
     return {
       error: 'invalid',
-      fieldErrors: { segment: 'Personal is preview-only in this beta.' },
+      fieldErrors: { segment: 'personalPreviewOnly' },
     };
   }
 

@@ -98,7 +98,7 @@ describe('Studio Server Actions', () => {
 
     expect(state).toMatchObject({
       error: 'invalid',
-      fieldErrors: { segment: expect.any(String) },
+      fieldErrors: { segment: 'personalPreviewOnly' },
     });
     expect(saveOrganizationSecretaryProfileDraft).not.toHaveBeenCalled();
   });
@@ -106,9 +106,10 @@ describe('Studio Server Actions', () => {
   it('saves a valid Organization draft only inside the Clerk-derived organization', async () => {
     const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
 
-    await expect(saveStudioDraft('organization', formWith())).resolves.toEqual({
-      ok: 'draftSaved',
-    });
+    const state = await saveStudioDraft('organization', formWith());
+
+    expect(state).toEqual({ ok: 'draftSaved' });
+    expect(state).not.toHaveProperty('versionId');
     expect(saveOrganizationSecretaryProfileDraft).toHaveBeenCalledWith(
       expect.anything(),
       'trusted-organization-id',
@@ -128,7 +129,7 @@ describe('Studio Server Actions', () => {
 
     expect(state).toMatchObject({
       error: 'invalid',
-      fieldErrors: { assistantName: expect.any(String) },
+      fieldErrors: { assistantName: 'reviewField' },
     });
     expect(serialized).not.toContain(submittedValue);
     expect(serialized).not.toContain('trusted-organization-id');

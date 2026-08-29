@@ -1,11 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  useActionState,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import {
   publishStudioProfile,
   saveStudioDraft,
   type StudioActionState,
+  type StudioFieldErrorCode,
 } from '@/app/[locale]/studio/actions';
 import type { Capability, ReplyTone } from '@/core/organization-profile';
 import {
@@ -51,6 +60,8 @@ type StudioCopy = {
   notFound: string;
   personalNotSaved: string;
   noDraft: string;
+  refreshingDraft: string;
+  fieldErrors: Record<StudioFieldErrorCode, string>;
   languageLabel: string;
   segments: Record<Exclude<SecretarySegment, 'personal'>, string>;
   tones: Record<ReplyTone, string>;
@@ -97,7 +108,12 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     invalid: 'Review the marked profile fields.',
     notFound: 'That profile version is not available in the active Organization.',
     personalNotSaved: 'Personal configuration remains browser-local and was not saved.',
-    noDraft: 'Save a draft, then reload Studio before publishing that version.',
+    noDraft: 'Save a draft to enable publishing.',
+    refreshingDraft: 'Refreshing the trusted draft…',
+    fieldErrors: {
+      reviewField: 'Review this field.',
+      personalPreviewOnly: 'Personal is preview-only in this beta.',
+    },
     languageLabel: 'Language',
     segments: { church: 'Church', clinic: 'Clinic', restaurant: 'Restaurant', real_estate: 'Real estate', general: 'General organization' },
     tones: { warm: 'Warm', professional: 'Professional', concise: 'Concise' },
@@ -126,7 +142,12 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     invalid: 'Revise os campos marcados do perfil.',
     notFound: 'Essa versão do perfil não está disponível na Organização ativa.',
     personalNotSaved: 'A configuração Pessoal permanece local no navegador e não foi salva.',
-    noDraft: 'Salve um rascunho e recarregue o Studio antes de publicar essa versão.',
+    noDraft: 'Salve um rascunho para habilitar a publicação.',
+    refreshingDraft: 'Atualizando o rascunho confiável…',
+    fieldErrors: {
+      reviewField: 'Revise este campo.',
+      personalPreviewOnly: 'Pessoal é somente uma prévia neste beta.',
+    },
     languageLabel: 'Idioma',
     segments: { church: 'Igreja', clinic: 'Clínica', restaurant: 'Restaurante', real_estate: 'Imobiliária', general: 'Organização geral' },
     tones: { warm: 'Acolhedor', professional: 'Profissional', concise: 'Conciso' },
@@ -141,6 +162,89 @@ function actionFeedback(state: StudioActionState, copy: StudioCopy): string {
   return '';
 }
 
+export type DraftSyncState = {
+  phase: 'synced' | 'dirty' | 'refreshing';
+  observedVersionId?: string;
+  publishVersionId?: string;
+  refreshRequested: boolean;
+  refreshRequestId: number;
+};
+
+export type DraftSyncEvent =
+  | { type: 'edited' }
+  | { type: 'draftSaved' }
+  | { type: 'refreshDispatched' }
+  | { type: 'serverVersionChanged'; versionId?: string };
+
+export function createDraftSyncState(versionId?: string): DraftSyncState {
+  return {
+    phase: 'synced',
+    observedVersionId: versionId,
+    publishVersionId: versionId,
+    refreshRequested: false,
+    refreshRequestId: 0,
+  };
+}
+
+export function reduceDraftSyncState(
+  state: DraftSyncState,
+  event: DraftSyncEvent,
+): DraftSyncState {
+  if (event.type === 'edited') {
+    return { ...state, phase: 'dirty', publishVersionId: undefined };
+  }
+  if (event.type === 'draftSaved') {
+    return {
+      ...state,
+      phase: 'refreshing',
+      publishVersionId: undefined,
+      refreshRequested: true,
+      refreshRequestId: state.refreshRequestId + 1,
+    };
+  }
+  if (event.type === 'refreshDispatched') {
+    return { ...state, refreshRequested: false };
+  }
+
+  if (
+    state.phase === 'refreshing'
+    && event.versionId
+    && event.versionId !== state.observedVersionId
+  ) {
+    return {
+      ...state,
+      phase: 'synced',
+      observedVersionId: event.versionId,
+      publishVersionId: event.versionId,
+      refreshRequested: false,
+    };
+  }
+  if (state.phase === 'synced') {
+    return {
+      ...state,
+      observedVersionId: event.versionId,
+      publishVersionId: event.versionId,
+    };
+  }
+  return state;
+}
+
+export function StudioFieldError({
+  code,
+  id,
+  locale,
+}: {
+  code?: StudioFieldErrorCode;
+  id: string;
+  locale: BetaLocale;
+}) {
+  return (
+    <span className="mt-1 block min-h-4 text-xs font-normal text-[#a14232]" id={id}>
+      {code ? STUDIO_COPY[locale].fieldErrors[code] : ''}
+    </span>
+  );
+}
+
 export function SecretaryStudio({
   initialProfile,
   kind,
@@ -148,9 +252,16 @@ export function SecretaryStudio({
   messages,
   versionId,
 }: SecretaryStudioProps) {
+  const router = useRouter();
   const [profile, setProfile] = useState(() => parseSecretaryProfile(initialProfile));
   const [publishState, setPublishState] = useState<StudioActionState>(EMPTY_ACTION_STATE);
   const [publishPending, startPublish] = useTransition();
+  const [draftSync, dispatchDraftSync] = useReducer(
+    reduceDraftSyncState,
+    versionId,
+    createDraftSyncState,
+  );
+  const dispatchedRefreshId = useRef(0);
   const copy = STUDIO_COPY[locale];
   const scenario = STUDIO_SCENARIOS[profile.segment];
   const preview = buildStudioPreview(profile, scenario);
@@ -162,11 +273,33 @@ export function SecretaryStudio({
     EMPTY_ACTION_STATE,
   );
 
+  useEffect(() => {
+    dispatchDraftSync({ type: 'serverVersionChanged', versionId });
+  }, [versionId]);
+
+  useEffect(() => {
+    if (saveState.ok === 'draftSaved') {
+      dispatchDraftSync({ type: 'draftSaved' });
+    }
+  }, [saveState]);
+
+  useEffect(() => {
+    if (
+      draftSync.refreshRequested
+      && dispatchedRefreshId.current !== draftSync.refreshRequestId
+    ) {
+      dispatchedRefreshId.current = draftSync.refreshRequestId;
+      dispatchDraftSync({ type: 'refreshDispatched' });
+      router.refresh();
+    }
+  }, [draftSync.refreshRequestId, draftSync.refreshRequested, router]);
+
   function setField<K extends keyof SecretaryProfile>(
     field: K,
     value: SecretaryProfile[K],
   ) {
     setProfile((current) => ({ ...current, [field]: value }));
+    dispatchDraftSync({ type: 'edited' });
   }
 
   function toggleCapability(capability: Capability, checked: boolean) {
@@ -176,15 +309,17 @@ export function SecretaryStudio({
         ? [...new Set([...current.enabledCapabilities, capability])]
         : current.enabledCapabilities.filter((item) => item !== capability),
     }));
+    dispatchDraftSync({ type: 'edited' });
   }
 
   function publishCurrentVersion() {
-    if (!versionId) {
+    const publishVersionId = draftSync.publishVersionId;
+    if (!publishVersionId) {
       setPublishState({ error: 'notFound' });
       return;
     }
     startPublish(async () => {
-      setPublishState(await publishStudioProfile(kind, versionId));
+      setPublishState(await publishStudioProfile(kind, publishVersionId));
     });
   }
 
@@ -222,7 +357,11 @@ export function SecretaryStudio({
             <span className="bg-[#e0f2fe] px-3 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-[0.12em]">{copy.context}: {kind}</span>
           </div>
 
-          <div className="grid gap-6 p-5 sm:grid-cols-2 sm:p-7">
+          <fieldset
+            className="grid gap-6 p-5 sm:grid-cols-2 sm:p-7"
+            disabled={!isPersonal && draftSync.phase === 'refreshing'}
+          >
+            <legend className="sr-only">{messages.profile.title}</legend>
             {isPersonal ? (
               <div className="sm:col-span-2">
                 <span className="mb-2 block text-sm font-semibold">{copy.segment}</span>
@@ -233,6 +372,8 @@ export function SecretaryStudio({
               <label className="block text-sm font-semibold">
                 {copy.segment}
                 <select
+                  aria-describedby={saveState.fieldErrors?.segment ? 'segment-error' : undefined}
+                  aria-invalid={Boolean(saveState.fieldErrors?.segment)}
                   className="mt-2 min-h-11 w-full border border-[#102421]/25 bg-white px-3 font-normal focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                   name="segment"
                   onChange={(event) => setField('segment', event.target.value as SecretarySegment)}
@@ -240,13 +381,15 @@ export function SecretaryStudio({
                 >
                   {ORGANIZATION_SEGMENTS.map((segment) => <option key={segment} value={segment}>{copy.segments[segment]}</option>)}
                 </select>
-                <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.segment}</span>
+                <StudioFieldError code={saveState.fieldErrors?.segment} id="segment-error" locale={locale} />
               </label>
             )}
 
             <label className="block text-sm font-semibold">
               {messages.profile.assistantName}
               <input
+                aria-describedby={saveState.fieldErrors?.assistantName ? 'assistant-name-error' : undefined}
+                aria-invalid={Boolean(saveState.fieldErrors?.assistantName)}
                 className="mt-2 min-h-11 w-full border border-[#102421]/25 px-3 font-normal focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                 maxLength={80}
                 name="assistantName"
@@ -254,12 +397,14 @@ export function SecretaryStudio({
                 required
                 value={profile.assistantName}
               />
-              <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.assistantName}</span>
+              <StudioFieldError code={saveState.fieldErrors?.assistantName} id="assistant-name-error" locale={locale} />
             </label>
 
             <label className="block text-sm font-semibold">
               {messages.profile.defaultLocale}
               <select
+                aria-describedby={saveState.fieldErrors?.defaultLocale ? 'default-locale-error' : undefined}
+                aria-invalid={Boolean(saveState.fieldErrors?.defaultLocale)}
                 className="mt-2 min-h-11 w-full border border-[#102421]/25 bg-white px-3 font-normal focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                 name="defaultLocale"
                 onChange={(event) => setField('defaultLocale', event.target.value as BetaLocale)}
@@ -268,12 +413,14 @@ export function SecretaryStudio({
                 <option value="en">English</option>
                 <option value="pt">Português</option>
               </select>
-              <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.defaultLocale}</span>
+              <StudioFieldError code={saveState.fieldErrors?.defaultLocale} id="default-locale-error" locale={locale} />
             </label>
 
             <label className="block text-sm font-semibold">
               {messages.profile.replyTone}
               <select
+                aria-describedby={saveState.fieldErrors?.replyTone ? 'reply-tone-error' : undefined}
+                aria-invalid={Boolean(saveState.fieldErrors?.replyTone)}
                 className="mt-2 min-h-11 w-full border border-[#102421]/25 bg-white px-3 font-normal focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                 name="replyTone"
                 onChange={(event) => setField('replyTone', event.target.value as ReplyTone)}
@@ -281,12 +428,14 @@ export function SecretaryStudio({
               >
                 {REPLY_TONES.map((tone) => <option key={tone} value={tone}>{copy.tones[tone]}</option>)}
               </select>
-              <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.replyTone}</span>
+              <StudioFieldError code={saveState.fieldErrors?.replyTone} id="reply-tone-error" locale={locale} />
             </label>
 
             <label className="block text-sm font-semibold sm:col-span-2">
               {messages.profile.greeting}
               <textarea
+                aria-describedby={saveState.fieldErrors?.greeting ? 'greeting-error' : undefined}
+                aria-invalid={Boolean(saveState.fieldErrors?.greeting)}
                 className="mt-2 min-h-24 w-full resize-y border border-[#102421]/25 px-3 py-3 font-normal leading-6 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                 maxLength={280}
                 name="greeting"
@@ -294,12 +443,14 @@ export function SecretaryStudio({
                 required
                 value={profile.greeting}
               />
-              <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.greeting}</span>
+              <StudioFieldError code={saveState.fieldErrors?.greeting} id="greeting-error" locale={locale} />
             </label>
 
             <label className="block text-sm font-semibold sm:col-span-2">
               {messages.profile.escalationCopy}
               <textarea
+                aria-describedby={saveState.fieldErrors?.escalationCopy ? 'escalation-copy-error' : undefined}
+                aria-invalid={Boolean(saveState.fieldErrors?.escalationCopy)}
                 className="mt-2 min-h-24 w-full resize-y border border-[#102421]/25 px-3 py-3 font-normal leading-6 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7]"
                 maxLength={280}
                 name="escalationCopy"
@@ -307,10 +458,14 @@ export function SecretaryStudio({
                 required
                 value={profile.escalationCopy}
               />
-              <span className="mt-1 block text-xs font-normal text-[#a14232]">{saveState.fieldErrors?.escalationCopy}</span>
+              <StudioFieldError code={saveState.fieldErrors?.escalationCopy} id="escalation-copy-error" locale={locale} />
             </label>
 
-            <fieldset className="sm:col-span-2">
+            <fieldset
+              aria-describedby={saveState.fieldErrors?.enabledCapabilities ? 'capabilities-error' : undefined}
+              aria-invalid={Boolean(saveState.fieldErrors?.enabledCapabilities)}
+              className="sm:col-span-2"
+            >
               <legend className="text-sm font-semibold">{messages.profile.enabledCapabilities}</legend>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {CAPABILITIES.map((capability) => (
@@ -327,9 +482,9 @@ export function SecretaryStudio({
                   </label>
                 ))}
               </div>
-              <span className="mt-1 block text-xs text-[#a14232]">{saveState.fieldErrors?.enabledCapabilities}</span>
+              <StudioFieldError code={saveState.fieldErrors?.enabledCapabilities} id="capabilities-error" locale={locale} />
             </fieldset>
-          </div>
+          </fieldset>
 
           <aside className="mx-5 border-l-4 border-[#d9a62e] bg-[#fef3c7] px-4 py-3 text-sm leading-6 sm:mx-7">
             <strong>{copy.betaBoundary}.</strong> {isPersonal ? copy.personalBoundary : copy.organizationBoundary} {locale === 'pt' ? 'Notas privadas e lembretes não são salvos nesta fundação.' : 'Private notes and reminders are not saved in this foundation.'}
@@ -338,20 +493,30 @@ export function SecretaryStudio({
           <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:p-7">
             <button
               className="min-h-11 bg-[#102421] px-5 py-3 text-sm font-semibold text-white hover:bg-[#193a34] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#6ee7b7] disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={isPersonal || savePending}
+              disabled={isPersonal || savePending || draftSync.phase === 'refreshing'}
               type="submit"
             >
               {savePending ? copy.savePending : messages.profile.saveDraft}
             </button>
             <button
               className="min-h-11 border border-[#102421] bg-white px-5 py-3 text-sm font-semibold hover:bg-[#f4f7f5] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#6ee7b7] disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={isPersonal || publishPending || !versionId}
+              disabled={
+                isPersonal
+                || publishPending
+                || draftSync.phase !== 'synced'
+                || !draftSync.publishVersionId
+              }
               onClick={publishCurrentVersion}
               type="button"
             >
               {publishPending ? copy.publishPending : messages.profile.publish}
             </button>
-            {!isPersonal && !versionId ? <p className="text-xs leading-5 text-[#102421]/60">{copy.noDraft}</p> : null}
+            {!isPersonal && draftSync.phase === 'refreshing' ? (
+              <p className="text-xs leading-5 text-[#102421]/60">{copy.refreshingDraft}</p>
+            ) : null}
+            {!isPersonal && draftSync.phase !== 'refreshing' && !draftSync.publishVersionId ? (
+              <p className="text-xs leading-5 text-[#102421]/60">{copy.noDraft}</p>
+            ) : null}
           </div>
           <p aria-live="polite" className="min-h-6 px-5 pb-5 text-sm font-semibold text-[#167052] sm:px-7 sm:pb-7">
             {isPersonal ? copy.personalNotSaved : actionFeedback(publishState.ok || publishState.error ? publishState : saveState, copy)}

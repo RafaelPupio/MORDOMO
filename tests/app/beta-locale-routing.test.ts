@@ -8,6 +8,7 @@ const {
   getLatestOrganizationSecretaryProfile,
   notFound,
   organizationSwitcher,
+  refresh,
   redirect,
   requireSecretaryContext,
   requireStudioWriteContext,
@@ -20,6 +21,7 @@ const {
     });
   }),
   organizationSwitcher: vi.fn(() => null),
+  refresh: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw Object.assign(new Error('NEXT_REDIRECT'), {
       digest: `NEXT_REDIRECT;replace;${path};307;`,
@@ -29,7 +31,11 @@ const {
   requireStudioWriteContext: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ notFound, redirect }));
+vi.mock('next/navigation', () => ({
+  notFound,
+  redirect,
+  useRouter: vi.fn(() => ({ refresh })),
+}));
 vi.mock('@/core/secretary-context', () => ({
   requireSecretaryContext,
   requireStudioWriteContext,
@@ -57,6 +63,97 @@ beforeEach(() => {
 });
 
 describe('beta locale routing', () => {
+  it('keeps Publish blocked from the first edit until a changed trusted version arrives', async () => {
+    const {
+      createDraftSyncState,
+      reduceDraftSyncState,
+    } = await import('@/components/studio/secretary-studio');
+    let state = createDraftSyncState('11111111-1111-4111-8111-111111111111');
+
+    state = reduceDraftSyncState(state, { type: 'edited' });
+    expect(state).toMatchObject({ phase: 'dirty', publishVersionId: undefined });
+
+    state = reduceDraftSyncState(state, { type: 'draftSaved' });
+    expect(state).toMatchObject({
+      phase: 'refreshing',
+      publishVersionId: undefined,
+      refreshRequested: true,
+    });
+
+    state = reduceDraftSyncState(state, { type: 'refreshDispatched' });
+    state = reduceDraftSyncState(state, {
+      type: 'serverVersionChanged',
+      versionId: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(state).toMatchObject({
+      phase: 'refreshing',
+      publishVersionId: undefined,
+      refreshRequested: false,
+    });
+
+    state = reduceDraftSyncState(state, {
+      type: 'serverVersionChanged',
+      versionId: '22222222-2222-4222-8222-222222222222',
+    });
+    expect(state).toMatchObject({
+      phase: 'synced',
+      publishVersionId: '22222222-2222-4222-8222-222222222222',
+      refreshRequested: false,
+    });
+  });
+
+  it('requires each repeat save to receive its own changed trusted version', async () => {
+    const {
+      createDraftSyncState,
+      reduceDraftSyncState,
+    } = await import('@/components/studio/secretary-studio');
+    let state = createDraftSyncState('11111111-1111-4111-8111-111111111111');
+
+    state = reduceDraftSyncState(state, { type: 'edited' });
+    state = reduceDraftSyncState(state, { type: 'draftSaved' });
+    state = reduceDraftSyncState(state, { type: 'refreshDispatched' });
+    state = reduceDraftSyncState(state, {
+      type: 'serverVersionChanged',
+      versionId: '22222222-2222-4222-8222-222222222222',
+    });
+    state = reduceDraftSyncState(state, { type: 'edited' });
+    state = reduceDraftSyncState(state, { type: 'draftSaved' });
+    state = reduceDraftSyncState(state, { type: 'refreshDispatched' });
+    state = reduceDraftSyncState(state, {
+      type: 'serverVersionChanged',
+      versionId: '22222222-2222-4222-8222-222222222222',
+    });
+
+    expect(state).toMatchObject({
+      phase: 'refreshing',
+      publishVersionId: undefined,
+      refreshRequested: false,
+    });
+
+    state = reduceDraftSyncState(state, {
+      type: 'serverVersionChanged',
+      versionId: '33333333-3333-4333-8333-333333333333',
+    });
+    expect(state.publishVersionId).toBe('33333333-3333-4333-8333-333333333333');
+  });
+
+  it('renders exact Portuguese validation from stable action codes', async () => {
+    const { StudioFieldError } = await import(
+      '@/components/studio/secretary-studio'
+    );
+
+    expect(renderToStaticMarkup(createElement(StudioFieldError, {
+      code: 'reviewField',
+      id: 'assistant-name-error',
+      locale: 'pt',
+    }))).toContain('Revise este campo.');
+    expect(renderToStaticMarkup(createElement(StudioFieldError, {
+      code: 'personalPreviewOnly',
+      id: 'segment-error',
+      locale: 'pt',
+    }))).toContain('Pessoal é somente uma prévia neste beta.');
+  });
+
   it('renders the context choices as one named pressed-button group and hides Clerk Personal accounts', async () => {
     const { ContextPicker } = await import('@/components/studio/context-picker');
 
