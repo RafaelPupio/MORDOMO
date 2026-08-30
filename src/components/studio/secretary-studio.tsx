@@ -176,6 +176,32 @@ export type DraftSyncEvent =
   | { type: 'refreshDispatched' }
   | { type: 'serverVersionChanged'; versionId?: string };
 
+export function isStudioProfileLocked(
+  kind: SecretaryContextKind,
+  savePending: boolean,
+  phase: DraftSyncState['phase'],
+): boolean {
+  return kind === 'organization' && (savePending || phase === 'refreshing');
+}
+
+export function canPublishStudioProfile({
+  draftSync,
+  isPersonal,
+  publishPending,
+  savePending,
+}: {
+  draftSync: DraftSyncState;
+  isPersonal: boolean;
+  publishPending: boolean;
+  savePending: boolean;
+}): boolean {
+  return !isPersonal
+    && !savePending
+    && !publishPending
+    && draftSync.phase === 'synced'
+    && Boolean(draftSync.publishVersionId);
+}
+
 export function createDraftSyncState(versionId?: string): DraftSyncState {
   return {
     phase: 'synced',
@@ -272,6 +298,13 @@ export function SecretaryStudio({
     ),
     EMPTY_ACTION_STATE,
   );
+  const profileLocked = isStudioProfileLocked(kind, savePending, draftSync.phase);
+  const publishEnabled = canPublishStudioProfile({
+    draftSync,
+    isPersonal,
+    publishPending,
+    savePending,
+  });
 
   useEffect(() => {
     dispatchDraftSync({ type: 'serverVersionChanged', versionId });
@@ -359,7 +392,7 @@ export function SecretaryStudio({
 
           <fieldset
             className="grid gap-6 p-5 sm:grid-cols-2 sm:p-7"
-            disabled={!isPersonal && draftSync.phase === 'refreshing'}
+            disabled={profileLocked}
           >
             <legend className="sr-only">{messages.profile.title}</legend>
             {isPersonal ? (
@@ -500,12 +533,7 @@ export function SecretaryStudio({
             </button>
             <button
               className="min-h-11 border border-[#102421] bg-white px-5 py-3 text-sm font-semibold hover:bg-[#f4f7f5] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#6ee7b7] disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={
-                isPersonal
-                || publishPending
-                || draftSync.phase !== 'synced'
-                || !draftSync.publishVersionId
-              }
+              disabled={!publishEnabled}
               onClick={publishCurrentVersion}
               type="button"
             >

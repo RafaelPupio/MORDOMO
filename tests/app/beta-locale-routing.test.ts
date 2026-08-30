@@ -63,6 +63,38 @@ beforeEach(() => {
 });
 
 describe('beta locale routing', () => {
+  it('locks Organization edits while Save is pending without locking Personal preview', async () => {
+    const { isStudioProfileLocked } = await import(
+      '@/components/studio/secretary-studio'
+    );
+
+    expect(isStudioProfileLocked('organization', true, 'dirty')).toBe(true);
+    expect(isStudioProfileLocked('personal', true, 'dirty')).toBe(false);
+  });
+
+  it('does not let a pending save authorize Publish with an earlier trusted version', async () => {
+    const {
+      canPublishStudioProfile,
+      createDraftSyncState,
+    } = await import('@/components/studio/secretary-studio');
+    const earlierTrustedVersion = createDraftSyncState(
+      '11111111-1111-4111-8111-111111111111',
+    );
+
+    expect(canPublishStudioProfile({
+      draftSync: earlierTrustedVersion,
+      isPersonal: false,
+      publishPending: false,
+      savePending: true,
+    })).toBe(false);
+    expect(canPublishStudioProfile({
+      draftSync: earlierTrustedVersion,
+      isPersonal: false,
+      publishPending: false,
+      savePending: false,
+    })).toBe(true);
+  });
+
   it('keeps Publish blocked from the first edit until a changed trusted version arrives', async () => {
     const {
       createDraftSyncState,
