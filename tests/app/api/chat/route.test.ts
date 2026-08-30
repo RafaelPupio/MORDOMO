@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_GLOBAL_CAP_USD, parseGlobalCapUsd } from '@/app/api/chat/route';
+import { DEFAULT_GLOBAL_CAP_USD, parseGlobalCapUsd } from '@/core/config';
+import * as chatRoute from '@/app/api/chat/route';
+
+describe('chat route module exports', () => {
+  it('exports only the POST handler and route configuration', () => {
+    expect(Object.keys(chatRoute).sort()).toEqual(['POST', 'maxDuration']);
+  });
+});
 
 // `Number(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP ?? '50')` would fail OPEN on a malformed
 // value — `Number("abc")` is `NaN`, and `spend >= NaN` is always `false`, so a
