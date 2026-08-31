@@ -17,3 +17,7 @@ next-env.d.ts
 
 # SDD scratch
 .superpowers/
+
+# Agent tooling artifacts (installed locally, not part of the product)
+.agents/
+skills-lock.json

@@ -97,9 +97,13 @@ Nothing has been deployed and no cloud resource has been created.
 
 ## Next
 
-1. Merge the reviewed Plan 4 branch; all four product plans will then be on `main`.
-2. Rafael accepts the Neon Marketplace terms in a browser → finish Task 13 (provision,
+All four product plans are merged to `main` (318 tests, typecheck and lint clean). The
+only remaining work is deployment, and it is blocked on Rafael — see above.
+
+1. Rafael accepts the Neon Marketplace terms in a browser → finish deployment (provision,
    migrate, seed, benchmark against the real embedder, deploy, verify).
+2. After the first real deploy: re-run the retrieval benchmark against the real embedder
+   and record the number here, replacing the offline-only caveat above.
 
 ## Open questions
 
