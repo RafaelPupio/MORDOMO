@@ -2,6 +2,10 @@
 
 _Present state only. The dated build chronology is in [[log/status-archive]]._
 
+> Naming: the local folder is `ChurchChatBoxV2`; the GitHub repo was renamed to
+> **`RafaelPupio/MORDOMO`**. Package name and doc titles still say ChurchChatBoxV2 —
+> whether to rename the project everywhere is an open question for Rafael.
+
 ## What runs today
 
 The whole chat path exists and is tested end to end against an in-memory Postgres:
