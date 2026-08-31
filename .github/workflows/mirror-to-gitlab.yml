@@ -14,6 +14,10 @@ jobs:
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
+          if [ -z "$GITLAB_TOKEN" ]; then
+            echo "GITLAB_TOKEN secret not set - skipping mirror. Add the secret to enable."
+            exit 0
+          fi
           NAME="${GITHUB_REPOSITORY##*/}"
           git push --prune \
             "https://oauth2:${GITLAB_TOKEN}@gitlab.com/RafaelPupio/${NAME}.git" \
