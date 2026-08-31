@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, exists, ne, sql } from 'drizzle-orm';
 import type { SecretaryProfile } from '@/core/secretary-profile';
 import { parseSecretaryProfile } from '@/core/secretary-profile';
 import type { Db } from '@/db/client';
@@ -49,35 +49,42 @@ export async function publishOrganizationSecretaryProfile(
   organizationId: string,
   versionId: string,
 ): Promise<SecretaryProfileVersion> {
-  return db.transaction(async (tx) => {
-    const [version] = await tx
-      .select()
+  const target = db.$with('publish_target').as(
+    db
+      .select({ id: secretaryProfileVersions.id })
       .from(secretaryProfileVersions)
       .where(and(
         eq(secretaryProfileVersions.organizationId, organizationId),
         eq(secretaryProfileVersions.id, versionId),
-      ));
-
-    if (!version) throw new Error('Profile version not found for this context.');
-
-    await tx
+      )),
+  );
+  const updatedAt = new Date();
+  const demoted = db.$with('demoted_profiles').as(
+    db
       .update(secretaryProfileVersions)
-      .set({ status: 'draft', updatedAt: new Date() })
+      .set({ status: 'draft', updatedAt })
       .where(and(
         eq(secretaryProfileVersions.organizationId, organizationId),
         eq(secretaryProfileVersions.status, 'published'),
-      ));
-
-    const [published] = await tx
-      .update(secretaryProfileVersions)
-      .set({ status: 'published', updatedAt: new Date() })
-      .where(and(
-        eq(secretaryProfileVersions.organizationId, organizationId),
-        eq(secretaryProfileVersions.id, version.id),
+        ne(secretaryProfileVersions.id, versionId),
+        exists(db.select().from(target)),
       ))
-      .returning();
+      .returning({ id: secretaryProfileVersions.id }),
+  );
 
-    if (!published) throw new Error('Profile version was not published.');
-    return parseVersion(published);
-  });
+  const [published] = await db
+    .with(target, demoted)
+    .update(secretaryProfileVersions)
+    .set({ status: 'published', updatedAt })
+    .where(and(
+      eq(secretaryProfileVersions.organizationId, organizationId),
+      eq(secretaryProfileVersions.id, versionId),
+      // Reading the data-modifying CTE makes the demotion complete before this update.
+      // The predicate is intentionally tautological; it supplies execution ordering.
+      sql`(select count(*) from ${demoted}) >= 0`,
+    ))
+    .returning();
+
+  if (!published) throw new Error('Profile version not found for this context.');
+  return parseVersion(published);
 }

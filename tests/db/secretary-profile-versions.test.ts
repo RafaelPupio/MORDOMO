@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
+import { describe, expect, it, vi } from 'vitest';
 import type { SecretaryProfile } from '@/core/secretary-profile';
 import {
   getLatestOrganizationSecretaryProfile,
@@ -78,6 +79,54 @@ describe('secretary profile versions repository', () => {
 
     expect((await getLatestOrganizationSecretaryProfile(db, organizationA.id))?.id).toBe(first.id);
     expect((await getLatestOrganizationSecretaryProfile(db, organizationB.id))?.id).toBe(organizationBDraft.id);
+  });
+
+  it('publishes without callback transactions for Neon HTTP compatibility', async () => {
+    const db = await createTestDb();
+    const organization = await seedOrganization(db);
+    const current = await saveOrganizationSecretaryProfileDraft(db, organization.id, profile);
+    const target = await saveOrganizationSecretaryProfileDraft(db, organization.id, {
+      ...profile,
+      assistantName: 'Lia',
+    });
+    await publishOrganizationSecretaryProfile(db, organization.id, current.id);
+    vi.spyOn(db, 'transaction').mockRejectedValue(
+      new Error('No transactions support in neon-http driver'),
+    );
+
+    await expect(
+      publishOrganizationSecretaryProfile(db, organization.id, target.id),
+    ).resolves.toMatchObject({ id: target.id, status: 'published' });
+
+    const published = await db
+      .select()
+      .from(secretaryProfileVersions)
+      .where(and(
+        eq(secretaryProfileVersions.organizationId, organization.id),
+        eq(secretaryProfileVersions.status, 'published'),
+      ));
+    expect(published.map((version) => version.id)).toEqual([target.id]);
+  });
+
+  it('does not demote the published version when the target is absent', async () => {
+    const db = await createTestDb();
+    const organization = await seedOrganization(db);
+    const current = await saveOrganizationSecretaryProfileDraft(db, organization.id, profile);
+    await publishOrganizationSecretaryProfile(db, organization.id, current.id);
+
+    await expect(
+      publishOrganizationSecretaryProfile(
+        db,
+        organization.id,
+        '11111111-1111-4111-8111-111111111111',
+      ),
+    ).rejects.toThrow('Profile version not found for this context.');
+
+    const [unchanged] = await db
+      .select()
+      .from(secretaryProfileVersions)
+      .where(eq(secretaryProfileVersions.id, current.id));
+    expect(unchanged?.status).toBe('published');
   });
 
   it('enforces one published version per Organization at the database boundary', async () => {
