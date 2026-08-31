@@ -2,9 +2,11 @@
 
 _Present state only. The dated build chronology is in [[log/status-archive]]._
 
-> Naming: the local folder is `MORDOMO`; the GitHub repo was renamed to
-> **`RafaelPupio/MORDOMO`**. Package name and doc titles still say MORDOMO —
-> whether to rename the project everywhere is an open question for Rafael.
+> Naming: the project is **MORDOMO** everywhere — folder, GitHub repo
+> (`RafaelPupio/MORDOMO`), package name, docs, and UI. Bare "ChurchChatBox" in these
+> notes always means **V1**, the separate private WhatsApp product this one succeeds.
+> One loose end: the Vercel project is still named `churchchatboxv2`, so a deploy would
+> land on `churchchatboxv2.vercel.app` until it is renamed in the Vercel dashboard.
 
 ## What runs today
 

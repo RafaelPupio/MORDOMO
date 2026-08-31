@@ -20,3 +20,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-20` Plan 4, Task 5: cron route, and a note on `vercel.json`'s schedule
 - `2026-08-24` Plan 4: reporting pipeline and portfolio front door
 - `2026-08-31` Repo hygiene after the rename: tooling artifacts out, `.env.example` protected, links follow the rename
+- `2026-08-31` The project is MORDOMO: renamed everywhere except V1 references and the Vercel project

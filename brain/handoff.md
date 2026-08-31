@@ -6,6 +6,8 @@ piece demonstrating ten AI capabilities. All four product plans are built and me
 the only work left is the first real deployment.
 
 ## Done
+- Renamed the project to **MORDOMO** everywhere — folder, package, docs, brain, UI, and
+  the design spec filename. Bare "ChurchChatBox" left intact: that is V1. (`231c83b`)
 - Plans 1–4 all merged to `main`: visitor chat with cited RAG, document ingest
   (extractor → verifier), staff area, weekly reporting + portfolio front door.
   318 tests, typecheck and lint clean.
