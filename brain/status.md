@@ -22,6 +22,11 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 - Clerk is connected to Vercel **Development only** on the free Hobby plan. The project has
   `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in Development; no secret is
   committed.
+- Firecrawl is provisioned through Vercel Marketplace for **Development only** on its free
+  plan. The approved Organization public-research design and implementation plan require
+  provider-enforced Zero Data Retention, cache-off one-page scraping, metered grounded fact
+  proposals, and explicit human review before profile Save/Publish. No research application
+  code is active yet.
 - The public presentation is live locally at `/`, `/pt`, `/es`, `/fr`, and `/de`.
   Typed in-repository dictionaries set copy and metadata; invalid locale paths return 404.
 - The beta target now spans invite-only organization workspaces and a Personal Secretary
@@ -50,8 +55,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Provision and review the public-research integration before enabling research; Firecrawl
-   retention and consent terms must be approved first.
+1. Wait for Firecrawl to enable Zero Data Retention for the installed Development resource,
+   then rerun the bounded `https://example.com` probe. The latest probe is HTTP 403 with ZDR
+   not enabled; implementation stays closed until it returns HTTP 200 with `success: true`.
 2. Choose and provision managed key management, then complete its threat model and recovery
    review before persisting any sensitive Personal Secretary data.
 3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,

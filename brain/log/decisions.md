@@ -23,3 +23,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-28` Bilingual Studio Task 1: strict non-sensitive profile and EN/PT beta boundary
 - `2026-08-30` Bilingual Studio foundation: deterministic, non-sensitive boundary verified
 - `2026-08-31` Bilingual Studio whole-review repair: locale-independent safety and transaction-locked controls
+- `2026-08-31` Organization public research: Development-only Firecrawl, provider-enforced ZDR, and human-reviewed grounded facts
