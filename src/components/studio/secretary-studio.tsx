@@ -48,6 +48,7 @@ type StudioCopy = {
   betaBoundary: string;
   personalBoundary: string;
   organizationBoundary: string;
+  privateBoundary: string;
   segment: string;
   scenario: string;
   result: string;
@@ -70,6 +71,7 @@ type StudioCopy = {
   segments: Record<Exclude<SecretarySegment, 'personal'>, string>;
   tones: Record<ReplyTone, string>;
   capabilities: Record<Capability, string>;
+  languages: Record<BetaLocale, string>;
   resultKinds: Record<StudioScenarioResult['kind'], string>;
 };
 
@@ -99,6 +101,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     betaBoundary: 'Foundation boundary',
     personalBoundary: 'Personal is browser-local preview only. Save and publish stay disabled.',
     organizationBoundary: 'Organization drafts and publication are scoped again on the server to the active Clerk organization.',
+    privateBoundary: 'Private notes and reminders are not saved in this foundation.',
     segment: 'Operating segment',
     scenario: 'Scenario',
     result: 'Result kind',
@@ -124,6 +127,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     segments: { church: 'Church', clinic: 'Clinic', restaurant: 'Restaurant', real_estate: 'Real estate', general: 'General organization' },
     tones: { warm: 'Warm', professional: 'Professional', concise: 'Concise' },
     capabilities: { knowledge: 'Verified knowledge', calendar: 'Calendar-aware draft', confidential_request: 'Confidential intake', escalation: 'Human escalation' },
+    languages: { en: 'English', pt: 'Português' },
     resultKinds: { grounded: 'Grounded answer', calendar: 'Calendar-aware draft', intake: 'Confidential intake', escalation: 'Human escalation' },
   },
   pt: {
@@ -135,6 +139,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     betaBoundary: 'Limite da fundação',
     personalBoundary: 'Pessoal é somente uma prévia local no navegador. Salvar e publicar permanecem desativados.',
     organizationBoundary: 'Rascunhos e publicações da Organização são vinculados novamente no servidor à organização ativa no Clerk.',
+    privateBoundary: 'Notas privadas e lembretes não são salvos nesta fundação.',
     segment: 'Segmento de atuação',
     scenario: 'Cenário',
     result: 'Tipo de resultado',
@@ -160,6 +165,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     segments: { church: 'Igreja', clinic: 'Clínica', restaurant: 'Restaurante', real_estate: 'Imobiliária', general: 'Organização geral' },
     tones: { warm: 'Acolhedor', professional: 'Profissional', concise: 'Conciso' },
     capabilities: { knowledge: 'Conhecimento verificado', calendar: 'Rascunho com agenda', confidential_request: 'Coleta confidencial', escalation: 'Encaminhamento humano' },
+    languages: { en: 'Inglês', pt: 'Português' },
     resultKinds: { grounded: 'Resposta fundamentada', calendar: 'Rascunho com agenda', intake: 'Coleta confidencial', escalation: 'Encaminhamento humano' },
   },
 };
@@ -462,8 +468,8 @@ export function SecretaryStudio({
                 onChange={(event) => setField('defaultLocale', event.target.value as BetaLocale)}
                 value={profile.defaultLocale}
               >
-                <option value="en">English</option>
-                <option value="pt">Português</option>
+                <option value="en">{copy.languages.en}</option>
+                <option value="pt">{copy.languages.pt}</option>
               </select>
               <StudioFieldError code={saveState.fieldErrors?.defaultLocale} id="default-locale-error" locale={locale} />
             </label>
@@ -539,7 +545,7 @@ export function SecretaryStudio({
           </fieldset>
 
           <aside className="mx-5 border-l-4 border-[#d9a62e] bg-[#fef3c7] px-4 py-3 text-sm leading-6 sm:mx-7">
-            <strong>{copy.betaBoundary}.</strong> {isPersonal ? copy.personalBoundary : copy.organizationBoundary} {locale === 'pt' ? 'Notas privadas e lembretes não são salvos nesta fundação.' : 'Private notes and reminders are not saved in this foundation.'}
+            <strong>{copy.betaBoundary}.</strong> {isPersonal ? copy.personalBoundary : copy.organizationBoundary} {copy.privateBoundary}
           </aside>
 
           <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:p-7">

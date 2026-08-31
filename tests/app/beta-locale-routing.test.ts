@@ -251,6 +251,10 @@ describe('beta locale routing', () => {
     expect(markup).toContain('Profissional');
     expect(markup).toContain('Contexto: Organização');
     expect(markup).toContain('TESTE / 01');
+    expect(markup).toContain('<option value="en">Inglês</option>');
+    expect(markup).toContain(
+      'Notas privadas e lembretes não são salvos nesta fundação.',
+    );
     expect(markup).toContain('Keep this user-authored greeting unchanged.');
     expect(markup).toContain('Keep this user-authored escalation unchanged.');
     expect(markup).toMatch(
