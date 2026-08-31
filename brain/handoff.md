@@ -26,13 +26,21 @@ the only work left is the first real deployment.
   `mordomo.vercel.app` belongs to an unrelated app. A custom domain is the only fix.
 
 ## Next action
-Deployment is blocked on one human step: Rafael must accept the Neon Marketplace
-terms in a browser (the screen does not render for a CLI/unattended session). Ask him
-to run `vercel integration add neon --plan free_v3 -m region=gru1 -m auth=false` and
-complete the terms prompt. Once that lands, in order:
-`npm run db:migrate` → `npm run seed` (REAL embedder, never `SEED_FAKE_EMBEDDER`) →
-set `AI_GATEWAY_API_KEY`, `STAFF_PASSWORD`, `STAFF_SESSION_SECRET`, `CRON_SECRET` →
-`BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` → `vercel deploy --prod`.
+The Neon terms blocker is GONE (resolved 2026-08-25) — a Neon database and a Clerk
+instance are already attached to the Vercel project `mordomo`. Verify live state with
+`vercel env ls` and `vercel integration list` before trusting any note about this.
+
+Remaining, in order:
+1. Promote the Neon vars from `Development` to `Production` (and Preview) — today
+   `vercel env ls production` is empty, so a prod build has no `DATABASE_URL`.
+2. Add the app's own secrets, absent everywhere: `AI_GATEWAY_API_KEY`, `STAFF_PASSWORD`,
+   `STAFF_SESSION_SECRET`, `CRON_SECRET`, `DEMO_GLOBAL_MONTHLY_USD_CAP`.
+   Rafael must supply these values — do not invent or handle them for him.
+3. `npm run db:migrate`, then `npm run seed` (REAL embedder, never `SEED_FAKE_EMBEDDER`).
+4. `BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` — the launch gate.
+5. Only then turn off `ssoProtection`, which is what makes the URL public. An open URL is
+   a spend path, so it opens last, after the budget caps are proven live.
+6. Consider removing the unused Clerk integration — this codebase never calls it.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.

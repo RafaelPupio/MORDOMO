@@ -89,10 +89,34 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   product surfaces and explains why the visitor hot path uses one agent while ingest and
   reporting use separate two-agent pipelines.
 
-## Blocked — needs Rafael
+## Deployment state (checked live 2026-08-31, not inferred)
 
-**Deployment (plan Task 13) is blocked on Neon Marketplace terms-of-service acceptance,
-which needs a browser.** Provisioning the production database via
+The long-standing "blocked on Neon Marketplace terms" note was **stale**. A Neon database
+(`neon-cordovan-canvas`) and a Clerk instance (`clerk-pink-button`) are both provisioned
+and attached to the Vercel project `mordomo` — the terms were accepted around 2026-08-25.
+Clerk is not used by this codebase (staff auth is our own signed cookie) and is unused
+cruft worth removing.
+
+What actually stands between here and a working public demo:
+
+1. **Every Neon variable is scoped to `Development` only.** `vercel env ls production`
+   returns nothing, so a production build has no `DATABASE_URL`.
+2. **None of the app's own secrets exist in any environment**: `AI_GATEWAY_API_KEY`,
+   `STAFF_PASSWORD`, `STAFF_SESSION_SECRET`, `CRON_SECRET`,
+   `DEMO_GLOBAL_MONTHLY_USD_CAP`.
+3. **Migrations and seed have not been run against that database** (unverified — checking
+   needs the connection string).
+4. **Deployment protection is on** (`ssoProtection: all_except_custom_domains`), so every
+   URL redirects to a Vercel login. Turn this off LAST — an open URL is a spend path, so
+   it should only open once the budget caps are live.
+5. **Retrieval benchmark still offline-only** — `BENCHMARK_REAL_EMBEDDER=1 npm run
+   benchmark:retrieval` against the real seed is the launch gate.
+
+## Previously blocked — now resolved
+
+~~Deployment is blocked on Neon Marketplace terms-of-service acceptance.~~
+**Resolved 2026-08-25** — the terms were accepted and the database provisioned. Kept here
+because the reasoning still applies to any future marketplace integration: Provisioning the production database via
 `vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
 interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
 accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
