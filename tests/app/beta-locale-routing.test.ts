@@ -63,13 +63,14 @@ beforeEach(() => {
 });
 
 describe('beta locale routing', () => {
-  it('locks Organization edits while Save is pending without locking Personal preview', async () => {
+  it('locks Organization edits while Save or Publish is pending without locking Personal preview', async () => {
     const { isStudioProfileLocked } = await import(
       '@/components/studio/secretary-studio'
     );
 
-    expect(isStudioProfileLocked('organization', true, 'dirty')).toBe(true);
-    expect(isStudioProfileLocked('personal', true, 'dirty')).toBe(false);
+    expect(isStudioProfileLocked('organization', true, false, 'dirty')).toBe(true);
+    expect(isStudioProfileLocked('organization', false, true, 'synced')).toBe(true);
+    expect(isStudioProfileLocked('personal', true, true, 'dirty')).toBe(false);
   });
 
   it('does not let a pending save authorize Publish with an earlier trusted version', async () => {
@@ -202,6 +203,60 @@ describe('beta locale routing', () => {
       expect.objectContaining({ hidePersonal: true }),
       undefined,
     );
+  });
+
+  it('marks the active onboarding locale and keeps visible onboarding tags locale-owned', async () => {
+    const { ContextPicker } = await import('@/components/studio/context-picker');
+    const messages = (await import('@/i18n/beta-messages')).getBetaMessages('pt');
+    const markup = renderToStaticMarkup(createElement(ContextPicker, {
+      locale: 'pt',
+      messages,
+    }));
+
+    expect(markup).toContain('Integração');
+    expect(markup).toContain('ORG');
+    expect(markup).toContain('LOCAL');
+    expect(markup).toMatch(
+      /<a aria-current="page"[^>]*href="\/pt\/onboarding"/,
+    );
+    expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
+  });
+
+  it('renders a fully Portuguese Studio rail without translating user-authored profile copy', async () => {
+    const { SecretaryStudio } = await import(
+      '@/components/studio/secretary-studio'
+    );
+    const messages = (await import('@/i18n/beta-messages')).getBetaMessages('pt');
+    const markup = renderToStaticMarkup(createElement(SecretaryStudio, {
+      initialProfile: {
+        segment: 'church',
+        defaultLocale: 'pt',
+        assistantName: 'Avery',
+        replyTone: 'professional',
+        greeting: 'Keep this user-authored greeting unchanged.',
+        escalationCopy: 'Keep this user-authored escalation unchanged.',
+        enabledCapabilities: ['knowledge', 'escalation'],
+      },
+      kind: 'organization',
+      locale: 'pt',
+      messages,
+      versionId: '11111111-1111-4111-8111-111111111111',
+    }));
+
+    expect(markup).toContain('A que horas começa o encontro comunitário fictício?');
+    expect(markup).toContain('O encontro comunitário fictício começa às 10h nesta demonstração.');
+    expect(markup).toContain('Guia Fictício da Comunidade — Edição de Demonstração');
+    expect(markup).toContain('Resposta fundamentada');
+    expect(markup).toContain('Conhecimento verificado');
+    expect(markup).toContain('Profissional');
+    expect(markup).toContain('Contexto: Organização');
+    expect(markup).toContain('TESTE / 01');
+    expect(markup).toContain('Keep this user-authored greeting unchanged.');
+    expect(markup).toContain('Keep this user-authored escalation unchanged.');
+    expect(markup).toMatch(
+      /<a aria-current="page"[^>]*href="\/pt\/studio\?context=organization"/,
+    );
+    expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
   it.each(['en', 'pt'])('renders onboarding at the supported %s locale', async (locale) => {

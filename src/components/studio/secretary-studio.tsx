@@ -26,7 +26,10 @@ import {
 } from '@/core/secretary-profile';
 import type { BetaMessages } from '@/i18n/beta-messages';
 import { buildStudioPreview } from '@/studio/preview';
-import { STUDIO_SCENARIOS } from '@/studio/scenarios';
+import {
+  STUDIO_SCENARIOS,
+  type StudioScenarioResult,
+} from '@/studio/scenarios';
 
 type SecretaryStudioProps = {
   initialProfile: SecretaryProfile;
@@ -40,6 +43,7 @@ type StudioCopy = {
   studio: string;
   configure: string;
   testRail: string;
+  testBadge: string;
   context: string;
   betaBoundary: string;
   personalBoundary: string;
@@ -66,6 +70,7 @@ type StudioCopy = {
   segments: Record<Exclude<SecretarySegment, 'personal'>, string>;
   tones: Record<ReplyTone, string>;
   capabilities: Record<Capability, string>;
+  resultKinds: Record<StudioScenarioResult['kind'], string>;
 };
 
 const EMPTY_ACTION_STATE: StudioActionState = {};
@@ -89,6 +94,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     studio: 'Secretary Studio',
     configure: 'Configure',
     testRail: 'Deterministic test rail',
+    testBadge: 'TEST / 01',
     context: 'Context',
     betaBoundary: 'Foundation boundary',
     personalBoundary: 'Personal is browser-local preview only. Save and publish stay disabled.',
@@ -118,11 +124,13 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     segments: { church: 'Church', clinic: 'Clinic', restaurant: 'Restaurant', real_estate: 'Real estate', general: 'General organization' },
     tones: { warm: 'Warm', professional: 'Professional', concise: 'Concise' },
     capabilities: { knowledge: 'Verified knowledge', calendar: 'Calendar-aware draft', confidential_request: 'Confidential intake', escalation: 'Human escalation' },
+    resultKinds: { grounded: 'Grounded answer', calendar: 'Calendar-aware draft', intake: 'Confidential intake', escalation: 'Human escalation' },
   },
   pt: {
     studio: 'Studio da Secretária',
     configure: 'Configurar',
     testRail: 'Trilho de teste determinístico',
+    testBadge: 'TESTE / 01',
     context: 'Contexto',
     betaBoundary: 'Limite da fundação',
     personalBoundary: 'Pessoal é somente uma prévia local no navegador. Salvar e publicar permanecem desativados.',
@@ -152,6 +160,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     segments: { church: 'Igreja', clinic: 'Clínica', restaurant: 'Restaurante', real_estate: 'Imobiliária', general: 'Organização geral' },
     tones: { warm: 'Acolhedor', professional: 'Profissional', concise: 'Conciso' },
     capabilities: { knowledge: 'Conhecimento verificado', calendar: 'Rascunho com agenda', confidential_request: 'Coleta confidencial', escalation: 'Encaminhamento humano' },
+    resultKinds: { grounded: 'Resposta fundamentada', calendar: 'Rascunho com agenda', intake: 'Coleta confidencial', escalation: 'Encaminhamento humano' },
   },
 };
 
@@ -179,9 +188,11 @@ export type DraftSyncEvent =
 export function isStudioProfileLocked(
   kind: SecretaryContextKind,
   savePending: boolean,
+  publishPending: boolean,
   phase: DraftSyncState['phase'],
 ): boolean {
-  return kind === 'organization' && (savePending || phase === 'refreshing');
+  return kind === 'organization'
+    && (savePending || publishPending || phase === 'refreshing');
 }
 
 export function canPublishStudioProfile({
@@ -289,16 +300,22 @@ export function SecretaryStudio({
   );
   const dispatchedRefreshId = useRef(0);
   const copy = STUDIO_COPY[locale];
-  const scenario = STUDIO_SCENARIOS[profile.segment];
+  const scenario = STUDIO_SCENARIOS[locale][profile.segment];
   const preview = buildStudioPreview(profile, scenario);
   const isPersonal = kind === 'personal';
   const [saveState, saveAction, savePending] = useActionState(
-    async (_previous: StudioActionState, formData: FormData) => (
-      saveStudioDraft(kind, formData)
-    ),
+    async (_previous: StudioActionState, formData: FormData) => {
+      setPublishState(EMPTY_ACTION_STATE);
+      return saveStudioDraft(kind, formData);
+    },
     EMPTY_ACTION_STATE,
   );
-  const profileLocked = isStudioProfileLocked(kind, savePending, draftSync.phase);
+  const profileLocked = isStudioProfileLocked(
+    kind,
+    savePending,
+    publishPending,
+    draftSync.phase,
+  );
   const publishEnabled = canPublishStudioProfile({
     draftSync,
     isPersonal,
@@ -332,6 +349,7 @@ export function SecretaryStudio({
     value: SecretaryProfile[K],
   ) {
     setProfile((current) => ({ ...current, [field]: value }));
+    setPublishState(EMPTY_ACTION_STATE);
     dispatchDraftSync({ type: 'edited' });
   }
 
@@ -342,6 +360,7 @@ export function SecretaryStudio({
         ? [...new Set([...current.enabledCapabilities, capability])]
         : current.enabledCapabilities.filter((item) => item !== capability),
     }));
+    setPublishState(EMPTY_ACTION_STATE);
     dispatchDraftSync({ type: 'edited' });
   }
 
@@ -372,9 +391,9 @@ export function SecretaryStudio({
               {messages.context.switchLabel}: {isPersonal ? messages.context.personal : messages.context.organization}
             </Link>
             <nav aria-label={copy.languageLabel} className="flex items-center gap-1 font-mono text-xs">
-              <Link className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7] ${locale === 'en' ? 'bg-[#6ee7b7] font-bold text-[#102421]' : ''}`} href={`/en/studio?context=${kind}`}>EN</Link>
+              <Link href={`/en/studio?context=${kind}`} aria-current={locale === 'en' ? 'page' : undefined} className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7] ${locale === 'en' ? 'bg-[#6ee7b7] font-bold text-[#102421]' : ''}`}>EN</Link>
               <span aria-hidden="true" className="text-white/35">/</span>
-              <Link className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7] ${locale === 'pt' ? 'bg-[#6ee7b7] font-bold text-[#102421]' : ''}`} href={`/pt/studio?context=${kind}`}>PT</Link>
+              <Link href={`/pt/studio?context=${kind}`} aria-current={locale === 'pt' ? 'page' : undefined} className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#6ee7b7] ${locale === 'pt' ? 'bg-[#6ee7b7] font-bold text-[#102421]' : ''}`}>PT</Link>
             </nav>
           </div>
         </div>
@@ -387,7 +406,7 @@ export function SecretaryStudio({
               <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#167052]">{copy.configure}</p>
               <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em]">{messages.profile.title}</h2>
             </div>
-            <span className="bg-[#e0f2fe] px-3 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-[0.12em]">{copy.context}: {kind}</span>
+            <span className="bg-[#e0f2fe] px-3 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-[0.12em]">{copy.context}: {isPersonal ? messages.context.personal : messages.context.organization}</span>
           </div>
 
           <fieldset
@@ -526,7 +545,7 @@ export function SecretaryStudio({
           <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:p-7">
             <button
               className="min-h-11 bg-[#102421] px-5 py-3 text-sm font-semibold text-white hover:bg-[#193a34] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-[#6ee7b7] disabled:cursor-not-allowed disabled:opacity-45"
-              disabled={isPersonal || savePending || draftSync.phase === 'refreshing'}
+              disabled={isPersonal || profileLocked}
               type="submit"
             >
               {savePending ? copy.savePending : messages.profile.saveDraft}
@@ -553,7 +572,7 @@ export function SecretaryStudio({
 
         <aside className="border border-[#102421]/20 bg-[#102421] text-white lg:sticky lg:top-6" aria-labelledby="test-rail-title">
           <div className="border-b border-white/15 px-5 py-4">
-            <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#6ee7b7]">TEST / 01</p>
+            <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#6ee7b7]">{copy.testBadge}</p>
             <h2 className="mt-1 text-xl font-semibold" id="test-rail-title">{copy.testRail}</h2>
           </div>
           <dl className="divide-y divide-white/15">
@@ -564,15 +583,15 @@ export function SecretaryStudio({
             <div className="grid grid-cols-2 divide-x divide-white/15">
               <div className="px-5 py-4">
                 <dt className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-white/50">{copy.result}</dt>
-                <dd className="mt-2 font-mono text-xs uppercase text-[#6ee7b7]">{preview.result.kind}</dd>
+                <dd className="mt-2 font-mono text-xs uppercase text-[#6ee7b7]">{copy.resultKinds[preview.result.kind]}</dd>
               </div>
               <div className="px-5 py-4">
                 <dt className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-white/50">{copy.capability}</dt>
-                <dd className="mt-2 font-mono text-xs uppercase text-[#6ee7b7]">{preview.result.requiredCapability}</dd>
+                <dd className="mt-2 font-mono text-xs uppercase text-[#6ee7b7]">{copy.capabilities[preview.result.requiredCapability]}</dd>
               </div>
             </div>
             <div className="px-5 py-5">
-              <dt className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-white/50">{preview.assistantName} · {preview.tone}</dt>
+              <dt className="font-mono text-[0.65rem] uppercase tracking-[0.16em] text-white/50">{preview.assistantName} · {copy.tones[preview.tone]}</dt>
               <dd className="mt-3 border-l-2 border-[#6ee7b7] pl-4">
                 <p className="text-sm leading-6 text-white/70">{preview.greeting}</p>
                 <p className="mt-3 text-base leading-7">{preview.result.text}</p>

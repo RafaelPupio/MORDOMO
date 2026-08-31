@@ -16,11 +16,11 @@ const profile: SecretaryProfile = {
 
 describe('buildStudioPreview', () => {
   it('uses only the editable display fields and the scenario result', () => {
-    expect(buildStudioPreview(profile, STUDIO_SCENARIOS.church)).toEqual({
+    expect(buildStudioPreview(profile, STUDIO_SCENARIOS.en.church)).toEqual({
       greeting: 'Welcome to the fictional demo.',
       assistantName: 'Avery',
       tone: 'professional',
-      result: STUDIO_SCENARIOS.church.result,
+      result: STUDIO_SCENARIOS.en.church.result,
     });
   });
 
@@ -30,7 +30,7 @@ describe('buildStudioPreview', () => {
       enabledCapabilities: ['knowledge', 'confidential_request', 'escalation'],
     };
 
-    const result = buildStudioPreview(withoutCalendar, STUDIO_SCENARIOS.restaurant);
+    const result = buildStudioPreview(withoutCalendar, STUDIO_SCENARIOS.en.restaurant);
 
     expect(result.result).toEqual({
       kind: 'escalation',

@@ -35,8 +35,10 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   or other credentials, calendar connection, research, export, and deletion are inactive.
 - The bilingual Studio foundation is verified at `/en/onboarding`, `/pt/onboarding`,
   `/en/studio`, and `/pt/studio`; unsupported beta locales return 404. The deterministic
-  preview makes no AI request. Organization save, trusted refresh, and publish succeed only
-  for the active Clerk organization; exact Portuguese validation is covered.
+  preview makes no AI request and owns complete English/Portuguese scenario and rail copy
+  without changing its shared capability-safety mapping. Organization editing is locked
+  during save, trusted refresh, and publish; those mutations succeed only for the active
+  Clerk organization. Exact Portuguese validation and rail rendering are covered.
 - The live smoke found exactly one empty Personal root, exactly one published profile for the
   active Organization, no observed Organization with more than one, and a latest
   `usage_ledger` entry predating the smoke. Member-write rejection is automated/auth-layer

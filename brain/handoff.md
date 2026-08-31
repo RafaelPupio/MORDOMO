@@ -1,31 +1,21 @@
-# Handoff — 2026-08-31T03:42:00Z — from codex
+# Handoff — 2026-08-31T11:40:07Z — from codex
 
 ## Task
 
-Validate the complete bilingual Studio foundation and record its public-safe security
-boundary after the live smoke check.
+Close the final bilingual Studio UX gaps without changing persistence, authorization, or
+the deterministic preview safety boundary.
 
 ## Done
 
-- The beta URLs are `/en/onboarding`, `/pt/onboarding`, `/en/studio`, and `/pt/studio`;
-  unsupported beta locales return 404.
-- Organization save, trusted refresh, and publish succeeded for the active Clerk
-  organization. Exact Portuguese validation succeeded, the active Organization had exactly
-  one published profile, and no observed Organization had more than one.
-- Personal smoke verification found exactly one empty Personal context root. Its profile
-  edits remain in React/browser memory and reset on refresh; persistence is intentionally
-  disabled pending managed key-management review.
-- The deterministic preview made no AI request. The latest `usage_ledger` entry predates
-  the smoke. Member-write rejection is automated/auth-layer evidence, not a second live
-  account.
-- The disposable smoke branch was deleted and Development was left untouched.
-- `42f8c2b..aba8502` — strict profiles, data roots, trusted contexts, deterministic preview,
-  and the bilingual Studio save/publish experience.
-- `850d2fc` — constrained the chat Route Handler export surface before this documentation
-  task.
-- `f917a6b` and `0ca74c2` — made publish atomic on Neon HTTP while preserving repository
-  errors.
-- `9789827` — added the final no-AI regression and publishable boundary records.
+- English and Portuguese now own every deterministic scenario prompt, result, and fictional
+  citation while sharing one typed result-kind/capability mapping per segment.
+- The Studio rail translates visible result-kind, capability, tone, context, and test labels;
+  onboarding and Studio locale links identify the active page to assistive technology.
+- Organization profile fields and Save lock during Save, trusted refresh, and Publish. A new
+  edit or save clears stale Publish feedback. Personal remains browser-memory-only and keeps
+  its existing persistence controls disabled.
+- Focused regressions cover exact Portuguese copy, shared safety mappings, preserved
+  user-authored text, locale-link state, and pending-Publish locking.
 
 ## Next action
 
@@ -36,19 +26,22 @@ separate reviewed implementation plan is approved.
 
 ## Files in play
 
-- `README.md` — exact beta URLs and public boundary.
-- `brain/status.md` — present verified state and deferred gates.
-- `brain/log/decisions/2026-Q3.md` — Task 6 decision record.
-- `tests/app/studio-no-ai.test.ts` — no-AI/sensitive-source regression.
+- `src/studio/scenarios.ts` — locale-owned deterministic copy and shared safety mapping.
+- `src/components/studio/secretary-studio.tsx` — translated rail and publish-cycle locking.
+- `src/components/studio/context-picker.tsx` — locale-owned onboarding tags and active links.
+- `tests/studio/` and `tests/app/beta-locale-routing.test.ts` — focused regression coverage.
+- `brain/status.md` and `brain/log/decisions/` — public technical state and decision record.
 
 ## Ruled out
 
-- No private notes, reminders, passwords/credentials, calendar connection, research,
-  export, or deletion were enabled.
-- Personal profile persistence after refresh is not claimed.
-- No live member account, secret, ID, customer data, or external side effect was added.
+- No persistence, action, schema, auth, Personal storage, AI, research, or external-service
+  behavior changed.
+- User-authored greeting and escalation text are never translated.
+- `.agents/` and `skills-lock.json` remain unrelated and untracked.
 
 ## Verify
 
-Run `npm test -- --reporter=dot`, `npm run typecheck`, `npm run build`, targeted lint for
-changed files, and `git diff --check`.
+Run `npm test -- --reporter=dot`, `npm run typecheck`, targeted ESLint for changed source and
+test files, `npm run build -- --webpack`, and `git diff --check`. On this host, the default
+Turbopack build is expected to fail because its child process cannot bind a port; that is a
+sandbox limitation rather than an application build failure.

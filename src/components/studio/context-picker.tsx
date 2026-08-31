@@ -16,6 +16,9 @@ type ContextPickerProps = {
 };
 
 type OnboardingCopy = {
+  onboarding: string;
+  organizationTag: string;
+  personalTag: string;
   eyebrow: string;
   title: string;
   intro: string;
@@ -35,6 +38,9 @@ type OnboardingCopy = {
 
 const ONBOARDING_COPY: Record<BetaLocale, OnboardingCopy> = {
   en: {
+    onboarding: 'Onboarding',
+    organizationTag: 'ORG',
+    personalTag: 'LOCAL',
     eyebrow: 'Invite-only foundation',
     title: 'Set the desk before the first reply.',
     intro: 'Choose where this secretary will work. MORDOMO verifies the signed-in context again before opening Studio.',
@@ -52,6 +58,9 @@ const ONBOARDING_COPY: Record<BetaLocale, OnboardingCopy> = {
     languageLabel: 'Language',
   },
   pt: {
+    onboarding: 'Integração',
+    organizationTag: 'ORG',
+    personalTag: 'LOCAL',
     eyebrow: 'Fundação somente por convite',
     title: 'Prepare a mesa antes da primeira resposta.',
     intro: 'Escolha onde esta secretária trabalhará. O MORDOMO verifica novamente o contexto autenticado antes de abrir o Studio.',
@@ -92,13 +101,13 @@ export function ContextPicker({ locale, messages }: ContextPickerProps) {
             <span className="grid size-9 place-items-center bg-[#102421] font-mono text-sm font-bold text-[#6ee7b7]" aria-hidden="true">M</span>
             <div>
               <p className="font-mono text-[0.66rem] uppercase tracking-[0.22em] text-[#102421]/60">MORDOMO</p>
-              <p className="text-sm font-semibold">Onboarding</p>
+              <p className="text-sm font-semibold">{copy.onboarding}</p>
             </div>
           </div>
           <nav aria-label={copy.languageLabel} className="flex items-center gap-1 font-mono text-xs">
-            <Link className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#102421] ${locale === 'en' ? 'bg-[#6ee7b7] font-bold' : ''}`} href="/en/onboarding">EN</Link>
+            <Link href="/en/onboarding" aria-current={locale === 'en' ? 'page' : undefined} className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#102421] ${locale === 'en' ? 'bg-[#6ee7b7] font-bold' : ''}`}>EN</Link>
             <span aria-hidden="true" className="text-[#102421]/35">/</span>
-            <Link className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#102421] ${locale === 'pt' ? 'bg-[#6ee7b7] font-bold' : ''}`} href="/pt/onboarding">PT</Link>
+            <Link href="/pt/onboarding" aria-current={locale === 'pt' ? 'page' : undefined} className={`px-2 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#102421] ${locale === 'pt' ? 'bg-[#6ee7b7] font-bold' : ''}`}>PT</Link>
           </nav>
         </div>
       </header>
@@ -119,7 +128,7 @@ export function ContextPicker({ locale, messages }: ContextPickerProps) {
             onClick={() => setSelected('organization')}
             type="button"
           >
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-[#167052]">ORG</span>
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-[#167052]">{copy.organizationTag}</span>
             <span className="mt-4 block text-xl font-semibold">{messages.context.organization}</span>
             <span className="mt-2 block text-sm leading-6 text-[#102421]/65">{copy.organizationDescription}</span>
           </button>
@@ -129,7 +138,7 @@ export function ContextPicker({ locale, messages }: ContextPickerProps) {
             onClick={() => setSelected('personal')}
             type="button"
           >
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-[#167052]">LOCAL</span>
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-[#167052]">{copy.personalTag}</span>
             <span className="mt-4 block text-xl font-semibold">{messages.context.personal}</span>
             <span className="mt-2 block text-sm leading-6 text-[#102421]/65">{copy.personalDescription}</span>
           </button>
