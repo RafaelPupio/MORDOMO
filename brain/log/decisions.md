@@ -21,3 +21,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-24` Plan 4: reporting pipeline and portfolio front door
 - `2026-08-25` AI Secretary SaaS beta: Development-only Clerk and organization-first design
 - `2026-08-28` Bilingual Studio Task 1: strict non-sensitive profile and EN/PT beta boundary
+- `2026-08-30` Bilingual Studio foundation: deterministic, non-sensitive boundary verified

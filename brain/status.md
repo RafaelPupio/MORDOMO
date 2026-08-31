@@ -37,10 +37,11 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   `/en/studio`, and `/pt/studio`; unsupported beta locales return 404. The deterministic
   preview makes no AI request. Organization save, trusted refresh, and publish succeed only
   for the active Clerk organization; exact Portuguese validation is covered.
-- The live smoke found exactly one empty Personal root, per-organization published counts of
-  one, and a latest `usage_ledger` entry predating the smoke. Member-write rejection is
-  automated/auth-layer evidence, not a second live account. The disposable smoke branch was
-  deleted and Development was left untouched.
+- The live smoke found exactly one empty Personal root, exactly one published profile for the
+  active Organization, no observed Organization with more than one, and a latest
+  `usage_ledger` entry predating the smoke. Member-write rejection is automated/auth-layer
+  evidence, not a second live account. The disposable smoke branch was deleted and
+  Development was left untouched.
 - The existing tenant domain is renamed to organizations in the beta branch. Its migration
   preserves legacy UUIDs and foreign keys in PGlite, but has not been applied to Development
   Neon yet.

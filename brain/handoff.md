@@ -1,4 +1,4 @@
-# Handoff — 2026-08-30 — from Codex
+# Handoff — 2026-08-31T03:42:00Z — from codex
 
 ## Task
 
@@ -10,8 +10,8 @@ boundary after the live smoke check.
 - The beta URLs are `/en/onboarding`, `/pt/onboarding`, `/en/studio`, and `/pt/studio`;
   unsupported beta locales return 404.
 - Organization save, trusted refresh, and publish succeeded for the active Clerk
-  organization. Exact Portuguese validation succeeded, and per-organization published
-  counts were one.
+  organization. Exact Portuguese validation succeeded, the active Organization had exactly
+  one published profile, and no observed Organization had more than one.
 - Personal smoke verification found exactly one empty Personal context root. Its profile
   edits remain in React/browser memory and reset on refresh; persistence is intentionally
   disabled pending managed key-management review.
@@ -19,8 +19,13 @@ boundary after the live smoke check.
   the smoke. Member-write rejection is automated/auth-layer evidence, not a second live
   account.
 - The disposable smoke branch was deleted and Development was left untouched.
+- `42f8c2b..aba8502` — strict profiles, data roots, trusted contexts, deterministic preview,
+  and the bilingual Studio save/publish experience.
 - `850d2fc` — constrained the chat Route Handler export surface before this documentation
   task.
+- `f917a6b` and `0ca74c2` — made publish atomic on Neon HTTP while preserving repository
+  errors.
+- `9789827` — added the final no-AI regression and publishable boundary records.
 
 ## Next action
 
