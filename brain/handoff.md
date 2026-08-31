@@ -1,4 +1,4 @@
-# Handoff — 2026-08-31T19:43:17Z — from codex
+# Handoff — 2026-08-31T23:18:08Z — from codex
 
 ## Task
 
@@ -14,12 +14,15 @@ Firecrawl or AI providers to retain the submitted source data.
   `FIRECRAWL_API_KEY` resolves without exposing or committing it.
 - The latest bounded `https://example.com` ZDR probe returned HTTP 403 with provider-side ZDR
   not enabled. No scrape content was accepted and no research application code was started.
+- Firecrawl's current official documentation classifies hosted scrape ZDR as Enterprise-only.
+  The installed free plan therefore cannot satisfy the approved gate without an Enterprise
+  agreement or explicit account-level exception. The redundant hourly probe is paused.
 
 ## Next action
 
-After Firecrawl confirms Zero Data Retention is enabled, rerun the exact bounded probe from
-Task 1 of the implementation plan. Proceed with Task 1 dependency installation only when the
-result is HTTP 200 with `success: true`.
+Rafael chooses one material path: obtain Firecrawl Enterprise/account-level ZDR and rerun the
+probe, or reopen brainstorming to approve a different retention-safe provider/design. Do not
+install the SDK or write research application code before that choice and a green probe.
 
 ## Files in play
 
@@ -31,6 +34,8 @@ result is HTTP 200 with `success: true`.
 
 - Sending Firecrawl `zeroDataRetention: true` without account-level enablement is insufficient;
   the live API rejects it with HTTP 403.
+- Waiting on the free plan alone is not an implementation path: Firecrawl currently documents
+  hosted scrape ZDR as Enterprise-only.
 - No non-ZDR fallback, mock integration, search/crawl mode, authenticated page, custom header,
   cookie, browser action, or unmetered AI path is allowed.
 - `.agents/` and `skills-lock.json` are unrelated user files and remain untracked.

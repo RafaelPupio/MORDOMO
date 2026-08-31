@@ -26,7 +26,8 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   plan. The approved Organization public-research design and implementation plan require
   provider-enforced Zero Data Retention, cache-off one-page scraping, metered grounded fact
   proposals, and explicit human review before profile Save/Publish. No research application
-  code is active yet.
+  code is active yet. Firecrawl's current public documentation classifies hosted scrape ZDR
+  as Enterprise-only, and the free resource continues to return HTTP 403.
 - The public presentation is live locally at `/`, `/pt`, `/es`, `/fr`, and `/de`.
   Typed in-repository dictionaries set copy and metadata; invalid locale paths return 404.
 - The beta target now spans invite-only organization workspaces and a Personal Secretary
@@ -55,9 +56,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Wait for Firecrawl to enable Zero Data Retention for the installed Development resource,
-   then rerun the bounded `https://example.com` probe. The latest probe is HTTP 403 with ZDR
-   not enabled; implementation stays closed until it returns HTTP 200 with `success: true`.
+1. Decide whether to obtain Firecrawl Enterprise/account-level ZDR or reopen the approved
+   design to select another retention-safe provider. The hourly probe is paused because the
+   installed free plan cannot satisfy the documented Enterprise-only gate by itself.
 2. Choose and provision managed key management, then complete its threat model and recovery
    review before persisting any sensitive Personal Secretary data.
 3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,

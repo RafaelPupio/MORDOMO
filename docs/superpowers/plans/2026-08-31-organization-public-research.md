@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Do not write application code until the Firecrawl ZDR probe in Task 1 returns HTTP 200 with `success: true`. The current verified result is HTTP 403: ZDR is not enabled for the installed team.
-- Firecrawl resource `firecrawl-bronze-clock` is installed on the free plan and connected only to Vercel Development for project `mordomo`.
+- Firecrawl resource `firecrawl-bronze-clock` is installed on the free plan and connected only to Vercel Development for project `mordomo`. Firecrawl's current public documentation classifies hosted scrape ZDR as Enterprise-only, so the installed plan cannot satisfy this gate unless Firecrawl grants an explicit account-level exception or the resource is upgraded.
 - The generated credential is the Vercel Config variable `FIRECRAWL_API_KEY`. Never print its value. Resolve it locally with `npx --yes vercel@latest env run -- <command>`.
 - Live research requires server-only `RESEARCH_ZDR_VERIFIED === 'true'`; tests set dependencies explicitly and never need a live key.
 - Research is Organization-only and limited to the existing Clerk-derived `owner | admin` Studio context. Personal, member, unauthenticated, and forged contexts fail before research lookup or network work.
@@ -50,9 +50,11 @@ Open the installed resource dashboard:
 npx --yes vercel@latest integration open firecrawl firecrawl-bronze-clock
 ```
 
-Request Zero Data Retention for the installed team through Firecrawl support. Do not accept an
-answer that merely recommends sending `zeroDataRetention: true`; provider-side enablement is
-required. Record no account IDs, support transcript, or customer-identifying detail in Git.
+Confirm an Enterprise agreement or explicit account-level exception with Firecrawl support.
+Current official documentation identifies hosted scrape ZDR as Enterprise-only; the installed
+free Marketplace plan is not sufficient by itself. Do not accept an answer that merely
+recommends sending `zeroDataRetention: true`; provider-side enablement is required. Record no
+account IDs, support transcript, pricing discussion, or customer-identifying detail in Git.
 
 - [ ] **Step 2: Run the bounded ZDR probe and verify the prerequisite**
 
