@@ -5,8 +5,10 @@ _Present state only. The dated build chronology is in [[log/status-archive]]._
 > Naming: the project is **MORDOMO** everywhere — folder, GitHub repo
 > (`RafaelPupio/MORDOMO`), package name, docs, and UI. Bare "ChurchChatBox" in these
 > notes always means **V1**, the separate private WhatsApp product this one succeeds.
-> One loose end: the Vercel project is still named `churchchatboxv2`, so a deploy would
-> land on `churchchatboxv2.vercel.app` until it is renamed in the Vercel dashboard.
+> The Vercel project is renamed to `mordomo` too, but its auto-assigned domain is still
+> `churchchatboxv2.vercel.app`: `mordomo.vercel.app` is already taken by an unrelated app
+> ("Mordomo — Controle Financeiro Inteligente") that is not ours. A custom domain is the
+> only way to get a MORDOMO-branded URL.
 
 ## What runs today
 
@@ -99,7 +101,13 @@ the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
 benchmark:retrieval` against that real seed to confirm retrieval quality holds with real
 embeddings (not just the offline HashEmbedder number), `vercel deploy --prod`.
 
-Nothing has been deployed and no cloud resource has been created.
+**Correction (2026-08-31):** this note previously claimed nothing had been deployed.
+That was wrong. The GitHub integration has been auto-building every push since
+2026-08-20 — roughly twenty preview and production deployments exist. They are not a
+working demo: deployment protection (`ssoProtection: all_except_custom_domains`) makes
+every deployment URL redirect to a Vercel login, and with no database provisioned every
+DB-backed route would fail anyway. What is true is that no Neon database exists and no
+publicly reachable demo exists.
 
 ## Next
 

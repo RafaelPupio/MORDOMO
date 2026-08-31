@@ -18,6 +18,13 @@ the only work left is the first real deployment.
   hardcoded links now point there instead of relying on GitHub's rename redirect.
   (`91c4efd`)
 
+## Gotchas discovered late
+- The GitHub integration auto-deploys every push; `vercel ls` shows ~20 builds. They are
+  NOT a demo — `ssoProtection` redirects every deployment URL to a Vercel login, and
+  there is no database. Do not claim deployment state without running `vercel ls`.
+- The Vercel project is `mordomo`, but its domain stays `churchchatboxv2.vercel.app`;
+  `mordomo.vercel.app` belongs to an unrelated app. A custom domain is the only fix.
+
 ## Next action
 Deployment is blocked on one human step: Rafael must accept the Neon Marketplace
 terms in a browser (the screen does not render for a CLI/unattended session). Ask him
