@@ -47,6 +47,14 @@ public production service. Everything below is covered by the automated suite (`
   and diagnoses are structurally inexpressible in that sensitive part of the report.
   Reports can be run on demand in `/staff/relatorios` or every Monday by the authenticated
   Vercel Cron route.
+- The invite-only bilingual Studio foundation is available at `/en/onboarding` and
+  `/pt/onboarding`, then `/en/studio` and `/pt/studio`. Unsupported beta locales return
+  404. Organization profiles support a deterministic preview, typed draft save, trusted
+  refresh, and explicit publish scoped to the active Clerk organization.
+- Personal Secretary is a deterministic browser-local preview: the only persisted Personal
+  state is one empty context root. Profile edits live in React/browser memory and
+  intentionally reset on refresh until managed key management and its security review are
+  complete. The preview makes no AI or external requests.
 
 ## Architecture, briefly
 
@@ -65,7 +73,10 @@ on the reply in real time.
 
 Deliberately out of scope for now: multiple staff accounts, roles, and password reset; a
 staff audit log; a WhatsApp channel adapter for visitors; self-serve church signup; and
-billing. A sent support reply appears in the visitor's own
+billing. In the Studio foundation, private notes, reminders, passwords or other
+credentials, calendar connection, public-web research, export, and deletion are all
+inactive. Personal profile edits are preview-only and reset on refresh; no claim of
+persistent Personal profile editing is made. A sent support reply appears in the visitor's own
 chat transcript the next time they open `/chat` — the visitor's conversation is now
 resumed across page loads (a returning visitor's `ccb_visitor` cookie is matched back to
 their conversation; see `GET /api/chat/history`) instead of a fresh, empty one starting

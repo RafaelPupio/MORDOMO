@@ -1,63 +1,49 @@
-# Handoff — 2026-08-28T00:00:00Z — from Codex
+# Handoff — 2026-08-30 — from Codex
 
 ## Task
 
-Implement the first MORDOMO corporate/personal beta foundation: trusted contexts, EN/PT
-Studio, Organization-only versioned profiles, and deterministic tests without AI usage.
+Validate the complete bilingual Studio foundation and record its public-safe security
+boundary after the live smoke check.
 
 ## Done
 
-- `04574d1` — public technical design for the SaaS beta.
-- `135a38b` — execution plan, corrected for Clerk Hobby's default roles and safe local-env
-  ignore rules.
-- `de806ac` — Clerk provider, protected-route proxy, and real Development sign-in/sign-up
-  shell.
-- `2568416` and `29f73d6` — organization tenancy migration, saved profiles, and hardened
-  legacy-data foreign-key preservation.
-- `77551b1` — typed MORDOMO brand and locale foundation.
-- `dae14e9` — shared MORDOMO presentation at `/`, `/pt`, `/es`, `/fr`, and `/de`,
-  with localized metadata and a tested 404 boundary.
-- `281498d` — active package metadata, public technical docs, and delivery records renamed
-  to MORDOMO. The GitHub repository is now `RafaelPupio/MORDOMO`; the Vercel project name was
-  intentionally left as deployment infrastructure.
-- `af3d825` — review hardening: localized accessible navigation, all localized metadata
-  variants, and unsupported-locale metadata regression coverage. The beta branch is pushed.
-- Clerk is provisioned and connected to Vercel Development only; Neon remains unchanged.
-  No billing or production configuration was added.
-- `8bbd00c` — public roadmap and approved Personal Secretary safety boundary.
-- `37c37ba` — Corporate + Personal beta design; public sandbox design superseded.
-- `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` — reviewed,
-  task-by-task implementation plan ready to execute.
+- The beta URLs are `/en/onboarding`, `/pt/onboarding`, `/en/studio`, and `/pt/studio`;
+  unsupported beta locales return 404.
+- Organization save, trusted refresh, and publish succeeded for the active Clerk
+  organization. Exact Portuguese validation succeeded, and per-organization published
+  counts were one.
+- Personal smoke verification found exactly one empty Personal context root. Its profile
+  edits remain in React/browser memory and reset on refresh; persistence is intentionally
+  disabled pending managed key-management review.
+- The deterministic preview made no AI request. The latest `usage_ledger` entry predates
+  the smoke. Member-write rejection is automated/auth-layer evidence, not a second live
+  account.
+- The disposable smoke branch was deleted and Development was left untouched.
+- `850d2fc` — constrained the chat Route Handler export surface before this documentation
+  task.
 
 ## Next action
 
-Execute Task 1 of `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` with
-TDD. Before Task 3, configure Clerk Development Organizations as membership-required,
-invite-only, with self-service Organization creation disabled.
+Provision and review the public-research integration and managed key management, including
+retention, consent, threat-model, and recovery decisions. Keep private notes, reminders,
+passwords/credentials, calendar connection, research, export, and deletion inactive until a
+separate reviewed implementation plan is approved.
 
 ## Files in play
 
-- `docs/superpowers/specs/2026-08-28-corporate-personal-beta-design.md` — approved product
-  boundary and security gates.
-- `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` — executable first
-  increment; Personal configuration is browser-local only.
-- `src/core/organization-profile.ts`, `src/db/schema.ts`, `src/proxy.ts` — current typed
-  profile, persistence, and Clerk-route foundations to extend.
-- `src/i18n/locales.ts` — five-language public-presentation boundary; do not reuse it as the
-  EN/PT beta interface boundary.
+- `README.md` — exact beta URLs and public boundary.
+- `brain/status.md` — present verified state and deferred gates.
+- `brain/log/decisions/2026-Q3.md` — Task 6 decision record.
+- `tests/app/studio-no-ai.test.ts` — no-AI/sensitive-source regression.
 
 ## Ruled out
 
-- Stripe, checkout, invoices, phone/SMS, outbound delivery, and appointment booking are not
-  beta features.
-- Clerk paid custom roles are not required: the app retains `owner_clerk_user_id` and uses
-  Clerk Hobby's `org:admin` / `org:member` roles.
-- Do not apply the migration directly to Development Neon without the disposable-branch check.
-- No raw passwords, private notes, reminders, calendar authorization, research, exports,
-  deletion, or WhatsApp recovery in the first increment.
-- Do not provision Firecrawl or choose key management until their separate gates are reached.
+- No private notes, reminders, passwords/credentials, calendar connection, research,
+  export, or deletion were enabled.
+- Personal profile persistence after refresh is not claimed.
+- No live member account, secret, ID, customer data, or external side effect was added.
 
 ## Verify
 
-For each task, run its focused Vitest command and `npm run typecheck`. At the end run
-`npm test -- --reporter=dot`, `npm run typecheck`, `npm run build`, and `git diff --check`.
+Run `npm test -- --reporter=dot`, `npm run typecheck`, `npm run build`, targeted lint for
+changed files, and `git diff --check`.

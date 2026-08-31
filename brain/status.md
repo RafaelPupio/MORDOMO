@@ -29,30 +29,30 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   public presentation remains unchanged. The planned authorization model uses Clerk's
   default `org:admin` and `org:member` roles; Neon stores the workspace owner's Clerk user
   ID.
-- The Personal Secretary beta is limited to encrypted private notes, reminders, and
-  calendar metadata. Password storage and WhatsApp-account continuity remain explicitly
-  post-beta security work; `docs/product-roadmap.md` records the product backlog.
-- Task 1 of the bilingual Studio foundation is implemented: strict non-sensitive secretary
-  profiles, EN/PT beta messages, and focused unit coverage are present. The exact npm
-  typecheck script is blocked by an unwritable pre-existing `tsconfig.tsbuildinfo`; the
-  no-incremental equivalent passes.
+- The Personal Secretary beta currently persists only one empty Personal context root.
+  Profile edits are React/browser memory and intentionally reset on refresh until managed
+  key management and its security review are complete. Private notes, reminders, passwords
+  or other credentials, calendar connection, research, export, and deletion are inactive.
+- The bilingual Studio foundation is verified at `/en/onboarding`, `/pt/onboarding`,
+  `/en/studio`, and `/pt/studio`; unsupported beta locales return 404. The deterministic
+  preview makes no AI request. Organization save, trusted refresh, and publish succeed only
+  for the active Clerk organization; exact Portuguese validation is covered.
+- The live smoke found exactly one empty Personal root, per-organization published counts of
+  one, and a latest `usage_ledger` entry predating the smoke. Member-write rejection is
+  automated/auth-layer evidence, not a second live account. The disposable smoke branch was
+  deleted and Development was left untouched.
 - The existing tenant domain is renamed to organizations in the beta branch. Its migration
   preserves legacy UUIDs and foreign keys in PGlite, but has not been applied to Development
   Neon yet.
 
 ## Blocked / next action
 
-1. Execute `docs/superpowers/plans/2026-08-28-bilingual-studio-foundation.md` for the
-   non-sensitive English/Portuguese Studio foundation before feature work on research or
-   private data begins.
-2. Before organization-aware flows are tested live, enable Clerk Organizations with the
-   intended invite-only membership mode in the Development Clerk instance and apply the
-   reviewed migration to a disposable Neon branch.
-3. Provision and review the public-research integration before enabling research. Choose and
-   provision managed key management, then complete its threat model, before any sensitive
-   Personal Secretary data is persisted.
-4. Build the bilingual (English/Portuguese) Studio and trusted context boundary before
-   replacing legacy staff and visitor routes. The public presentation localization is complete.
+1. Provision and review the public-research integration before enabling research; Firecrawl
+   retention and consent terms must be approved first.
+2. Choose and provision managed key management, then complete its threat model and recovery
+   review before persisting any sensitive Personal Secretary data.
+3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,
+   deletion) inactive until those gates produce a separate reviewed implementation plan.
 
 ## Repository hygiene
 
