@@ -253,8 +253,10 @@ member data, or credentials.
 
 The persisted `SecretaryProfile` gains `approvedPublicFacts`, an array of at most twelve
 snapshots. Each snapshot contains the accepted text, source title, normalized source URL, and
-internal source ID. Existing profiles parse with an empty default during the migration period;
-new saves write the field explicitly.
+internal research fact and source IDs. The fact ID preserves safe Save round-trips after a page
+reload; the server still rematerializes every snapshot from the active Organization rather than
+trusting browser-submitted citation text. Existing profiles parse with an empty default during
+the migration period; new saves write the field explicitly.
 
 The browser submits accepted fact IDs, not trusted citation text. On Save, the server loads
 accepted facts from the active Organization and builds the snapshots. Consequently, research
