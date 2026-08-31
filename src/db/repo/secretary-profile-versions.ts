@@ -72,8 +72,8 @@ export async function publishOrganizationSecretaryProfile(
       .returning({ id: secretaryProfileVersions.id }),
   );
 
-  const [published] = await db
-    .with(target, demoted)
+  const published = db.$with('published_profile').as(
+    db
     .update(secretaryProfileVersions)
     .set({ status: 'published', updatedAt })
     .where(and(
@@ -83,8 +83,26 @@ export async function publishOrganizationSecretaryProfile(
       // The predicate is intentionally tautological; it supplies execution ordering.
       sql`(select count(*) from ${demoted}) >= 0`,
     ))
-    .returning();
+      .returning(),
+  );
 
-  if (!published) throw new Error('Profile version not found for this context.');
-  return parseVersion(published);
+  const [result] = await db
+    .with(target, demoted, published)
+    .select({
+      targetId: target.id,
+      published: {
+        id: published.id,
+        organizationId: published.organizationId,
+        status: published.status,
+        profile: published.profile,
+        createdAt: published.createdAt,
+        updatedAt: published.updatedAt,
+      },
+    })
+    .from(target)
+    .leftJoin(published, eq(target.id, published.id));
+
+  if (!result) throw new Error('Profile version not found for this context.');
+  if (!result.published) throw new Error('Profile version was not published.');
+  return parseVersion(result.published);
 }
