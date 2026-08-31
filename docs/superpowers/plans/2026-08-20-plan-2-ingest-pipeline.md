@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing (Next.js, Neon + pgvector, Drizzle, AI SDK v6 via Vercel AI Gateway, Vitest). New: `unpdf` for PDF text extraction; AI SDK `generateObject` with Zod schemas for both agents.
 
-This is **Plan 2 of 4**. Plan 1 (chat vertical slice) is merged. Plan 3 is staff operations (dashboard/inboxes/UI); Plan 4 is reporting + the portfolio landing page. Spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`.
+This is **Plan 2 of 4**. Plan 1 (chat vertical slice) is merged. Plan 3 is staff operations (dashboard/inboxes/UI); Plan 4 is reporting + the portfolio landing page. Spec: `docs/superpowers/specs/2026-08-18-mordomo-design.md`.
 
 ## Global Constraints
 

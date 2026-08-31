@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js (App Router, TypeScript, Tailwind), Drizzle ORM + drizzle-kit, Neon Postgres + pgvector, AI SDK v6 via Vercel AI Gateway (plain model strings), Vitest, PGlite (+ vector extension) for tests, tsx for scripts.
 
-This is **Plan 1 of 4** (2: document ingest pipeline; 3: staff operations; 4: reporting + portfolio shell). Spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`.
+This is **Plan 1 of 4** (2: document ingest pipeline; 3: staff operations; 4: reporting + portfolio shell). Spec: `docs/superpowers/specs/2026-08-18-mordomo-design.md`.
 
 ## Global Constraints
 
@@ -36,7 +36,7 @@ This is **Plan 1 of 4** (2: document ingest pipeline; 3: staff operations; 4: re
 - [ ] **Step 1: Scaffold into a temp dir and merge** (create-next-app refuses non-empty dirs; repo already has brain/, docs/, CLAUDE.md)
 
 ```bash
-cd ~/Desktop/Tech/ChurchChatBoxV2
+cd ~/Desktop/Tech/MORDOMO
 npx create-next-app@latest .scaffold --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-npm --turbopack
 rsync -a .scaffold/ ./
 rm -rf .scaffold
@@ -135,7 +135,7 @@ git add -A && git commit -m "chore: scaffold Next.js app with vitest, drizzle, A
 - [ ] **Step 1: Create the Neon project (dev database)**
 
 ```bash
-neonctl projects create --name churchchatboxv2 --output json
+neonctl projects create --name mordomo --output json
 ```
 
 Take `connection_uris[0].connection_uri` from the output and write it as `DATABASE_URL` into `.env.local` (gitignored). If `neonctl` is missing or unauthenticated (`neonctl auth` needs a browser), STOP and report — Rafael must authenticate or create the project in the Neon dashboard; do not improvise another database.
@@ -1951,7 +1951,7 @@ import Link from 'next/link';
 export default function Home() {
   return (
     <main className="mx-auto flex h-dvh max-w-xl flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-2xl font-semibold">ChurchChatBox V2</h1>
+      <h1 className="text-2xl font-semibold">MORDOMO</h1>
       <p className="text-sm text-neutral-600">
         An AI church secretary — RAG, agents, and automation in one product. Demo of a
         fictional Brazilian church.
@@ -1968,7 +1968,7 @@ In `src/app/layout.tsx`, set only the metadata:
 
 ```tsx
 export const metadata: Metadata = {
-  title: 'ChurchChatBox V2',
+  title: 'MORDOMO',
   description: 'AI church secretary — a portfolio project (fictional demo church).',
 };
 ```
@@ -1999,8 +1999,8 @@ git add -A && git commit -m "feat(ui): streaming chat with source citations and 
 - [ ] **Step 1: Link and configure the Vercel project**
 
 ```bash
-cd ~/Desktop/Tech/ChurchChatBoxV2
-vercel link --yes --project churchchatboxv2
+cd ~/Desktop/Tech/MORDOMO
+vercel link --yes --project mordomo
 vercel env add DATABASE_URL production
 vercel env add AI_GATEWAY_API_KEY production
 vercel env add DEMO_GLOBAL_MONTHLY_USD_CAP production

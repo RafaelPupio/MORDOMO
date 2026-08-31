@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ChurchChatBox V2",
+  title: "MORDOMO",
   description: "AI church secretary — a portfolio project (fictional demo church).",
 };
 

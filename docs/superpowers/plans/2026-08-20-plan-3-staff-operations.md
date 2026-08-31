@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing (Next.js App Router server components + Server Actions, Neon + pgvector, Drizzle, AI SDK v6 via Vercel AI Gateway, Vitest, Tailwind). No new dependencies — session signing uses Node's `crypto` HMAC.
 
-This is **Plan 3 of 4**. Plans 1 (chat slice) and 2 (ingest pipeline) are merged. Plan 4 is reporting + the portfolio landing page. Spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`.
+This is **Plan 3 of 4**. Plans 1 (chat slice) and 2 (ingest pipeline) are merged. Plan 4 is reporting + the portfolio landing page. Spec: `docs/superpowers/specs/2026-08-18-mordomo-design.md`.
 
 ## Global Constraints
 
@@ -1087,7 +1087,7 @@ Plan 2 shipped the shared token as an explicit placeholder for real staff auth, 
 
 - [ ] **Step 3: Verify in a browser**
 
-Start the dev server for THIS project (note: the preview tooling may be rooted at the sibling `ChurchChatBox` repo — start it explicitly from `/Users/rafaelpupiovieira/Desktop/Tech/ChurchChatBoxV2` and confirm the page says *Igreja da Colina*). There is no database in this environment, so pages that query will error — that is expected. Verify what CAN be verified without a database: `/staff/login` renders, submitting a wrong password shows the Portuguese error and does not sign in, and the guarded routes redirect to `/staff/login` when unauthenticated. Take a screenshot of the login page. Report exactly what you observed, and say plainly what you could not verify.
+Start the dev server for THIS project (note: the preview tooling may be rooted at the sibling `ChurchChatBox` repo — start it explicitly from `/Users/rafaelpupiovieira/Desktop/Tech/MORDOMO` and confirm the page says *Igreja da Colina*). There is no database in this environment, so pages that query will error — that is expected. Verify what CAN be verified without a database: `/staff/login` renders, submitting a wrong password shows the Portuguese error and does not sign in, and the guarded routes redirect to `/staff/login` when unauthenticated. Take a screenshot of the login page. Report exactly what you observed, and say plainly what you could not verify.
 
 - [ ] **Step 4: Update the README and the brain**
 

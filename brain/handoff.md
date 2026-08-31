@@ -1,7 +1,7 @@
 # Handoff — 2026-08-31T17:26:31Z — from claude-code
 
 ## Task
-Ship MORDOMO (ChurchChatBoxV2): an AI church secretary built as a public portfolio
+Ship MORDOMO (MORDOMO): an AI church secretary built as a public portfolio
 piece demonstrating ten AI capabilities. All four product plans are built and merged;
 the only work left is the first real deployment.
 
@@ -43,7 +43,7 @@ set `AI_GATEWAY_API_KEY`, `STAFF_PASSWORD`, `STAFF_SESSION_SECRET`, `CRON_SECRET
 
 ## Verify
 ```bash
-cd ~/Desktop/Tech/ChurchChatBoxV2 && npm test && npm run typecheck && npm run build
+cd ~/Desktop/Tech/MORDOMO && npm test && npm run typecheck && npm run build
 ```
 Expected: 318 tests pass across 36 files, `tsc --noEmit` silent, build succeeds with
 `/`, `/chat`, `/staff/*` and `/api/cron/weekly-report` in the route table.

@@ -8,7 +8,7 @@ History, not present state.
 **2026-08-18** — Project born. Design brainstormed and approved in conversation.
 
 **2026-08-19** — Spec written and committed
-(`docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`). Repo scaffolded:
+(`docs/superpowers/specs/2026-08-18-mordomo-design.md`). Repo scaffolded:
 folder, git, brain, CLAUDE.md, public GitHub repo. Implementation decomposed into 4 plans.
 
 **2026-08-20** — **Plan 1 code complete** on branch `feat/plan-1-foundation-chat-slice`

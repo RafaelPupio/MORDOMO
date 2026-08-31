@@ -54,7 +54,7 @@ export default function Home() {
           <nav className="flex items-center justify-between gap-4" aria-label="Primary navigation">
             <Link href="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-white">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-emerald-300 text-lg text-[#102421]">✦</span>
-              ChurchChatBox <span className="font-normal text-emerald-200">V2</span>
+              MORDOMO
             </Link>
             <a href="https://github.com/RafaelPupio/MORDOMO" target="_blank" rel="noreferrer" className="text-sm text-slate-300 underline decoration-slate-600 underline-offset-4 hover:text-white">
               View the code <Arrow />
@@ -65,7 +65,7 @@ export default function Home() {
             <div>
               <p className="font-mono text-xs font-semibold tracking-[0.18em] text-emerald-300 uppercase">AI systems portfolio project</p>
               <h1 className="mt-5 max-w-3xl text-5xl font-semibold tracking-[-0.055em] text-balance sm:text-6xl lg:text-7xl">A church secretary that shows its work.</h1>
-              <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">ChurchChatBox V2 is an AI-powered secretary for a fictional Brazilian church. It answers from its own documents, cites its sources, and gives staff the final word.</p>
+              <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">MORDOMO is an AI-powered secretary for a fictional Brazilian church. It answers from its own documents, cites its sources, and gives staff the final word.</p>
               <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">Igreja da Colina, every document, and every person in this demo are fictional. This is a portfolio build — not a live church service.</p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href="/chat" className="rounded-xl bg-emerald-300 px-5 py-3 text-sm font-semibold text-[#102421] shadow-[0_8px_24px_rgba(110,231,183,0.18)] transition hover:bg-emerald-200">Try the visitor chat <Arrow /></Link>
@@ -138,7 +138,7 @@ export default function Home() {
             </div>
             <div className="flex flex-wrap gap-3 lg:justify-end">
               <a href="https://github.com/RafaelPupio/MORDOMO" target="_blank" rel="noreferrer" className="rounded-xl bg-[#102421] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#203a34]">Repository <Arrow /></a>
-              <a href="https://github.com/RafaelPupio/MORDOMO/blob/main/docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md" target="_blank" rel="noreferrer" className="rounded-xl border border-[#86b9a4] px-5 py-3 text-sm font-semibold text-[#102421] transition hover:bg-white/50">Design spec <Arrow /></a>
+              <a href="https://github.com/RafaelPupio/MORDOMO/blob/main/docs/superpowers/specs/2026-08-18-mordomo-design.md" target="_blank" rel="noreferrer" className="rounded-xl border border-[#86b9a4] px-5 py-3 text-sm font-semibold text-[#102421] transition hover:bg-white/50">Design spec <Arrow /></a>
               <a href="https://github.com/RafaelPupio/MORDOMO/tree/main/docs/superpowers/plans" target="_blank" rel="noreferrer" className="rounded-xl border border-[#86b9a4] px-5 py-3 text-sm font-semibold text-[#102421] transition hover:bg-white/50">Implementation plans <Arrow /></a>
             </div>
           </div>

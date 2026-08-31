@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing. New: a `vercel.json` cron entry and a cron-authenticated route.
 
-This is **Plan 4 of 4**, the last. Plans 1–3 are merged. Spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`.
+This is **Plan 4 of 4**, the last. Plans 1–3 are merged. Spec: `docs/superpowers/specs/2026-08-18-mordomo-design.md`.
 
 ## Global Constraints
 
@@ -321,7 +321,7 @@ Design it deliberately — this is a portfolio piece, so it should look consider
 
 - [ ] **Step 2: Verify in a browser**
 
-Start the dev server explicitly from `/Users/rafaelpupiovieira/Desktop/Tech/ChurchChatBoxV2` (the tooling may default to the sibling `ChurchChatBox` repo — confirm the page is V2's). Load `/` at desktop and mobile widths, confirm no console errors, no horizontal overflow, and that the links resolve. Take a screenshot. Stop the server.
+Start the dev server explicitly from `/Users/rafaelpupiovieira/Desktop/Tech/MORDOMO` (the tooling may default to the sibling `ChurchChatBox` repo — confirm the page is V2's). Load `/` at desktop and mobile widths, confirm no console errors, no horizontal overflow, and that the links resolve. Take a screenshot. Stop the server.
 
 - [ ] **Step 3: Run tests, typecheck, lint, build. Commit**
 

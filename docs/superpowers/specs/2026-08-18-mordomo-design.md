@@ -1,4 +1,4 @@
-# ChurchChatBoxV2 — Design
+# MORDOMO — Design
 
 **Date:** 2026-08-18 (approved in conversation) · **Status:** approved, pre-implementation
 

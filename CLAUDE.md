@@ -1,4 +1,4 @@
-# ChurchChatBoxV2 — project rules
+# MORDOMO — project rules
 
 AI-powered successor to ChurchChatBox (V1): a portfolio-grade showcase of an AI church
 secretary, architected so it can become V1's next generation later.
@@ -24,7 +24,7 @@ This is a portfolio repo. "Show our work without showing too much":
 
 ## The spec is the contract
 
-`docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md` is the approved design.
+`docs/superpowers/specs/2026-08-18-mordomo-design.md` is the approved design.
 The brain is the fast path; the spec is the authority.
 
 ## Stack conventions

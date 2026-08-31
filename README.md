@@ -1,4 +1,4 @@
-# ChurchChatBoxV2
+# MORDOMO
 
 An AI church secretary for a fictional Brazilian church, **Igreja da Colina**. This is a
 portfolio project, not a real product: the church, its documents, staff, and members are
@@ -94,7 +94,7 @@ services or API keys: `npm test`.
 
 ## Design & plan
 
-- Design spec: `docs/superpowers/specs/2026-08-18-churchchatbox-v2-design.md`
+- Design spec: `docs/superpowers/specs/2026-08-18-mordomo-design.md`
 - Implementation plans: `docs/superpowers/plans/2026-08-19-plan-1-foundation-chat-slice.md`,
   `docs/superpowers/plans/2026-08-20-plan-2-ingest-pipeline.md`,
   `docs/superpowers/plans/2026-08-20-plan-3-staff-operations.md`,
