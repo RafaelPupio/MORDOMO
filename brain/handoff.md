@@ -1,4 +1,4 @@
-# Handoff — 2026-09-01T04:04:00Z — from codex
+# Handoff — 2026-09-01T15:44:55Z — from codex
 
 ## Task
 
@@ -7,42 +7,45 @@ while preserving one-page scope, metering, tenant isolation, and mandatory human
 
 ## Done
 
-- `3a8a793` — revised the approved design from Firecrawl to strict-session Browserbase.
-- `1ae9001` — recorded the Browserbase retention gate in the public technical brain.
-- `3c7ddc8` — replaced the obsolete Firecrawl plan with the approved 11-task Browserbase plan.
-- `00b68c6` — made usage-ledger writes and month boundaries share an explicit UTC clock after a
-  real UTC/local month-boundary test failure; 54 files and 429 tests pass and TypeScript passes.
-- Browserbase FREE provisioning was attempted for Vercel Development only. Vercel stopped at its
-  account-owner Marketplace-terms gate, and the exact approval page is open in Codex.
-- No Browserbase resource, credential, retention flag, provider dependency, or research
-  application code has been created. The unused Firecrawl resource remains until Browserbase is
-  proven safe.
+- `3c7ddc8` — approved 11-task Browserbase implementation plan.
+- `00b68c6` — deterministic UTC usage-ledger month boundaries; 54 files and 429 tests pass.
+- `269b29c` — corrected the Browserbase no-proxy contract to documented `proxies: false`.
+- Browserbase FREE is provisioned and connected to MORDOMO's Development environment. Managed
+  Browserbase variables and Vercel OIDC are present; no values were printed or committed.
+- Root-caused the first HTTP 402 probe failure to the undocumented `[{ type: 'none' }]` proxy
+  shape. Changing only that field to `false` created and released the session successfully.
+- The full fictional API probe returned the exact approved result: session created, navigated,
+  released, stored metadata contained no target hostname, logs count zero, recordings count zero.
+- Vercel OAuth authorization was completed, but Browserbase's SSO page remained on `Signing in…`.
+  Direct session access returned to Browserbase sign-in. The sign-in page is open for Rafael.
+- The app-owned retention flag is unset, research application code is absent, and the unused
+  Firecrawl resource remains connected until the visual dashboard gate passes.
 
 ## Next action
 
-Rafael accepts the Browserbase Marketplace terms in the open Vercel page and says `done`. Retry:
-`npx --yes vercel@latest integration add browserbase --plan FREE --environment development --no-claim --non-interactive`.
-If provisioning succeeds, run Task 1's strict probe and stop unless every retention field matches.
+Rafael completes Browserbase sign-in in the open tab and says `done`. Inspect the completed
+fictional session in the Browserbase dashboard. Proceed only if it exposes no target URL, page
+content, logs, or recording; then set the Development-only retention flag and continue Task 1.
 
 ## Files in play
 
 - `docs/superpowers/specs/2026-08-31-organization-public-research-design.md` — approved contract.
-- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — executable Browserbase plan.
-- `src/ai/usage.ts` and `tests/ai/usage.test.ts` — verified UTC month-boundary repair.
+- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — executable plan and probe.
 - `brain/status.md` and `brain/log/decisions/2026-Q3.md` — current public technical state.
 
 ## Ruled out
 
-- Firecrawl free hosted scraping cannot satisfy its Enterprise-only ZDR gate; no ordinary-retention
-  fallback is permitted.
-- Application work cannot start before a Browserbase session proves no retained target URL,
-  content, logs, or recording and the provider dashboard confirms that result.
-- No search/crawl, agent/Stagehand/model, persistent context, proxy, screenshot, authenticated page,
-  custom header, cookie, browser action, or unmetered AI path is allowed.
+- `proxies: [{ type: 'none' }]` is not Browserbase's no-proxy form and triggers a FREE-plan 402;
+  do not retry it. Use documented `proxies: false`.
+- Firecrawl free hosted scraping cannot satisfy the required zero-retention gate; no ordinary-
+  retention fallback is permitted.
+- API evidence does not waive the approved dashboard inspection. Do not set
+  `RESEARCH_RETENTION_VERIFIED` or write application code until dashboard sign-in and inspection.
 - `.agents/` and `skills-lock.json` are unrelated user files and remain untracked.
 
 ## Verify
 
-Run `npm test -- --reporter=dot --maxWorkers=1 && npm run typecheck && git status --short --branch`.
-Good means 54 files and 429 tests pass, TypeScript passes, and only `.agents/` plus
-`skills-lock.json` remain unrelated and untracked before the Browserbase retry.
+Run the Task 1 probe from `docs/superpowers/plans/2026-08-31-organization-public-research.md`.
+Good means exactly `created:true`, `navigated:true`, `closed:true`,
+`sessionContainsTarget:false`, `logsCount:0`, `recordingCount:0`, and `success:true`; this has
+passed once. Then independently verify the same completed session in the Browserbase dashboard.

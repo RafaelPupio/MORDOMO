@@ -25,10 +25,12 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 - Browserbase strict-session extraction is the approved replacement for Firecrawl in the
   Organization public-research design. It requires a fresh Development-only session with
   recording/logging disabled, no persistence or provider AI, one bounded public page, metered
-  grounded proposals, and explicit human review before profile Save/Publish. The approved
-  implementation plan is Browserbase-specific. Provisioning is paused at Vercel's account-owner
-  Marketplace-terms gate; no research application code is active yet. The unused Firecrawl free
-  resource remains connected only until Browserbase passes its retention probe.
+  grounded proposals, and explicit human review before profile Save/Publish. Browserbase is
+  provisioned for Development. The bounded API probe created, navigated, and released a session;
+  the stored session contained no target hostname and exposed zero logs and zero recordings.
+  Browserbase dashboard sign-in is still incomplete, so the app-owned retention flag remains
+  unset and no research application code is active. The unused Firecrawl free resource remains
+  connected until the visual dashboard gate passes.
 - Usage-ledger writes now carry an application-owned UTC timestamp, and month aggregation accepts
   an injectable UTC clock. This closes the database-session timezone gap exposed between UTC and
   Cuiabá month boundaries; all 54 test files and 429 tests pass afterward.
@@ -60,9 +62,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Rafael must accept the Browserbase Marketplace terms in the Vercel account. Then retry the
-   Development-only FREE installation and run the strict no-log/no-recording retention probe;
-   application code remains gated on that result.
+1. Rafael completes Browserbase dashboard sign-in, then the completed fictional session is
+   inspected for no target URL, content, logs, or recording. Only after that visual check, add
+   the Development-only retention flag and begin application implementation.
 2. Choose and provision managed key management, then complete its threat model and recovery
    review before persisting any sensitive Personal Secretary data.
 3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,
