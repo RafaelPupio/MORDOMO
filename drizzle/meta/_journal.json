@@ -50,6 +50,13 @@
       "when": 1787939175476,
       "tag": "0006_bilingual_personal_studio",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788290661313,
+      "tag": "0007_public_research",
+      "breakpoints": true
     }
   ]
 }

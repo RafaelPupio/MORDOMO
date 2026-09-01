@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PgDialect, getTableConfig } from 'drizzle-orm/pg-core';
-import { chunks, organizations, secretaryProfileVersions } from '@/db/schema';
+import { chunks, organizations, researchBriefs, secretaryProfileVersions } from '@/db/schema';
 import { createTestDb, seedOrganization } from '../helpers/db';
 
 describe('schema + migrations', () => {
@@ -34,6 +34,19 @@ describe('schema + migrations', () => {
     expect(index?.config.where).toBeDefined();
     expect(new PgDialect().sqlToQuery(index!.config.where!)).toMatchObject({
       sql: '"secretary_profile_versions"."status" = \'published\'',
+      params: [],
+    });
+  });
+
+  it('declares the partial unique active-research index in Drizzle metadata', () => {
+    const index = getTableConfig(researchBriefs).indexes.find(
+      (candidate) => candidate.config.name === 'research_briefs_one_active_organization',
+    );
+
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.where).toBeDefined();
+    expect(new PgDialect().sqlToQuery(index!.config.where!)).toMatchObject({
+      sql: '"research_briefs"."status" in (\'retrieving\', \'source_ready\', \'proposing\')',
       params: [],
     });
   });
