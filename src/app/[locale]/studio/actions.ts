@@ -12,6 +12,7 @@ import {
   type SecretaryProfile,
 } from '@/core/secretary-profile';
 import { getDb } from '@/db/client';
+import { listAcceptedResearchFacts } from '@/db/repo/public-research';
 import {
   publishOrganizationSecretaryProfile,
   saveOrganizationSecretaryProfileDraft,
@@ -26,6 +27,7 @@ export type StudioActionState = {
 export type StudioFieldErrorCode = 'reviewField' | 'personalPreviewOnly';
 
 const versionIdSchema = z.uuid();
+const approvedPublicFactIdsSchema = z.array(z.uuid()).max(12);
 const PROFILE_FIELDS = new Set<keyof SecretaryProfile>([
   'segment',
   'defaultLocale',
@@ -100,11 +102,32 @@ export async function saveStudioDraft(
     };
   }
 
+  const factIds = approvedPublicFactIdsSchema.safeParse(
+    formData.getAll('approvedPublicFactIds'),
+  );
+  if (!factIds.success) return { error: 'invalid' };
+  const uniqueFactIds = [...new Set(factIds.data)];
+
   try {
-    await saveOrganizationSecretaryProfileDraft(
-      getDb(),
+    const db = getDb();
+    const resolvedFacts = await listAcceptedResearchFacts(
+      db,
       organizationId,
-      parsed.data,
+      uniqueFactIds,
+    );
+    const factsById = new Map(
+      resolvedFacts.map((fact) => [fact.researchFactId, fact]),
+    );
+    const approvedPublicFacts = [];
+    for (const id of uniqueFactIds) {
+      const fact = factsById.get(id);
+      if (!fact) return { error: 'invalid' };
+      approvedPublicFacts.push(fact);
+    }
+    await saveOrganizationSecretaryProfileDraft(
+      db,
+      organizationId,
+      { ...parsed.data, approvedPublicFacts },
     );
     return { ok: 'draftSaved' };
   } catch {

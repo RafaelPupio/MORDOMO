@@ -236,6 +236,7 @@ describe('beta locale routing', () => {
         greeting: 'Keep this user-authored greeting unchanged.',
         escalationCopy: 'Keep this user-authored escalation unchanged.',
         enabledCapabilities: ['knowledge', 'escalation'],
+        approvedPublicFacts: [],
       },
       kind: 'organization',
       locale: 'pt',
@@ -326,6 +327,7 @@ describe('beta locale routing', () => {
         greeting: 'Welcome to the fictional demo.',
         escalationCopy: 'A fictional team member will review this request.',
         enabledCapabilities: ['knowledge', 'escalation'],
+        approvedPublicFacts: [],
       },
     });
 

@@ -12,6 +12,7 @@ const profile: SecretaryProfile = {
   greeting: 'Welcome to the fictional demo.',
   escalationCopy: 'A fictional team member will review this request.',
   enabledCapabilities: ['knowledge', 'calendar', 'confidential_request', 'escalation'],
+  approvedPublicFacts: [],
 };
 
 describe('buildStudioPreview', () => {

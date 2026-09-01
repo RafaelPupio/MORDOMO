@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   ensureActiveClerkOrganization,
   getDb,
+  listAcceptedResearchFacts,
   publishOrganizationSecretaryProfile,
   redirect,
   requireSecretaryContext,
@@ -12,6 +13,7 @@ const {
 } = vi.hoisted(() => ({
   ensureActiveClerkOrganization: vi.fn(),
   getDb: vi.fn(() => ({}) as Db),
+  listAcceptedResearchFacts: vi.fn(),
   publishOrganizationSecretaryProfile: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw Object.assign(new Error('NEXT_REDIRECT'), {
@@ -37,6 +39,8 @@ vi.mock('@/db/repo/secretary-profile-versions', () => ({
   publishOrganizationSecretaryProfile,
   saveOrganizationSecretaryProfileDraft,
 }));
+
+vi.mock('@/db/repo/public-research', () => ({ listAcceptedResearchFacts }));
 
 function formWith(overrides: Record<string, string | string[]> = {}) {
   const fields: Record<string, string | string[]> = {
@@ -74,6 +78,7 @@ beforeEach(() => {
   ensureActiveClerkOrganization.mockResolvedValue({ id: 'trusted-organization-id' });
   saveOrganizationSecretaryProfileDraft.mockResolvedValue({ id: 'draft-id' });
   publishOrganizationSecretaryProfile.mockResolvedValue({ id: 'published-id' });
+  listAcceptedResearchFacts.mockResolvedValue([]);
 });
 
 describe('Studio Server Actions', () => {
@@ -115,6 +120,106 @@ describe('Studio Server Actions', () => {
       'trusted-organization-id',
       expect.objectContaining({ assistantName: 'Avery', segment: 'church' }),
     );
+  });
+
+  it('materializes accepted fact IDs server-side and ignores forged citation JSON', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    const acceptedFact = {
+      researchFactId: '11111111-1111-4111-8111-111111111111',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      text: 'The fictional clinic opens Monday.',
+      sourceTitle: 'Fictional Clinic',
+      sourceUrl: 'https://example.com/about',
+    };
+    listAcceptedResearchFacts.mockResolvedValueOnce([acceptedFact]);
+
+    const state = await saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: [acceptedFact.researchFactId],
+      approvedPublicFacts: JSON.stringify([{
+        text: 'forged text',
+        sourceUrl: 'https://evil.invalid',
+      }]),
+    }));
+
+    expect(state).toEqual({ ok: 'draftSaved' });
+    expect(listAcceptedResearchFacts).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      [acceptedFact.researchFactId],
+    );
+    expect(saveOrganizationSecretaryProfileDraft).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      expect.objectContaining({ approvedPublicFacts: [acceptedFact] }),
+    );
+    expect(JSON.stringify(saveOrganizationSecretaryProfileDraft.mock.calls)).not.toContain('forged text');
+    expect(JSON.stringify(saveOrganizationSecretaryProfileDraft.mock.calls)).not.toContain('evil.invalid');
+  });
+
+  it('rejects missing, cross-Organization, proposed, or rejected fact IDs as one invalid save', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    const requestedIds = [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ];
+    listAcceptedResearchFacts.mockResolvedValueOnce([{
+      researchFactId: requestedIds[0],
+      sourceId: '33333333-3333-4333-8333-333333333333',
+      text: 'Only one trusted fact resolved.',
+      sourceTitle: 'Fictional Clinic',
+      sourceUrl: 'https://example.com/about',
+    }]);
+
+    await expect(saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: requestedIds,
+    }))).resolves.toEqual({ error: 'invalid' });
+    expect(saveOrganizationSecretaryProfileDraft).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates accepted IDs in submitted order and limits the raw selection to twelve', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const secondId = '22222222-2222-4222-8222-222222222222';
+    const snapshots = [
+      {
+        researchFactId: firstId,
+        sourceId: '33333333-3333-4333-8333-333333333333',
+        text: 'First submitted fact.',
+        sourceTitle: 'Source One',
+        sourceUrl: 'https://example.com/one',
+      },
+      {
+        researchFactId: secondId,
+        sourceId: '44444444-4444-4444-8444-444444444444',
+        text: 'Second submitted fact.',
+        sourceTitle: 'Source Two',
+        sourceUrl: 'https://example.com/two',
+      },
+    ];
+    listAcceptedResearchFacts.mockResolvedValueOnce(snapshots);
+
+    await expect(saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: [firstId, secondId, firstId],
+    }))).resolves.toEqual({ ok: 'draftSaved' });
+    expect(listAcceptedResearchFacts).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      [firstId, secondId],
+    );
+    expect(saveOrganizationSecretaryProfileDraft).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      expect.objectContaining({ approvedPublicFacts: snapshots }),
+    );
+
+    vi.clearAllMocks();
+    await expect(saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: Array.from({ length: 13 }, (_, index) => (
+        `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
+      )),
+    }))).resolves.toEqual({ error: 'invalid' });
+    expect(listAcceptedResearchFacts).not.toHaveBeenCalled();
+    expect(saveOrganizationSecretaryProfileDraft).not.toHaveBeenCalled();
   });
 
   it('returns field validation without exposing submitted content or trusted IDs', async () => {

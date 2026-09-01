@@ -17,6 +17,7 @@ const profile: SecretaryProfile = {
   greeting: 'Olá! Como posso ajudar?',
   escalationCopy: 'Vou encaminhar sua mensagem.',
   enabledCapabilities: ['knowledge', 'escalation'],
+  approvedPublicFacts: [],
 };
 
 describe('secretary profile versions repository', () => {
@@ -143,5 +144,33 @@ describe('secretary profile versions repository', () => {
       status: 'published',
       profile: { ...profile, assistantName: 'Lia' },
     })).rejects.toThrow();
+  });
+
+  it('keeps a published public-fact snapshot immutable when later drafts change', async () => {
+    const db = await createTestDb();
+    const organization = await seedOrganization(db);
+    const firstFact = {
+      researchFactId: '11111111-1111-4111-8111-111111111111',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      text: 'Open Monday.',
+      sourceTitle: 'Fictional Clinic',
+      sourceUrl: 'https://example.com/about',
+    };
+    const first = await saveOrganizationSecretaryProfileDraft(db, organization.id, {
+      ...profile,
+      approvedPublicFacts: [firstFact],
+    });
+    await publishOrganizationSecretaryProfile(db, organization.id, first.id);
+
+    await saveOrganizationSecretaryProfileDraft(db, organization.id, {
+      ...profile,
+      approvedPublicFacts: [{ ...firstFact, text: 'Open Tuesday.' }],
+    });
+    const [published] = await db
+      .select()
+      .from(secretaryProfileVersions)
+      .where(eq(secretaryProfileVersions.id, first.id));
+
+    expect(published.profile).toMatchObject({ approvedPublicFacts: [firstFact] });
   });
 });
