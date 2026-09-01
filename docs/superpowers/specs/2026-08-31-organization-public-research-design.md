@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-31
 
-**Status:** Approved in conversation; written specification pending review
+**Status:** Browserbase revision approved in conversation; written specification pending review
 
 **Scope:** Delivery Gate 3 from the Corporate + Personal Beta design: one-client-approved-site research for Organization contexts only.
 
@@ -25,70 +25,79 @@ authoritative for the broader beta.
 
 Implementation may begin only after these prerequisites are real rather than mocked:
 
-1. Firecrawl is provisioned through the Vercel Marketplace for this project. The generated
-   environment-variable names and installed product contract are inspected before code refers
-   to them.
-2. Firecrawl enables zero data retention for the installed team. A bounded fictional scrape
-   with `zeroDataRetention: true` succeeds before the app-owned research enable switch is set.
-3. The app always sends `storeInCache: false`. Firecrawl documents both flags on its
-   [Scrape API](https://docs.firecrawl.dev/api-reference/endpoint/scrape); the ZDR capability
-   requires provider enablement rather than merely sending a boolean.
+1. Browserbase is provisioned through the Vercel Marketplace for Development only. The
+   generated `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` names and installed product
+   contract are inspected before code refers to them.
+2. A bounded fictional Browserbase session accepts `recordSession: false` and
+   `logSession: false`, uses no persistent context, and closes successfully. Post-closure
+   inspection exposes neither the target URL, page content, recording, nor logs. Browserbase
+   may retain content-free session metadata such as an opaque session ID and timestamps.
+3. Browserbase's [security documentation](https://docs.browserbase.com/account/enterprise/security)
+   states that disabling logging and recording ensures no session data is recorded. If the
+   installed plan does not honor that contract, implementation stops; plan-level default
+   retention shown on the [pricing page](https://www.browserbase.com/pricing) is not accepted
+   as a fallback for URL or page content.
 4. AI Gateway data-handling controls are reviewed for the public excerpt, segment, city, and
    generated proposals. No private notes, chat history, member data, or credentials enter the
    research path.
 5. The exact bilingual consent copy in this specification is approved during written-spec
    review.
 
-The app-owned `RESEARCH_ZDR_VERIFIED` server setting must equal the literal string `true` for
-live research to render or execute. This setting is separate from the Firecrawl credential
-whose exact generated name is discovered during provisioning.
+The app-owned `RESEARCH_RETENTION_VERIFIED` server setting must equal the literal string `true`
+for live research to render or execute. It is set only after the live Browserbase probe passes
+and is separate from provider credentials.
 
-Firecrawl's public privacy policy does not promise automatic recurring deletion of personal
-information and describes United States storage. This workflow therefore limits inputs to an
-approved public site and remains disabled unless the ZDR prerequisite is verified. See the
-[Firecrawl Privacy Policy](https://www.firecrawl.dev/privacy-policy).
+The previously provisioned Firecrawl free resource cannot satisfy the approved retention gate:
+Firecrawl currently documents hosted scrape ZDR as Enterprise-only. It remains unused until
+Browserbase passes, then is removed with its Development credential. No Firecrawl SDK is added.
 
 ## Approaches considered
 
-### 1. Staged server workflow — selected
+### 1. Browserbase strict-session extraction — selected
 
-One user action starts a server-orchestrated flow. MORDOMO stores the bounded source after the
-scrape, then separately generates fact proposals from that stored source. If AI generation
-fails, a retry reuses the source and does not pay for another scrape.
+Browserbase is the top Vercel Marketplace web-automation result. One fresh isolated browser
+renders one approved page with session recording and logging disabled. MORDOMO performs
+deterministic text extraction through Playwright; Browserbase Stagehand, agents, models,
+contexts, proxies, and persistence are not used. The free live probe and $20 Developer plan
+fit the beta cost target, subject to the hard retention probe.
 
-This keeps the beta understandable and recoverable without adding a workflow platform.
+### 2. Non-persistent Vercel Sandbox
 
-### 2. Source capture with manually authored facts
+A `persistent: false` Firecracker microVM could run a browser without another provider. It was
+not selected because Vercel documents three-day runtime-log retention and the retrieval
+telemetry boundary is less explicit than Browserbase's per-session recording/log controls.
 
-This avoids a model call, but it does not deliver the approved proposed-facts experience and
-places too much transcription work on the beta client.
+### 3. Direct Vercel Function fetch
 
-### 3. Durable workflow infrastructure
+Direct fetch is cheaper but turns an arbitrary user URL into an SSRF and DNS-rebinding surface
+inside the application runtime and cannot reliably render JavaScript-heavy sites. The required
+network hardening would exceed this beta's one-page scope.
 
-A durable workflow is appropriate for broad crawling or long-running research. It is excess
-infrastructure for one page, one extraction call, and one human review step, so it is deferred.
-
-Firecrawl Agent, Extract, open-web Search, and Crawl are not used. Provider-side AI would
-bypass the project's sole AI Gateway path and could not satisfy the existing token/cost ledger
-contract.
+Firecrawl Enterprise is also ruled out for this gate because its custom plan conflicts with
+the project's $10–50/month target. Provider-side Browserbase AI is not used; all proposals stay
+on the project's metered AI Gateway path.
 
 ## Architecture
 
 The feature is split into small units with one responsibility each:
 
 - `public-research-input` validates and normalizes consent, URL, city, locale, and segment.
-- `public-research-provider` exposes a one-page scrape contract. The Firecrawl adapter is its
-  only live implementation; tests use a deterministic fake.
+- `public-research-provider` exposes a one-page retrieval contract. The server-only Browserbase
+  adapter is its only live implementation; tests use a deterministic fake.
+- `browserbase-public-research-provider` owns the Browserbase SDK, Playwright CDP connection,
+  strict session settings, request interception, bounded visible-text extraction, and cleanup.
 - `public-research-orchestrator` owns authorization, state transitions, rate/budget gates,
   source persistence, proposal generation, and sanitized failure mapping.
 - `public-fact-proposer` calls AI Gateway through the existing AI SDK model path, validates a
   strict result, verifies supporting quotes, and meters usage.
 - Research repositories provide tenant-scoped brief, source, fact, and audit operations.
 - `OrganizationResearchPanel` owns the bilingual client workflow without adding research
-  state to the existing `SecretaryStudio` component.
+  workflow state to the existing `SecretaryStudio` component. `SecretaryStudio` owns only the
+  accepted fact IDs applied to its current draft.
 
 The provider and proposer depend on narrow TypeScript interfaces. Domain orchestration does
-not import a Firecrawl SDK directly, and the UI does not know provider response shapes.
+not import Browserbase or Playwright directly, and the UI does not know provider response
+shapes.
 
 ## Trusted data flow
 
@@ -100,11 +109,13 @@ not import a Firecrawl SDK directly, and the UI does not know provider response 
    checked before external work.
 4. A pending brief is inserted. A partial unique index permits at most one active research
    brief per Organization.
-5. Firecrawl receives only the normalized approved URL and fixed scrape options. It does not
-   receive the Organization ID, Clerk identity, segment, city, cookies, headers, private
-   content, model prompt, or prior research.
-6. The returned final URL is checked against the approved host. Clean markdown is normalized,
-   bounded, and stored as the Organization's public source excerpt.
+5. Browserbase receives only the normalized approved URL, provider credentials, and fixed
+   non-recording/non-logging session settings. It does not receive the
+   Organization ID, Clerk identity, segment, city, private content, model prompt, or prior
+   research.
+6. Playwright opens one page without actions, checks the final URL against the approved host,
+   extracts visible text and title, and closes the browser in `finally`. The normalized bounded
+   text is stored as the Organization's public source excerpt.
 7. AI Gateway receives the bounded untrusted excerpt plus the selected public segment, optional
    city, and response language. The model has no tools and cannot request more pages.
 8. Exact model usage is sent to `usage_ledger` under `research.fact_proposal`. A result is not
@@ -128,17 +139,26 @@ The beta accepts exactly one URL per brief. Server validation requires:
 - a bounded path and total URL length;
 - a returned final hostname equal to the submitted hostname or its direct `www` variant.
 
-The Firecrawl call uses one-page Scrape with markdown, main-content extraction,
-`zeroDataRetention: true`, and `storeInCache: false`. It never supplies actions, browser
-profiles, screenshots, custom headers, authentication, file uploads, or TLS bypasses.
+The Browserbase adapter creates one fresh session with `recordSession: false`,
+`logSession: false`, no context, no persistence, no `keepAlive`, no user metadata, no proxy,
+and no Stagehand or provider model. It navigates with GET only, blocks popups and downloads,
+and never clicks, types, uploads, authenticates, takes screenshots, or creates another page.
 
-These controls reduce the request surface; they do not claim that MORDOMO itself performed the
-remote fetch. Firecrawl remains responsible for its own network-level SSRF protections. The
-app sends no secrets or private context that a malicious page could exfiltrate.
+The request interceptor permits only HTTPS requests without credentials to public hostname
+forms. Top-level navigation and redirects must stay on the submitted hostname or its direct
+`www` variant. Subresources are restricted to those hosts; images, media, and fonts are
+aborted, while same-host scripts, styles, fetches, and XHR may render public text. Obvious
+localhost, IP-literal, reserved-host, non-HTTPS, and non-GET requests are aborted.
+
+Navigation waits for `domcontentloaded`, permits at most a two-second bounded same-host render
+settle, and has a twenty-second overall provider timeout. Extraction reads the title and
+visible body text only. Browserbase's isolated VM and network controls remain responsible for
+network-level SSRF defenses beyond the application's request interception. The app sends no
+secret or private context that a malicious page could exfiltrate.
 
 Stored content is public but still untrusted. The app strips control characters, bounds the
-excerpt by characters before model input and persistence, and never interprets scraped HTML or
-JavaScript in the browser. Research UI renders text, not provider HTML.
+excerpt by characters before model input and persistence, and never returns provider DOM,
+HTML, or JavaScript to the client. Research UI renders normalized text only.
 
 ## Fixed limits
 
@@ -149,7 +169,7 @@ JavaScript in the browser. Research UI renders text, not provider HTML.
 - Proposals per brief: 12
 - Proposed or accepted fact: 280 characters
 - Supporting quote: 500 characters
-- New scrapes: 3 per Organization per rolling 24 hours
+- New browser retrievals: 3 per Organization per rolling 24 hours
 - Proposal attempts: 3 per brief, including the initial attempt
 
 No implementation may silently increase these limits. A future change requires a cost and
@@ -210,13 +230,12 @@ Indexes support Organization recency. A partial unique index allows only one bri
 - `url` required normalized text
 - `title` required bounded text
 - `excerpt` required bounded text
-- `provider_request_id` nullable text when the installed contract supplies one
-- `provider_credits` nullable integer when the installed contract supplies it
 - `retrieved_at` required timestamp
 
 One brief has exactly one source in this increment. The excerpt is retained in MORDOMO because
-it is the auditable support for client-reviewed facts; Firecrawl ZDR governs provider retention,
-not MORDOMO's tenant-scoped record.
+it is the auditable support for client-reviewed facts. No Browserbase session ID, logs,
+recording reference, or provider metadata is persisted; strict-session retention governs the
+provider boundary, not MORDOMO's tenant-scoped record.
 
 ### `research_facts`
 
@@ -264,14 +283,16 @@ changes cannot mutate an already saved or published profile version.
 
 ## Consent
 
-Consent version `public-research-v1` is required for every new brief, not once per account.
+Consent version `public-research-v2` is required for every new brief, not once per account.
+Version 1 named Firecrawl and was never activated; it is invalid for Browserbase requests.
 The exact checkbox copy is:
 
 **English**
 
 > I confirm this is a public website that my Organization may research. I approve sending its
-> URL to Firecrawl and sending a bounded public excerpt, our segment, optional city, and
-> language through MORDOMO's AI Gateway to propose facts. MORDOMO will store the source,
+> URL to a non-recorded, non-logged Browserbase session and sending a bounded public excerpt,
+> our segment, optional city, and language through MORDOMO's AI Gateway to propose facts.
+> MORDOMO will store the source,
 > proposals, and my review decisions. Nothing will enter the secretary profile until I review,
 > apply, save, and publish it. I will not submit confidential, personal, authenticated, or
 > credential-bearing pages.
@@ -279,16 +300,17 @@ The exact checkbox copy is:
 **Português**
 
 > Confirmo que este é um site público que minha Organização pode pesquisar. Autorizo o envio
-> da URL ao Firecrawl e o envio de um trecho público limitado, do nosso segmento, da cidade
-> opcional e do idioma pelo AI Gateway do MORDOMO para propor fatos. O MORDOMO armazenará a
-> fonte, as propostas e minhas decisões de revisão. Nada entrará no perfil da secretária até
+> da URL para uma sessão do Browserbase sem gravação nem registro e o envio de um trecho
+> público limitado, do nosso segmento, da cidade opcional e do idioma pelo AI Gateway do
+> MORDOMO para propor fatos. O MORDOMO armazenará a fonte, as propostas e minhas decisões de
+> revisão. Nada entrará no perfil da secretária até
 > que eu revise, aplique, salve e publique. Não enviarei páginas confidenciais, pessoais,
 > autenticadas ou que contenham credenciais.
 
 This copy states that:
 
 - the client confirms the website is public and approves its use for this Organization;
-- MORDOMO sends the URL to Firecrawl;
+- MORDOMO sends the URL to a non-recorded, non-logged Browserbase session;
 - MORDOMO sends a bounded public excerpt, segment, optional city, and language through AI
   Gateway to produce proposals;
 - MORDOMO stores the source excerpt, proposals, decisions, and accepted facts;
@@ -306,9 +328,9 @@ receive research props.
 
 ### Unavailable
 
-If provisioning, credentials, ZDR verification, or the app-owned enable switch is missing, the
-panel explains that public research is not available. Inputs and actions are absent, not merely
-visually disabled.
+If provisioning, credentials, retention verification, or the app-owned enable switch is
+missing, the panel explains that public research is not available. Inputs and actions are
+absent, not merely visually disabled.
 
 ### Ready
 
@@ -355,7 +377,7 @@ retrieving → source_ready → proposing → review_ready → applied
 
 AI retry is allowed only from `source_ready` or from a sanitized proposal failure that retains
 a valid source and has fewer than three proposal attempts. It reuses the stored excerpt and
-increments `proposal_attempts` before each model call. A new scrape creates a new brief and
+increments `proposal_attempts` before each model call. A new retrieval creates a new brief and
 requires new consent.
 
 Repository updates include current state in their predicates, so stale actions cannot skip
@@ -374,7 +396,7 @@ Public error codes are finite and bilingual:
 - `rateLimited`
 - `budgetExhausted`
 - `providerUnavailable`
-- `zdrRequired`
+- `retentionUnverified`
 - `noUsefulContent`
 - `proposalFailed`
 - `ungroundedProposal`
@@ -388,13 +410,13 @@ errors.
 
 Specific behavior:
 
-- Missing ZDR verification fails before any provider call.
+- Missing retention verification fails before any provider call.
 - Invalid URL and consent fail before rate or budget consumption.
 - Authorization fails before existence checks.
 - Rate and budget denial fail before external work.
-- Provider timeout, quota, ZDR conflict, unsafe redirect, or empty content produces a sanitized
-  failed brief.
-- A saved source survives a later proposal failure, enabling no-rescrape retry.
+- Provider timeout, quota, retention-control conflict, unsafe redirect, or empty content
+  produces a sanitized failed brief. The browser close path still runs.
+- A saved source survives a later proposal failure, enabling no-reretrieval retry.
 - Unsupported quotes reject the complete proposal set.
 - A model result is not made reviewable if usage-ledger persistence fails.
 - Database failure never falls back to browser-only research state.
@@ -403,16 +425,15 @@ Specific behavior:
 
 - One page per research run and one model call per proposal attempt.
 - One active run per Organization.
-- At most three new scrapes per Organization per rolling 24 hours.
+- At most three new browser retrievals per Organization per rolling 24 hours.
 - At most three deliberate proposal attempts per brief; no automatic retry loop.
-- Existing tenant monthly budget and global monthly cap checked before Firecrawl because the
+- Existing tenant monthly budget and global monthly cap checked before Browserbase because the
   workflow cannot finish without the model call.
 - Existing fast model through AI Gateway.
 - Exact input/output tokens and cost recorded as `research.fact_proposal`.
-- Provider request/credit metadata recorded only when the installed Firecrawl contract returns
-  it; no field is invented from documentation examples.
-- The installed Firecrawl plan must also have a provider-side spending limit appropriate to the
-  project's $10–50/month target before the app-owned ZDR switch is enabled.
+- Browserbase sessions have no automatic retry and the three-per-day Organization rate limit
+  bounds browser-hour consumption. The live probe must confirm the installed plan and dashboard
+  expose a provider-side spending boundary appropriate to the $10–50/month target.
 
 ## Verification
 
@@ -427,9 +448,14 @@ Specific behavior:
 
 ### Provider and AI contract tests
 
-- Assert the Firecrawl adapter issues one scrape with ZDR on, cache storage off, and no headers,
-  actions, profiles, screenshots, authentication, or extra context.
-- Assert Firecrawl receives only the URL.
+- Assert the Browserbase adapter creates one session with `recordSession: false`,
+  `logSession: false`, and no context, persistence, `keepAlive`, metadata, proxy, Stagehand,
+  screenshots, authentication, or extra context.
+- Assert Browserbase receives only provider credentials, its project ID, the URL, and fixed
+  strict-session controls; Organization, Clerk, segment, city, locale, prompts, and prior
+  research never cross the provider boundary.
+- Assert navigation/request policy, final-host validation, bounded title/text extraction,
+  twenty-second timeout, and `finally` cleanup on every success and failure path.
 - Assert AI receives only the bounded excerpt, segment, optional city, locale, and controlled
   instructions.
 - Mock structured generation; assert no tools, strict schema, fast model, usage recording on
@@ -443,7 +469,7 @@ Specific behavior:
 - Every query/mutation rejects a correct row ID paired with the wrong Organization ID.
 - Personal, member, unauthenticated, forged-context, and stale-state calls fail without
   external work.
-- Source persistence precedes proposal generation; proposal retry does not call Firecrawl.
+- Source persistence precedes proposal generation; proposal retry does not call Browserbase.
 - Fact review preserves the proposal and quote while recording accepted edits separately.
 - Save materializes only currently accepted fact IDs from the trusted Organization.
 - Research changes do not mutate existing profile versions or published behavior.
@@ -461,12 +487,17 @@ Specific behavior:
 
 ### Integration and manual verification
 
-- Automated tests use fake Firecrawl and mock AI; they never consume external credits.
+- Automated tests use fake Browserbase/Playwright and mock AI; they never consume external
+  credits.
 - Apply the migration and run tenant-isolation checks on a disposable Neon branch, then delete
   it.
-- After ZDR is enabled, run exactly one bounded fictional live scrape and confirm the expected
-  Firecrawl options, one metered model call, one Organization-scoped brief/source set, and no
-  Personal or cross-tenant rows.
+- Before application code, run exactly one bounded `https://example.com` strict-session probe.
+  After closure, confirm the session API/dashboard exposes no target URL, content, recording,
+  or logs and that the opaque content-free session metadata can be deleted or expires under the
+  installed contract.
+- After implementation, run exactly one bounded fictional end-to-end retrieval and confirm the
+  strict Browserbase options, one metered model call, one Organization-scoped brief/source set,
+  and no Personal or cross-tenant rows.
 - Verify EN/PT browser flow through accept/edit/reject, apply, Save draft, trusted refresh, and
   Publish.
 - Run the full suite, typecheck, lint, supported webpack production build, diff checks, and a
@@ -474,25 +505,28 @@ Specific behavior:
 
 ## Rollout
 
-1. Provision Firecrawl with the current Vercel CLI Marketplace flow and complete any required
-   provider dashboard claim.
+1. Provision Browserbase for Development only with the current Vercel CLI Marketplace flow and
+   complete any required provider dashboard claim.
 2. Inspect environment-variable names without printing values, then pull Development env.
-3. Request/confirm ZDR for the installed Firecrawl team and perform the bounded fictional ZDR
-   smoke.
+3. Run the bounded strict-session probe, inspect the post-closure provider view, and set
+   `RESEARCH_RETENTION_VERIFIED=true` in Development only when no URL/content/log/recording is
+   retained.
 4. Keep the app-owned research switch off while schema, repositories, adapters, actions, and UI
    are implemented and tested with fakes.
 5. Validate the migration on a disposable Neon branch. Do not apply it to Development until
    review passes.
 6. Enable the research switch in Development, run one end-to-end fictional smoke, and inspect
    `usage_ledger` plus tenant isolation.
-7. Update the public technical brain, commit, push, and hand off for integration review.
+7. Remove the unused Firecrawl Development integration and its credential only after
+   Browserbase passes; then update the public technical brain, commit, push, and hand off for
+   integration review.
 
 ## Explicit non-goals
 
 - Personal Secretary research or private-data persistence
 - Open-web search, autonomous agents, multi-page crawl, sitemap crawl, or scheduled refresh
 - Authenticated pages, cookies, custom headers, browser actions, screenshots, or file uploads
-- Provider-side Firecrawl Agent or Extract model calls
+- Browserbase Stagehand, agents, provider models, persistent contexts, recordings, or logs
 - Automatic acceptance, draft save, profile publication, or silent model retraining
 - Live secretary test chat, calendar connection, messaging, export, deletion, or key management
 - Production or Preview deployment
@@ -500,10 +534,12 @@ Specific behavior:
 ## Decisions fixed by this design
 
 1. Research is Organization-only and owner/admin-only.
-2. Firecrawl ZDR is a hard runtime and rollout gate, not a best-effort option.
+2. Browserbase non-recording/non-logging retention verification is a hard runtime and rollout
+   gate, not a best-effort option.
 3. One approved public page is the entire provider scope.
 4. AI proposals use the existing metered AI Gateway path and require source quotes.
 5. Human review is mandatory for every proposal.
 6. Accepted facts enter only a new explicitly saved profile version and never mutate published
    state automatically.
-7. The feature remains disabled until real provisioning and ZDR verification are complete.
+7. The feature remains disabled until real provisioning and strict-session retention
+   verification are complete.
