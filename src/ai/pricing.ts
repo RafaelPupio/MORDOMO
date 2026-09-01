@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai';
 
 export const CHAT_MODEL = 'anthropic/claude-sonnet-5';
-export const FAST_MODEL = 'anthropic/claude-haiku-4-5';
+export const FAST_MODEL = 'anthropic/claude-haiku-4.5';
 export const EMBEDDING_MODEL = 'openai/text-embedding-3-small';
 export const TEST_EMBEDDING_MODEL = 'test/hash-embedder';
 export const EMBEDDING_DIMENSIONS = 1536;

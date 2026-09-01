@@ -21,7 +21,7 @@
 - Browserbase uses `recordSession:false`, `logSession:false`, `keepAlive:false`, no context, no persistence, no metadata, no proxy, no Stagehand/provider AI, `ignoreCertificateErrors:false`, `solveCaptchas:false`, and SDK `maxRetries:0`.
 - Submitted URL maximum 2,048 characters; path 1,024; city 120; source title 200; excerpt 40,000; proposed/accepted fact 280; supporting quote 500; facts per brief 12.
 - New browser retrievals are limited to three per Organization per fixed 24-hour window. Proposal attempts are limited to three per brief, including the initial attempt.
-- AI proposals use `FAST_MODEL` (`anthropic/claude-haiku-4-5`) through AI Gateway. Every attempt records exact available input/output usage as `research.fact_proposal`; no output becomes reviewable after a metering write failure.
+- AI proposals use `FAST_MODEL` (`anthropic/claude-haiku-4.5`) through AI Gateway. Every attempt records exact available input/output usage as `research.fact_proposal`; no output becomes reviewable after a metering write failure.
 - AI generation uses current AI SDK 7 `generateText` plus `Output.object`, not deprecated `generateObject` in new code.
 - Every client input is Zod-validated. Every Server Action is a reachable untrusted POST and re-authorizes the caller. Client components receive minimal DTOs, never database/provider rows.
 - Retrieved content is untrusted text. Never return provider DOM/HTML/JavaScript to the client, log raw provider errors/content, or give the proposal model tools.
