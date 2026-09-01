@@ -13,15 +13,20 @@ export type UsageInput = {
 
 export type BudgetStatus = { allowed: boolean; reason?: 'tenant' | 'global' };
 
-export async function recordUsage(db: Db, input: UsageInput): Promise<void> {
+export async function recordUsage(db: Db, input: UsageInput, recordedAt: Date = new Date()): Promise<void> {
   await db.insert(usageLedger).values({
     ...input,
     costUsd: costUsd(input.model, input.inputTokens, input.outputTokens),
+    createdAt: recordedAt,
   });
 }
 
-export async function monthSpendUsd(db: Db, organizationId?: string): Promise<number> {
-  const start = new Date();
+export async function monthSpendUsd(
+  db: Db,
+  organizationId?: string,
+  now: Date = new Date(),
+): Promise<number> {
+  const start = new Date(now);
   start.setUTCDate(1);
   start.setUTCHours(0, 0, 0, 0);
   const conds = [gte(usageLedger.createdAt, start)];

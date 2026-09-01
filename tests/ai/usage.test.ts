@@ -27,6 +27,27 @@ describe('usage ledger + budget', () => {
     expect(await monthSpendUsd(db)).toBeCloseTo(18); // global = both tenants
   });
 
+  it('uses one supplied UTC clock for ledger writes and month boundaries', async () => {
+    const db = await createTestDb();
+    const organization = await seedOrganization(db);
+    const recordedAt = new Date('2026-09-15T12:00:00.000Z');
+    const checkedAt = new Date('2027-01-01T00:05:00.000Z');
+
+    await recordUsage(
+      db,
+      {
+        organizationId: organization.id,
+        feature: 'chat.reply',
+        model: CHAT_MODEL,
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+      },
+      recordedAt,
+    );
+
+    expect(await monthSpendUsd(db, organization.id, checkedAt)).toBe(0);
+  });
+
   it('fails closed when the tenant has no budget row', async () => {
     const db = await createTestDb();
     const a = await seedOrganization(db);
