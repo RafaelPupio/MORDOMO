@@ -140,7 +140,8 @@ The beta accepts exactly one URL per brief. Server validation requires:
 - a returned final hostname equal to the submitted hostname or its direct `www` variant.
 
 The Browserbase adapter creates one fresh session with `recordSession: false`,
-`logSession: false`, no context, no persistence, no `keepAlive`, no user metadata, no proxy,
+`logSession: false`, no context, no persistence, no `keepAlive`, no user metadata,
+`proxies: false`,
 and no Stagehand or provider model. It navigates with GET only, blocks popups and downloads,
 and never clicks, types, uploads, authenticates, takes screenshots, or creates another page.
 
