@@ -1,4 +1,4 @@
-# Handoff — 2026-09-01T15:44:55Z — from codex
+# Handoff — 2026-09-01T15:55:42Z — from codex
 
 ## Task
 
@@ -7,45 +7,41 @@ while preserving one-page scope, metering, tenant isolation, and mandatory human
 
 ## Done
 
-- `3c7ddc8` — approved 11-task Browserbase implementation plan.
-- `00b68c6` — deterministic UTC usage-ledger month boundaries; 54 files and 429 tests pass.
-- `269b29c` — corrected the Browserbase no-proxy contract to documented `proxies: false`.
-- Browserbase FREE is provisioned and connected to MORDOMO's Development environment. Managed
-  Browserbase variables and Vercel OIDC are present; no values were printed or committed.
-- Root-caused the first HTTP 402 probe failure to the undocumented `[{ type: 'none' }]` proxy
-  shape. Changing only that field to `false` created and released the session successfully.
-- The full fictional API probe returned the exact approved result: session created, navigated,
-  released, stored metadata contained no target hostname, logs count zero, recordings count zero.
-- Vercel OAuth authorization was completed, but Browserbase's SSO page remained on `Signing in…`.
-  Direct session access returned to Browserbase sign-in. The sign-in page is open for Rafael.
-- The app-owned retention flag is unset, research application code is absent, and the unused
-  Firecrawl resource remains connected until the visual dashboard gate passes.
+- `269b29c` — corrected the approved no-proxy contract to Browserbase's documented boolean.
+- `958cc51` — installed exact `@browserbasehq/sdk@2.19.0` and `playwright-core@1.62.1` clients.
+- Browserbase FREE is connected only to MORDOMO Development. Its managed API key/project ID,
+  Vercel OIDC token, and app-owned retention gate are present without values entering Git.
+- The fictional API probe created, navigated, and released one strict session. Stored session
+  metadata contained no target hostname; logs and recordings were both empty.
+- The Browserbase dashboard independently showed recording disabled, no captured pages, no
+  attached context, and no console, network, or browser events. Only opaque timestamps, status,
+  region, and duration remain under the FREE plan's bounded metadata retention.
+- The unused Firecrawl Vercel resource and installation were deleted. Its managed credential and
+  stale generated local credential are gone; Browserbase, Clerk, and Neon remain connected.
+- No research application code or database migration exists yet.
 
 ## Next action
 
-Rafael completes Browserbase sign-in in the open tab and says `done`. Inspect the completed
-fictional session in the Browserbase dashboard. Proceed only if it exposes no target URL, page
-content, logs, or recording; then set the Development-only retention flag and continue Task 1.
+Execute Task 2 test-first: add failing tests for strict input/consent contracts, public URL safety,
+bounded visible-source normalization, and quote grounding; then implement only enough to pass.
 
 ## Files in play
 
 - `docs/superpowers/specs/2026-08-31-organization-public-research-design.md` — approved contract.
-- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — executable plan and probe.
+- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — executable 11-task plan.
+- `package.json` and `package-lock.json` — exact Browserbase/Playwright clients.
 - `brain/status.md` and `brain/log/decisions/2026-Q3.md` — current public technical state.
 
 ## Ruled out
 
-- `proxies: [{ type: 'none' }]` is not Browserbase's no-proxy form and triggers a FREE-plan 402;
-  do not retry it. Use documented `proxies: false`.
-- Firecrawl free hosted scraping cannot satisfy the required zero-retention gate; no ordinary-
-  retention fallback is permitted.
-- API evidence does not waive the approved dashboard inspection. Do not set
-  `RESEARCH_RETENTION_VERIFIED` or write application code until dashboard sign-in and inspection.
+- Firecrawl free hosted scraping and ordinary-retention fallback are retired.
+- `proxies: [{ type: 'none' }]` is invalid for the FREE plan; use documented `proxies: false`.
+- No open search/crawl, Stagehand/provider AI, context, proxy, recording/logging, screenshots,
+  custom headers, cookies, authenticated pages, browser actions, or unmetered AI path.
 - `.agents/` and `skills-lock.json` are unrelated user files and remain untracked.
 
 ## Verify
 
-Run the Task 1 probe from `docs/superpowers/plans/2026-08-31-organization-public-research.md`.
-Good means exactly `created:true`, `navigated:true`, `closed:true`,
-`sessionContainsTarget:false`, `logsCount:0`, `recordingCount:0`, and `success:true`; this has
-passed once. Then independently verify the same completed session in the Browserbase dashboard.
+Run `npm run typecheck && npm ls @browserbasehq/sdk playwright-core --depth=0 && git status -sb`.
+Good means TypeScript passes, the exact versions are 2.19.0 and 1.62.1, and only `.agents/` plus
+`skills-lock.json` remain unrelated and untracked after committed brain updates.

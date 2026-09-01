@@ -28,9 +28,11 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
   grounded proposals, and explicit human review before profile Save/Publish. Browserbase is
   provisioned for Development. The bounded API probe created, navigated, and released a session;
   the stored session contained no target hostname and exposed zero logs and zero recordings.
-  Browserbase dashboard sign-in is still incomplete, so the app-owned retention flag remains
-  unset and no research application code is active. The unused Firecrawl free resource remains
-  connected until the visual dashboard gate passes.
+  The dashboard independently showed recording disabled, no pages, no context, and no console,
+  network, or browser events. `RESEARCH_RETENTION_VERIFIED` is enabled only in Development and
+  the exact Browserbase/Playwright clients are installed. The unused Firecrawl resource,
+  integration, managed credential, and stale local credential have been removed. Research
+  application code is not active yet.
 - Usage-ledger writes now carry an application-owned UTC timestamp, and month aggregation accepts
   an injectable UTC clock. This closes the database-session timezone gap exposed between UTC and
   Cuiabá month boundaries; all 54 test files and 429 tests pass afterward.
@@ -62,9 +64,8 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Rafael completes Browserbase dashboard sign-in, then the completed fictional session is
-   inspected for no target URL, content, logs, or recording. Only after that visual check, add
-   the Development-only retention flag and begin application implementation.
+1. Implement the pure public-research contracts, bounded source normalization, quote grounding,
+   and strict public-URL policy through the approved test-first Task 2 plan.
 2. Choose and provision managed key management, then complete its threat model and recovery
    review before persisting any sensitive Personal Secretary data.
 3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,
