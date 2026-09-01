@@ -22,12 +22,12 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 - Clerk is connected to Vercel **Development only** on the free Hobby plan. The project has
   `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in Development; no secret is
   committed.
-- Firecrawl is provisioned through Vercel Marketplace for **Development only** on its free
-  plan. The approved Organization public-research design and implementation plan require
-  provider-enforced Zero Data Retention, cache-off one-page scraping, metered grounded fact
-  proposals, and explicit human review before profile Save/Publish. No research application
-  code is active yet. Firecrawl's current public documentation classifies hosted scrape ZDR
-  as Enterprise-only, and the free resource continues to return HTTP 403.
+- Browserbase strict-session extraction is the approved replacement for Firecrawl in the
+  Organization public-research design. It requires a fresh Development-only session with
+  recording/logging disabled, no persistence or provider AI, one bounded public page, metered
+  grounded proposals, and explicit human review before profile Save/Publish. Browserbase is
+  not provisioned and no research application code is active yet. The unused Firecrawl free
+  resource remains connected only until Browserbase passes its retention probe.
 - The public presentation is live locally at `/`, `/pt`, `/es`, `/fr`, and `/de`.
   Typed in-repository dictionaries set copy and metadata; invalid locale paths return 404.
 - The beta target now spans invite-only organization workspaces and a Personal Secretary
@@ -56,9 +56,9 @@ _Present state only. Git history and [[log/decisions]] hold chronology._
 
 ## Blocked / next action
 
-1. Decide whether to obtain Firecrawl Enterprise/account-level ZDR or reopen the approved
-   design to select another retention-safe provider. The hourly probe is paused because the
-   installed free plan cannot satisfy the documented Enterprise-only gate by itself.
+1. Review and approve the written Browserbase revision at
+   `docs/superpowers/specs/2026-08-31-organization-public-research-design.md`, then rewrite the
+   Firecrawl implementation plan before provisioning or application code.
 2. Choose and provision managed key management, then complete its threat model and recovery
    review before persisting any sensitive Personal Secretary data.
 3. Keep private-data operations (notes, reminders, credentials, calendar connection, export,
