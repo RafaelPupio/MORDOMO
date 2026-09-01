@@ -4,7 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  createResearchServiceDeps,
   getDb,
+  getCurrentOrganizationResearch,
   getLatestOrganizationSecretaryProfile,
   notFound,
   organizationSwitcher,
@@ -13,7 +15,9 @@ const {
   requireSecretaryContext,
   requireStudioWriteContext,
 } = vi.hoisted(() => ({
+  createResearchServiceDeps: vi.fn(() => ({ dependency: 'trusted' })),
   getDb: vi.fn(() => ({}) as Db),
+  getCurrentOrganizationResearch: vi.fn(),
   getLatestOrganizationSecretaryProfile: vi.fn(),
   notFound: vi.fn(() => {
     throw Object.assign(new Error('NEXT_NOT_FOUND'), {
@@ -44,6 +48,10 @@ vi.mock('@/db/client', () => ({ getDb }));
 vi.mock('@/db/repo/secretary-profile-versions', () => ({
   getLatestOrganizationSecretaryProfile,
 }));
+vi.mock('@/research/service', () => ({
+  createResearchServiceDeps,
+  getCurrentOrganizationResearch,
+}));
 vi.mock('@clerk/nextjs', () => ({ OrganizationSwitcher: organizationSwitcher }));
 
 beforeEach(() => {
@@ -60,6 +68,10 @@ beforeEach(() => {
     role: 'admin',
   });
   getLatestOrganizationSecretaryProfile.mockResolvedValue(undefined);
+  getCurrentOrganizationResearch.mockResolvedValue({
+    available: true,
+    facts: [],
+  });
 });
 
 describe('beta locale routing', () => {
@@ -310,9 +322,12 @@ describe('beta locale routing', () => {
     expect(requireSecretaryContext).toHaveBeenCalledWith('personal');
     expect(requireStudioWriteContext).not.toHaveBeenCalled();
     expect(getLatestOrganizationSecretaryProfile).not.toHaveBeenCalled();
+    expect(createResearchServiceDeps).not.toHaveBeenCalled();
+    expect(getCurrentOrganizationResearch).not.toHaveBeenCalled();
     expect(result).toEqual(expect.objectContaining({
       props: expect.objectContaining({ kind: 'personal', versionId: undefined }),
     }));
+    expect(result.props).not.toHaveProperty('research');
   });
 
   it('loads an Organization profile only with the Clerk-derived organization ID', async () => {
@@ -340,9 +355,14 @@ describe('beta locale routing', () => {
       expect.anything(),
       'trusted-organization-id',
     );
+    expect(getCurrentOrganizationResearch).toHaveBeenCalledWith(
+      { dependency: 'trusted' },
+      'organization',
+    );
     expect(result).toEqual(expect.objectContaining({
       props: expect.objectContaining({
         kind: 'organization',
+        research: { available: true, facts: [] },
         versionId: '11111111-1111-4111-8111-111111111111',
       }),
     }));

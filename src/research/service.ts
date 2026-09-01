@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import { checkBudget } from '@/ai/usage';
+import { parseGlobalCapUsd } from '@/core/config';
 import { checkRateLimit } from '@/core/rate-limit';
 import { requireStudioWriteContext } from '@/core/secretary-context';
 import {
@@ -9,7 +10,7 @@ import {
   secretaryContextKindSchema,
   type SecretaryContextKind,
 } from '@/core/secretary-profile';
-import type { Db } from '@/db/client';
+import { getDb, type Db } from '@/db/client';
 import {
   beginProposalAttempt,
   createResearchBrief,
@@ -28,6 +29,7 @@ import {
   type ResearchErrorCode,
 } from '@/research/contracts';
 import { proposePublicFacts } from '@/research/fact-proposer';
+import { createBrowserbaseProvider } from '@/research/browserbase-provider';
 import {
   PublicResearchProviderError,
   type PublicResearchProvider,
@@ -44,6 +46,18 @@ export type ResearchServiceDeps = {
   globalCapUsd: number;
   now?: () => Date;
 };
+
+export function createResearchServiceDeps(db: Db = getDb()): ResearchServiceDeps {
+  return {
+    db,
+    provider: createBrowserbaseProvider(),
+    propose: proposePublicFacts,
+    resolveContext: requireStudioWriteContext,
+    rateLimit: checkRateLimit,
+    budget: checkBudget,
+    globalCapUsd: parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP),
+  };
+}
 
 type OrganizationAccess = {
   organizationId: string;

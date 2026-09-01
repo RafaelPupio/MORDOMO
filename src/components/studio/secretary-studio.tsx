@@ -25,6 +25,7 @@ import {
   type SecretarySegment,
 } from '@/core/secretary-profile';
 import type { BetaMessages } from '@/i18n/beta-messages';
+import type { OrganizationResearchDTO } from '@/research/contracts';
 import { buildStudioPreview } from '@/studio/preview';
 import {
   STUDIO_SCENARIOS,
@@ -36,6 +37,7 @@ type SecretaryStudioProps = {
   kind: SecretaryContextKind;
   locale: BetaLocale;
   messages: BetaMessages;
+  research?: OrganizationResearchDTO;
   versionId?: string;
 };
 

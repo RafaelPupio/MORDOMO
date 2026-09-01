@@ -13,6 +13,10 @@ import {
 import { getDb } from '@/db/client';
 import { getLatestOrganizationSecretaryProfile } from '@/db/repo/secretary-profile-versions';
 import { getBetaMessages, parseBetaLocale } from '@/i18n/beta-messages';
+import {
+  createResearchServiceDeps,
+  getCurrentOrganizationResearch,
+} from '@/research/service';
 
 type StudioPageProps = {
   params: Promise<{ locale: string }>;
@@ -50,10 +54,14 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
 
   const context = await requireStudioWriteContext('organization');
   if (context.kind !== 'organization') notFound();
-  const latest = await getLatestOrganizationSecretaryProfile(
-    getDb(),
-    context.organizationId,
-  );
+  const db = getDb();
+  const [latest, research] = await Promise.all([
+    getLatestOrganizationSecretaryProfile(db, context.organizationId),
+    getCurrentOrganizationResearch(
+      createResearchServiceDeps(db),
+      'organization',
+    ),
+  ]);
 
   return (
     <SecretaryStudio
@@ -61,6 +69,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
       kind="organization"
       locale={locale}
       messages={getBetaMessages(locale)}
+      research={research ?? undefined}
       versionId={latest?.id}
     />
   );
