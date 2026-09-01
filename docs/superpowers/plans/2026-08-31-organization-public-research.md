@@ -2,110 +2,140 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an Organization-only, ZDR-gated Firecrawl workflow that proposes metered, source-grounded public facts for explicit human review and profile-version application.
+**Goal:** Add an Organization-only, retention-verified Browserbase workflow that proposes metered, source-grounded public facts for explicit human review and profile-version application.
 
-**Architecture:** A server-only research service resolves the active Clerk Organization, validates one approved public URL, enforces rate/budget gates, scrapes through a narrow Firecrawl adapter, persists a bounded source, and calls AI Gateway for structured fact proposals. Tenant-scoped repositories own state transitions and safe DTOs; a separate bilingual Studio panel reviews facts and passes only accepted fact IDs into the existing explicit Save/Publish flow.
+**Architecture:** A server-only research service resolves the active Clerk Organization, validates one approved public URL, enforces rate/budget gates, retrieves it through one fresh non-recorded/non-logged Browserbase session, persists bounded visible text, and calls AI Gateway for structured fact proposals. Tenant-scoped repositories own state transitions and safe DTOs; a separate bilingual Studio panel reviews facts and passes only accepted fact IDs into the existing explicit Save/Publish flow.
 
-**Tech Stack:** Next.js 16.3 App Router and Server Actions, React 19, TypeScript 5.9, Zod 4, Drizzle ORM 0.45, Neon Postgres/PGlite, AI SDK 7 through Vercel AI Gateway, Firecrawl Node SDK 4.37, Vitest 4.
+**Tech Stack:** Next.js 16.3 App Router and Server Actions, React 19, TypeScript 5.9, Zod 4, Drizzle ORM 0.45, Neon Postgres/PGlite, AI SDK 7 through Vercel AI Gateway, Browserbase SDK 2.19.0, Playwright Core 1.62.1, Vitest 4.
 
 **Spec:** `docs/superpowers/specs/2026-08-31-organization-public-research-design.md`
 
 ## Global Constraints
 
-- Do not write application code until the Firecrawl ZDR probe in Task 1 returns HTTP 200 with `success: true`. The current verified result is HTTP 403: ZDR is not enabled for the installed team.
-- Firecrawl resource `firecrawl-bronze-clock` is installed on the free plan and connected only to Vercel Development for project `mordomo`. Firecrawl's current public documentation classifies hosted scrape ZDR as Enterprise-only, so the installed plan cannot satisfy this gate unless Firecrawl grants an explicit account-level exception or the resource is upgraded.
-- The generated credential is the Vercel Config variable `FIRECRAWL_API_KEY`. Never print its value. Resolve it locally with `npx --yes vercel@latest env run -- <command>`.
-- Live research requires server-only `RESEARCH_ZDR_VERIFIED === 'true'`; tests set dependencies explicitly and never need a live key.
+- Do not write application code until Task 1 provisions Browserbase for Development and the strict-session probe returns `success:true`, `sessionContainsTarget:false`, `logsCount:0`, and `recordingCount:0`.
+- Browserbase receives only provider credentials, project ID, normalized URL, and fixed session controls. It never receives Organization/Clerk IDs, segment, city, locale, prompts, or prior research.
+- The generated credentials are `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`. Never print their values. Resolve them locally with `npx --yes vercel@latest env run -- <command>`.
+- Live research requires server-only `RESEARCH_RETENTION_VERIFIED === 'true'`; tests set dependencies explicitly and never need a live key.
 - Research is Organization-only and limited to the existing Clerk-derived `owner | admin` Studio context. Personal, member, unauthenticated, and forged contexts fail before research lookup or network work.
 - One submitted HTTPS page only. No Search, Crawl, Agent, Extract, actions, browser profiles, screenshots, custom headers, cookies, file uploads, TLS bypass, or automatic retries.
-- Firecrawl receives only the normalized URL and fixed scrape options: markdown, main content, `zeroDataRetention: true`, `storeInCache: false`.
+- Browserbase uses `recordSession:false`, `logSession:false`, `keepAlive:false`, no context, no persistence, no metadata, no proxy, no Stagehand/provider AI, `ignoreCertificateErrors:false`, `solveCaptchas:false`, and SDK `maxRetries:0`.
 - Submitted URL maximum 2,048 characters; path 1,024; city 120; source title 200; excerpt 40,000; proposed/accepted fact 280; supporting quote 500; facts per brief 12.
-- New scrapes are limited to three per Organization per fixed 24-hour window. Proposal attempts are limited to three per brief, including the initial attempt.
+- New browser retrievals are limited to three per Organization per fixed 24-hour window. Proposal attempts are limited to three per brief, including the initial attempt.
 - AI proposals use `FAST_MODEL` (`anthropic/claude-haiku-4-5`) through AI Gateway. Every attempt records exact available input/output usage as `research.fact_proposal`; no output becomes reviewable after a metering write failure.
 - AI generation uses current AI SDK 7 `generateText` plus `Output.object`, not deprecated `generateObject` in new code.
 - Every client input is Zod-validated. Every Server Action is a reachable untrusted POST and re-authorizes the caller. Client components receive minimal DTOs, never database/provider rows.
-- Scraped content is untrusted text. Never render provider HTML, log raw provider errors/content, or give the proposal model tools.
+- Retrieved content is untrusted text. Never return provider DOM/HTML/JavaScript to the client, log raw provider errors/content, or give the proposal model tools.
 - Human review is mandatory. Applying facts marks the profile dirty; Save creates a new profile version; Publish remains separate.
-- Automated tests use fake Firecrawl and mocked AI and spend no credits. A live smoke uses one fictional page only after ZDR is verified.
+- Automated tests use fake Browserbase/Playwright and mocked AI and spend no credits. Live verification uses one fictional page for the pre-code retention probe and one fictional end-to-end retrieval after implementation.
 - Read `node_modules/next/dist/docs/01-app/02-guides/server-actions.md` and `node_modules/next/dist/docs/01-app/02-guides/data-security.md` before editing action or data-access code.
 - Preserve unrelated untracked `.agents/` and `skills-lock.json`.
 
 ---
 
-### Task 1: Enable ZDR and lock the installed Firecrawl contract
+### Task 1: Provision and verify the strict Browserbase contract
 
 **Files:**
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
 **Interfaces:**
-- Consumes: installed Vercel Development resource `firecrawl-bronze-clock` and Config variable `FIRECRAWL_API_KEY`.
-- Produces: verified ZDR capability, Development variable `RESEARCH_ZDR_VERIFIED=true`, and dependency `firecrawl@4.37.0`.
+- Consumes: Vercel Marketplace Browserbase FREE plan and the approved strict-session design.
+- Produces: verified Development Browserbase resource, `RESEARCH_RETENTION_VERIFIED=true`, dependencies `@browserbasehq/sdk@2.19.0` and `playwright-core@1.62.1`, and removal of the unused Firecrawl resource after Browserbase passes.
 
-- [ ] **Step 1: Request Firecrawl ZDR enablement**
+- [ ] **Step 1: Provision Browserbase for Development only**
 
-Open the installed resource dashboard:
-
-```bash
-npx --yes vercel@latest integration open firecrawl firecrawl-bronze-clock
-```
-
-Confirm an Enterprise agreement or explicit account-level exception with Firecrawl support.
-Current official documentation identifies hosted scrape ZDR as Enterprise-only; the installed
-free Marketplace plan is not sufficient by itself. Do not accept an answer that merely
-recommends sending `zeroDataRetention: true`; provider-side enablement is required. Record no
-account IDs, support transcript, pricing discussion, or customer-identifying detail in Git.
-
-- [ ] **Step 2: Run the bounded ZDR probe and verify the prerequisite**
-
-Run exactly one scrape of the fictional standards page. This command prints only status and
-stable error fields:
+Run the real Marketplace installation:
 
 ```bash
-npx --yes vercel@latest env run -- node -e '(async()=>{const response=await fetch("https://api.firecrawl.dev/v2/scrape",{method:"POST",headers:{Authorization:"Bearer "+process.env.FIRECRAWL_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({url:"https://example.com",formats:["markdown"],onlyMainContent:true,storeInCache:false,zeroDataRetention:true})});let body={};try{body=await response.json()}catch{};console.log(JSON.stringify({status:response.status,success:body.success===true,code:body.code??body.errorCode??null,error:typeof body.error==="string"?body.error.slice(0,200):null}))})()'
+npx --yes vercel@latest integration add browserbase --plan FREE --environment development --no-claim --non-interactive
+npx --yes vercel@latest integration list --format=json
 ```
 
-Expected before support enablement: `status:403`, `success:false`, and the ZDR-not-enabled error.
-Expected gate to proceed: `status:200`, `success:true`, and no error. Stop if the gate is not
-green; do not implement a non-ZDR fallback.
+Expected: a Browserbase resource is `available` and connected only to project `mordomo` in
+Development. If the CLI reports a claim/dashboard step, open it with
+`npx --yes vercel@latest integration open browserbase`, complete the Browserbase account step,
+and rerun the list command. Record no installation/resource IDs or account detail in Git.
 
-- [ ] **Step 3: Add the app-owned Development gate**
+- [ ] **Step 2: Confirm managed environment names without values**
 
 Run:
 
 ```bash
-printf 'true\n' | npx --yes vercel@latest env add RESEARCH_ZDR_VERIFIED development --non-interactive
 npx --yes vercel@latest env pull .env.local --environment=development --yes
-```
-
-Expected: Vercel adds `RESEARCH_ZDR_VERIFIED` only to Development. Confirm names without values:
-
-```bash
 npx --yes vercel@latest env ls development
 rg --pcre2 -o '^[A-Z][A-Z0-9_]*(?==)' .env.local
 ```
 
-Expected: `FIRECRAWL_API_KEY` appears in Vercel as a Config variable;
-`RESEARCH_ZDR_VERIFIED` and `VERCEL_OIDC_TOKEN` support managed local resolution. Do not commit
-`.env.local`.
+Expected: `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` exist for Development, and local
+managed resolution includes `VERCEL_OIDC_TOKEN`. Do not print values or commit `.env.local`.
 
-- [ ] **Step 4: Install the provider SDK after provisioning**
+- [ ] **Step 3: Run one bounded strict-session probe outside the repository dependency graph**
+
+Install exact one-off probe dependencies in an OS temporary directory, then run one fictional
+session. The probe prints booleans/counts only, never credentials, URLs, content, connection
+URLs, or raw provider errors:
+
+```bash
+RESEARCH_PROBE_DIR="$(mktemp -d)"
+npm install --prefix "$RESEARCH_PROBE_DIR" --no-save @browserbasehq/sdk@2.19.0 playwright-core@1.62.1
+NODE_PATH="$RESEARCH_PROBE_DIR/node_modules" npx --yes vercel@latest env run -- node -e '(async()=>{const Browserbase=require("@browserbasehq/sdk").default;const{chromium}=require("playwright-core");const client=new Browserbase({apiKey:process.env.BROWSERBASE_API_KEY,maxRetries:0,timeout:20000});const projectId=process.env.BROWSERBASE_PROJECT_ID;let session;let browser;const result={created:false,navigated:false,closed:false,sessionContainsTarget:null,logsCount:null,recordingCount:null,success:false};const noData=async(fn)=>{try{return await fn()}catch(error){if(error&&error.status===404)return[];throw error}};try{session=await client.sessions.create({projectId,api_timeout:60,keepAlive:false,proxies:[{type:"none"}],browserSettings:{allowedDomains:["example.com"],blockAds:true,ignoreCertificateErrors:false,logSession:false,recordSession:false,solveCaptchas:false}});result.created=true;browser=await chromium.connectOverCDP(session.connectUrl);const context=browser.contexts()[0];const page=context.pages()[0];await page.route("**/*",async(route)=>{const request=route.request();let url;try{url=new URL(request.url())}catch{return route.abort()};const host=url.hostname.toLowerCase();const allowed=host==="example.com"||host==="www.example.com";const blockedType=["image","media","font"].includes(request.resourceType());if(request.method()!=="GET"||url.protocol!=="https:"||!allowed||blockedType)return route.abort();return route.continue()});const response=await page.goto("https://example.com",{waitUntil:"domcontentloaded",timeout:20000});const body=await page.locator("body").innerText({timeout:5000});result.navigated=response?.ok()===true&&body.includes("Example Domain")}finally{if(browser)await browser.close().catch(()=>{});if(session)await client.sessions.update(session.id,{status:"REQUEST_RELEASE",projectId}).catch(()=>{});result.closed=true}if(session){await new Promise(resolve=>setTimeout(resolve,2000));const stored=await client.sessions.retrieve(session.id);const logs=await noData(()=>client.sessions.logs.list(session.id));const recording=await noData(()=>client.sessions.recording.retrieve(session.id));result.sessionContainsTarget=JSON.stringify(stored).includes("example.com");result.logsCount=logs.length;result.recordingCount=recording.length}result.success=result.created&&result.navigated&&result.closed&&result.sessionContainsTarget===false&&result.logsCount===0&&result.recordingCount===0;console.log(JSON.stringify(result));if(!result.success)process.exitCode=1})().catch(error=>{console.log(JSON.stringify({success:false,code:error?.constructor?.name??"ProbeError"}));process.exitCode=1})'
+```
+
+Expected exactly: `created`, `navigated`, and `closed` are `true`;
+`sessionContainsTarget` is `false`; `logsCount` and `recordingCount` are `0`; `success` is
+`true`. Stop if any field differs. Do not implement a weaker fallback.
+
+- [ ] **Step 4: Verify the provider dashboard and add the app-owned gate**
+
+Open the Browserbase resource/dashboard and inspect only the completed fictional session:
+
+```bash
+npx --yes vercel@latest integration open browserbase
+```
+
+Expected: the completed session exposes no target URL, page content, logs, or recording. It may
+show only content-free metadata such as opaque session ID, timestamps, region, and completion
+status. Confirm the FREE plan has a hard usage boundary. Only after both probe and dashboard
+checks pass, run:
+
+```bash
+npx --yes vercel@latest env add RESEARCH_RETENTION_VERIFIED development --value true --type config --yes
+npx --yes vercel@latest env ls development
+```
+
+Expected: `RESEARCH_RETENTION_VERIFIED` exists only in Development. Never print values.
+
+- [ ] **Step 5: Install exact provider dependencies after the retention gate**
 
 Run:
 
 ```bash
-npm install firecrawl@4.37.0
+npm install @browserbasehq/sdk@2.19.0 playwright-core@1.62.1
 npm run typecheck
 ```
 
-Expected: dependency installation succeeds on Node 22+ and the unchanged application still
+Expected: dependency installation succeeds on Node 20+ and the unchanged application still
 typechecks.
 
-- [ ] **Step 5: Commit the real provider dependency**
+- [ ] **Step 6: Remove the unused Firecrawl resource after Browserbase passes**
+
+Resolve the exact resource name from `integration list`, verify it is connected only to
+`mordomo`, then remove the resource and its now-empty installation:
+
+```bash
+npx --yes vercel@latest integration-resource remove firecrawl-bronze-clock --disconnect-all --yes
+npx --yes vercel@latest integration remove firecrawl --yes
+npx --yes vercel@latest integration list --format=json
+```
+
+Expected: Browserbase, Clerk, and Neon remain; Firecrawl is absent. This deletes the unused
+managed Firecrawl credential. No application data existed in that resource.
+
+- [ ] **Step 7: Commit the real provider dependencies**
 
 ```bash
 git add package.json package-lock.json
-git commit -m "chore(research): add Firecrawl client"
+git commit -m "chore(research): add Browserbase client"
 ```
 
 ---
@@ -158,7 +188,8 @@ it('rejects the entire proposal set when one quote is absent', () => {
 ```
 
 The contract test must also prove `publicResearchInputSchema` requires
-`consentVersion: 'public-research-v1'`, accepts `en | pt`, excludes `personal`, trims city to a
+`consentVersion: 'public-research-v2'`, rejects the never-activated v1 provider consent, accepts
+`en | pt`, excludes `personal`, trims city to a
 maximum of 120 characters, and does not pass unknown fields through.
 
 - [ ] **Step 2: Run tests to verify the contracts do not exist**
@@ -177,7 +208,7 @@ Define these exact public shapes in `src/research/contracts.ts`:
 import { z } from 'zod';
 import { betaLocaleSchema } from '@/core/secretary-profile';
 
-export const RESEARCH_CONSENT_VERSION = 'public-research-v1' as const;
+export const RESEARCH_CONSENT_VERSION = 'public-research-v2' as const;
 export const MAX_RESEARCH_FACTS = 12;
 export const organizationResearchSegmentSchema = z.enum([
   'church', 'clinic', 'restaurant', 'real_estate', 'general',
@@ -189,7 +220,7 @@ export type ResearchStatus = z.infer<typeof researchStatusSchema>;
 
 export const researchErrorCodeSchema = z.enum([
   'researchUnavailable', 'forbidden', 'invalidInput', 'unsafeUrl', 'rateLimited',
-  'budgetExhausted', 'providerUnavailable', 'zdrRequired', 'noUsefulContent',
+  'budgetExhausted', 'providerUnavailable', 'retentionUnverified', 'noUsefulContent',
   'proposalFailed', 'ungroundedProposal', 'staleResearchState', 'notFound',
 ]);
 export type ResearchErrorCode = z.infer<typeof researchErrorCodeSchema>;
@@ -410,8 +441,6 @@ export async function saveResearchSource(db: Db, organizationId: string, briefId
   url: string;
   title: string;
   excerpt: string;
-  providerRequestId?: string;
-  providerCredits?: number;
   retrievedAt?: Date;
 }): Promise<ResearchSource>;
 
@@ -432,7 +461,8 @@ brief has a source. `saveProposedFacts` inserts at most 12 facts and marks `revi
 facts still mark `review_ready`.
 
 Return `OrganizationResearchDTO`, not inferred row objects, from the read function. Omit actor,
-provider request/credit fields, excerpt, consent timestamp/version, and internal error details.
+excerpt, consent timestamp/version, and internal error details. The schema and repository do not
+accept or persist Browserbase session IDs, logs, recordings, or provider metadata.
 
 - [ ] **Step 4: Implement immutable review decisions and metadata-only audit writes**
 
@@ -577,39 +607,57 @@ git commit -m "feat(research): propose grounded public facts"
 
 ---
 
-### Task 6: Add the fail-closed Firecrawl adapter
+### Task 6: Add the fail-closed Browserbase adapter
 
 **Files:**
 - Create: `src/research/provider.ts`
-- Create: `src/research/firecrawl-provider.ts`
-- Create: `tests/research/firecrawl-provider.test.ts`
+- Create: `src/research/browserbase-provider.ts`
+- Create: `tests/research/browserbase-provider.test.ts`
 
 **Interfaces:**
-- Produces: `PublicResearchProvider` and `createFirecrawlProvider(config?)`.
-- Consumes: `firecrawl@4.37.0`, `FIRECRAWL_API_KEY`, `RESEARCH_ZDR_VERIFIED`, Task 2 URL/source functions.
+- Produces: `PublicResearchProvider`, `PublicResearchProviderError`, and `createBrowserbaseProvider(config?)`.
+- Consumes: `@browserbasehq/sdk@2.19.0`, `playwright-core@1.62.1`, `BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `RESEARCH_RETENTION_VERIFIED`, and Task 2 URL/source functions.
 
 - [ ] **Step 1: Write failing adapter contract tests**
 
-Inject a fake SDK client and prove exact outbound options:
+Inject a fake SDK client and Playwright connector and prove these exact session options:
 
 ```ts
-expect(scrape).toHaveBeenCalledWith('https://example.com/about', {
-  formats: ['markdown'],
-  onlyMainContent: true,
-  storeInCache: false,
-  zeroDataRetention: true,
+expect(createSession).toHaveBeenCalledWith({
+  projectId: 'bb-project',
+  api_timeout: 60,
+  keepAlive: false,
+  proxies: [{ type: 'none' }],
+  browserSettings: {
+    allowedDomains: ['example.com'],
+    blockAds: true,
+    ignoreCertificateErrors: false,
+    logSession: false,
+    recordSession: false,
+    solveCaptchas: false,
+  },
+});
+expect(connectOverCDP).toHaveBeenCalledWith('wss://opaque-connect-url');
+expect(closeBrowser).toHaveBeenCalledOnce();
+expect(updateSession).toHaveBeenCalledWith('opaque-session', {
+  status: 'REQUEST_RELEASE',
+  projectId: 'bb-project',
 });
 ```
 
-Assert no call when key or `RESEARCH_ZDR_VERIFIED=true` is absent, no call for unsafe URL,
-safe mapping of 403 ZDR errors, 402/429/timeouts, empty markdown, overlong title/excerpt, and
-cross-host returned URLs. Assert returned DTO has only title, normalized URL, bounded excerpt,
-and optional request/credit metadata.
+Assert no SDK call when a credential or `RESEARCH_RETENTION_VERIFIED=true` is absent; no call
+for unsafe input; SDK factory options `{ maxRetries:0, timeout:20000 }`; exact/www-only main
+navigation; rejection of cross-host redirects, credentials, non-HTTPS, non-GET, local/IP hosts,
+images, media, and fonts; twenty-second navigation timeout; two-second settle; bounded title
+and visible text; empty-content rejection; popup/download cancellation; safe provider errors;
+and no leaked resource after partial creation: release after connect/navigation/extraction/
+normalization failure and no cleanup call when session creation itself fails. The
+returned DTO must contain only `title`, normalized `url`, and bounded `excerpt`.
 
 - [ ] **Step 2: Run the adapter test to verify failure**
 
 ```bash
-npm test -- tests/research/firecrawl-provider.test.ts
+npm test -- tests/research/browserbase-provider.test.ts
 ```
 
 Expected: FAIL because provider modules cannot resolve.
@@ -619,32 +667,100 @@ Expected: FAIL because provider modules cannot resolve.
 `src/research/provider.ts`:
 
 ```ts
-export type ScrapedPublicSource = {
+export type RetrievedPublicSource = {
   title: string;
   url: string;
   excerpt: string;
-  providerRequestId?: string;
-  providerCredits?: number;
 };
 
+export class PublicResearchProviderError extends Error {
+  constructor(readonly code: 'providerUnavailable' | 'retentionUnverified' | 'noUsefulContent' | 'unsafeUrl') {
+    super(code);
+    this.name = 'PublicResearchProviderError';
+  }
+}
+
 export interface PublicResearchProvider {
-  scrapeApprovedPage(url: URL): Promise<ScrapedPublicSource>;
+  retrieveApprovedPage(url: URL): Promise<RetrievedPublicSource>;
 }
 ```
 
-`firecrawl-provider.ts` must begin with `import 'server-only'`. Accept an injected minimal SDK
-client in tests and otherwise instantiate `new Firecrawl({ apiKey })`. Read environment only in
-`createFirecrawlProvider`; never at module import. Convert all provider failures into an error
-whose public code is `providerUnavailable` or `zdrRequired`, with no raw response attached.
+`browserbase-provider.ts` must begin with `import 'server-only'`. Read environment only inside
+`createBrowserbaseProvider`; never at module import. Accept injected minimal SDK/Playwright
+interfaces in tests. Production construction is exact:
 
-Map SDK output defensively: require string markdown and final source URL; use requested URL when
-title is absent; validate final host; normalize/bound content; reject empty content. Capture
-request ID or credits only when the actual SDK result contains a finite value.
+```ts
+import Browserbase from '@browserbasehq/sdk';
+import { chromium, type Browser, type Request as PlaywrightRequest } from 'playwright-core';
+
+export type BrowserbaseClient = {
+  sessions: {
+    create(input: Browserbase.SessionCreateParams): Promise<Browserbase.SessionCreateResponse>;
+    update(id: string, input: Browserbase.SessionUpdateParams): Promise<unknown>;
+  };
+};
+
+export type BrowserConnector = (connectUrl: string) => Promise<Browser>;
+export type BrowserbaseClientFactory = (options: {
+  apiKey: string;
+  maxRetries: 0;
+  timeout: 20_000;
+}) => BrowserbaseClient;
+
+const createClient: BrowserbaseClientFactory = (options) => new Browserbase(options);
+const client = createClient({ apiKey, maxRetries: 0, timeout: 20_000 });
+const connectOverCDP: BrowserConnector = (connectUrl) => chromium.connectOverCDP(connectUrl);
+```
+
+Export this factory contract:
+
+```ts
+export function createBrowserbaseProvider(config: {
+  apiKey?: string;
+  projectId?: string;
+  retentionVerified?: boolean;
+  createClient?: BrowserbaseClientFactory;
+  connectOverCDP?: BrowserConnector;
+} = {}): PublicResearchProvider;
+```
+
+Default `apiKey`, `projectId`, and `retentionVerified` from the three exact environment names.
+Missing/false retention throws `retentionUnverified` before session creation; missing provider
+credentials throws `providerUnavailable` before session creation. Create sessions with the
+exact object from Step 1. Set `allowedDomains` to the submitted host without one leading
+`www.`; Playwright still enforces only the exact/direct-www pair.
+
+Before `goto`, install request routing and popup/download handlers. The routing predicate is:
+
+```ts
+const BLOCKED_RESOURCE_TYPES = new Set(['image', 'media', 'font']);
+
+function requestIsAllowed(request: PlaywrightRequest, approvedHosts: ReadonlySet<string>): boolean {
+  if (request.method() !== 'GET' || BLOCKED_RESOURCE_TYPES.has(request.resourceType())) return false;
+  let url: URL;
+  try { url = new URL(request.url()); } catch { return false; }
+  return url.protocol === 'https:'
+    && !url.username
+    && !url.password
+    && approvedHosts.has(url.hostname.toLowerCase());
+}
+```
+
+Navigate with `{ waitUntil:'domcontentloaded', timeout:20_000 }`, require an OK response, wait
+exactly 2,000 ms, validate the final page URL with `sameApprovedHost`, then read `page.title()`
+and `page.locator('body').innerText({ timeout:5_000 })`. Normalize/bound with Task 2 functions;
+use the final hostname as a missing-title fallback and reject an empty excerpt.
+
+Always attempt `browser.close()` and `client.sessions.update(session.id,
+{ status:'REQUEST_RELEASE', projectId })` in `finally`. Never return or persist the session ID,
+connect URL, logs, recording, provider response, or raw error. Convert all unknown provider
+failures to `providerUnavailable`; preserve only the four finite provider error codes created
+inside the adapter.
 
 - [ ] **Step 4: Run adapter and boundary tests**
 
 ```bash
-npm test -- tests/research/firecrawl-provider.test.ts tests/research/url-policy.test.ts tests/research/source-text.test.ts
+npm test -- tests/research/browserbase-provider.test.ts tests/research/url-policy.test.ts tests/research/source-text.test.ts
 npm run typecheck
 ```
 
@@ -653,8 +769,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit the adapter**
 
 ```bash
-git add src/research/provider.ts src/research/firecrawl-provider.ts tests/research/firecrawl-provider.test.ts
-git commit -m "feat(research): add ZDR Firecrawl adapter"
+git add src/research/provider.ts src/research/browserbase-provider.ts tests/research/browserbase-provider.test.ts
+git commit -m "feat(research): add strict Browserbase adapter"
 ```
 
 ---
@@ -681,11 +797,11 @@ await expect(startOrganizationResearch(deps, {
   kind: 'personal',
   form: validInput,
 })).resolves.toEqual({ ok: false, error: 'forbidden' });
-expect(provider.scrapeApprovedPage).not.toHaveBeenCalled();
+expect(provider.retrieveApprovedPage).not.toHaveBeenCalled();
 expect(proposePublicFacts).not.toHaveBeenCalled();
 ```
 
-Also prove member/unauthenticated/forged context, disabled ZDR, invalid URL/consent, rate denial,
+Also prove member/unauthenticated/forged context, unverified retention, invalid URL/consent, rate denial,
 budget denial, provider error, proposal error, source reuse on retry, attempt cap, safe logging,
 and successful audit events. No returned state may include URL/content/IDs except safe DTO IDs.
 
@@ -722,8 +838,8 @@ export async function startOrganizationResearch(
 
 Parse kind and input before using their values, but resolve authentication before returning an
 existence-sensitive result. Require an Organization context. Use key
-`research:scrape:${organizationId}`, limit 3, window 86,400 seconds. Check budget with the
-existing global-cap parser result before inserting the brief or calling Firecrawl.
+`research:retrieve:${organizationId}`, limit 3, window 86,400 seconds. Check budget with the
+existing global-cap parser result before inserting the brief or calling Browserbase.
 
 Persist each durable state before the next external boundary. On provider failure mark the
 brief failed with a stable code. On proposal failure retain the source and mark failed with the
@@ -990,7 +1106,8 @@ Expected: FAIL because the panel, copy, and state modules do not exist.
 - [ ] **Step 4: Implement typed EN/PT copy and pure state**
 
 `copy.ts` exports one `Record<BetaLocale, ResearchCopy>` with no fallback strings. Include the
-exact approved `public-research-v1` consent from the spec. `panel-state.ts` owns only client
+exact approved `public-research-v2` consent from the spec and reject the never-activated v1 on
+the server. `panel-state.ts` owns only client
 interaction state: pending action, field edits, selected accepted IDs, dirty flag, and stale
 feedback clearing. Server DTO remains the authority for brief/fact state.
 
@@ -1033,7 +1150,7 @@ npm run typecheck
 ```
 
 Expected: PASS; Personal remains browser-local/no-research and deterministic preview still
-makes no AI or Firecrawl call.
+makes no AI or Browserbase call.
 
 - [ ] **Step 8: Commit the bilingual panel**
 
@@ -1044,7 +1161,7 @@ git commit -m "feat(studio): review public research facts"
 
 ---
 
-### Task 11: Verify database, live ZDR flow, browser experience, and public records
+### Task 11: Verify database, strict-session flow, browser experience, and public records
 
 **Files:**
 - Modify: `README.md`
@@ -1107,7 +1224,8 @@ Never migrate Development Neon during this validation step.
 Use an invited fictional Clerk Organization admin, `https://example.com`, no city, English, and
 the exact consent. Confirm:
 
-1. Firecrawl succeeds only with ZDR/cache-off options.
+1. Browserbase creates one non-recorded, non-logged, non-persistent session with no automatic
+   SDK retries, closes/releases it, and exposes no target URL/content/logs/recording afterward.
 2. One source and no more than 12 grounded proposals persist under the active Organization.
 3. One `research.fact_proposal` usage row records the model call.
 4. Accept/edit/reject works; audit rows contain no URL/content.
@@ -1148,7 +1266,9 @@ test-first cycle and rerun Step 1.
 
 Record only publishable facts:
 
-- Firecrawl is Development-only and ZDR-verified; no API key or account/resource IDs.
+- Browserbase is Development-only and strict-session retention-verified; no API key,
+  project/account/resource/session IDs, URL, content, logs, or recordings enter the public
+  record. Firecrawl was removed after Browserbase passed.
 - Research is one-page, Organization owner/admin only, human-reviewed, and metered.
 - Personal research/private data remain inactive.
 - Exact verification counts, disposable-branch deletion, and bounded fictional smoke result.
