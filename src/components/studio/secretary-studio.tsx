@@ -16,6 +16,7 @@ import {
   type StudioActionState,
   type StudioFieldErrorCode,
 } from '@/app/[locale]/studio/actions';
+import { OrganizationResearchPanel } from '@/components/studio/organization-research-panel';
 import type { Capability, ReplyTone } from '@/core/organization-profile';
 import {
   parseSecretaryProfile,
@@ -295,11 +296,17 @@ export function SecretaryStudio({
   kind,
   locale,
   messages,
+  research,
   versionId,
 }: SecretaryStudioProps) {
   const router = useRouter();
   const [profile, setProfile] = useState(() => parseSecretaryProfile(initialProfile));
   const [publishState, setPublishState] = useState<StudioActionState>(EMPTY_ACTION_STATE);
+  const [appliedResearchFactIds, setAppliedResearchFactIds] = useState(() => (
+    kind === 'organization'
+      ? initialProfile.approvedPublicFacts.map((fact) => fact.researchFactId)
+      : []
+  ));
   const [publishPending, startPublish] = useTransition();
   const [draftSync, dispatchDraftSync] = useReducer(
     reduceDraftSyncState,
@@ -383,6 +390,12 @@ export function SecretaryStudio({
     });
   }
 
+  function applyResearchFacts(factIds: string[]) {
+    setAppliedResearchFactIds(factIds);
+    setPublishState(EMPTY_ACTION_STATE);
+    dispatchDraftSync({ type: 'edited' });
+  }
+
   return (
     <main className="min-h-screen bg-[#f4f7f5] text-[#102421]">
       <header className="border-b border-[#102421]/15 bg-[#102421] text-white">
@@ -408,7 +421,16 @@ export function SecretaryStudio({
       </header>
 
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-8 sm:px-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(20rem,0.7fr)] lg:items-start">
-        <form action={saveAction} className="border border-[#102421]/15 bg-white">
+        <div className="grid min-w-0 gap-6">
+          <form action={saveAction} className="border border-[#102421]/15 bg-white">
+          {appliedResearchFactIds.map((factId) => (
+            <input
+              key={factId}
+              name="approvedPublicFactIds"
+              type="hidden"
+              value={factId}
+            />
+          ))}
           <div className="flex items-center justify-between border-b border-[#102421]/15 px-5 py-4 sm:px-7">
             <div>
               <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#167052]">{copy.configure}</p>
@@ -576,7 +598,19 @@ export function SecretaryStudio({
           <p aria-live="polite" className="min-h-6 px-5 pb-5 text-sm font-semibold text-[#167052] sm:px-7 sm:pb-7">
             {isPersonal ? copy.personalNotSaved : actionFeedback(publishState.ok || publishState.error ? publishState : saveState, copy)}
           </p>
-        </form>
+          </form>
+
+          {!isPersonal && research ? (
+            <OrganizationResearchPanel
+              initialAppliedFactIds={appliedResearchFactIds}
+              locale={locale}
+              onApply={applyResearchFacts}
+              research={research}
+              responseLocale={profile.defaultLocale}
+              segment={profile.segment as Exclude<SecretarySegment, 'personal'>}
+            />
+          ) : null}
+        </div>
 
         <aside className="border border-[#102421]/20 bg-[#102421] text-white lg:sticky lg:top-6" aria-labelledby="test-rail-title">
           <div className="border-b border-white/15 px-5 py-4">

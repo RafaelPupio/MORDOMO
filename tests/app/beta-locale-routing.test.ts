@@ -52,6 +52,11 @@ vi.mock('@/research/service', () => ({
   createResearchServiceDeps,
   getCurrentOrganizationResearch,
 }));
+vi.mock('@/app/[locale]/studio/research-actions', () => ({
+  retryResearchAction: vi.fn(),
+  reviewResearchFactAction: vi.fn(),
+  startResearchAction: vi.fn(),
+}));
 vi.mock('@clerk/nextjs', () => ({ OrganizationSwitcher: organizationSwitcher }));
 
 beforeEach(() => {

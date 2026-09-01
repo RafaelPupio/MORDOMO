@@ -66,6 +66,7 @@ export default async function StudioPage({ params, searchParams }: StudioPagePro
   return (
     <SecretaryStudio
       initialProfile={latest?.profile ?? DEFAULT_SECRETARY_PROFILES.organization}
+      key={context.organizationId}
       kind="organization"
       locale={locale}
       messages={getBetaMessages(locale)}
