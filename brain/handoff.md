@@ -1,47 +1,48 @@
-# Handoff — 2026-09-01T03:47:51Z — from codex
+# Handoff — 2026-09-01T04:04:00Z — from codex
 
 ## Task
 
-Implement and demonstrate Organization public research through a retention-safe provider while
-preserving one-page scope, metering, tenant isolation, and mandatory human review.
+Implement and demonstrate Organization public research through retention-verified Browserbase
+while preserving one-page scope, metering, tenant isolation, and mandatory human review.
 
 ## Done
 
-- `2bb0537` — original Organization public-research design.
-- `dc65cf5` — original Firecrawl implementation plan.
-- `43d941e` — recorded that Firecrawl's free plan cannot satisfy hosted ZDR.
-- `3a8a793` — revised and self-reviewed the design around Browserbase strict sessions.
-- Browserbase is the live Marketplace's top web-automation result. The approved revision uses
-  `recordSession: false`, `logSession: false`, no persistence/context/metadata/proxy/Stagehand,
-  deterministic Playwright extraction, and a hard pre-code retention probe.
-- Consent advances to `public-research-v2`. The obsolete Firecrawl probe automation was deleted.
-  No Browserbase resource or research application code has been created yet.
+- `3a8a793` — revised the approved design from Firecrawl to strict-session Browserbase.
+- `1ae9001` — recorded the Browserbase retention gate in the public technical brain.
+- `3c7ddc8` — replaced the obsolete Firecrawl plan with the approved 11-task Browserbase plan.
+- `00b68c6` — made usage-ledger writes and month boundaries share an explicit UTC clock after a
+  real UTC/local month-boundary test failure; 54 files and 429 tests pass and TypeScript passes.
+- Browserbase FREE provisioning was attempted for Vercel Development only. Vercel stopped at its
+  account-owner Marketplace-terms gate, and the exact approval page is open in Codex.
+- No Browserbase resource, credential, retention flag, provider dependency, or research
+  application code has been created. The unused Firecrawl resource remains until Browserbase is
+  proven safe.
 
 ## Next action
 
-Review and approve the written Browserbase revision. After approval, invoke only
-`superpowers:writing-plans` and replace the outdated Firecrawl implementation plan before
-provisioning Browserbase or writing application code.
+Rafael accepts the Browserbase Marketplace terms in the open Vercel page and says `done`. Retry:
+`npx --yes vercel@latest integration add browserbase --plan FREE --environment development --no-claim --non-interactive`.
+If provisioning succeeds, run Task 1's strict probe and stop unless every retention field matches.
 
 ## Files in play
 
-- `docs/superpowers/specs/2026-08-31-organization-public-research-design.md` — revised contract.
-- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — outdated Firecrawl plan;
-  do not execute it and rewrite it only after written-spec approval.
-- `brain/status.md` and `brain/log/decisions/` — current public technical state and decisions.
+- `docs/superpowers/specs/2026-08-31-organization-public-research-design.md` — approved contract.
+- `docs/superpowers/plans/2026-08-31-organization-public-research.md` — executable Browserbase plan.
+- `src/ai/usage.ts` and `tests/ai/usage.test.ts` — verified UTC month-boundary repair.
+- `brain/status.md` and `brain/log/decisions/2026-Q3.md` — current public technical state.
 
 ## Ruled out
 
-- Firecrawl free hosted scraping cannot satisfy its Enterprise-only ZDR gate; no fallback to
-  ordinary retention is permitted.
-- Vercel Sandbox has a less explicit retrieval-telemetry boundary; direct Function fetch adds
-  an unacceptable arbitrary-URL SSRF/DNS-rebinding surface for this beta.
-- No open search/crawl, Browserbase agent/Stagehand/model, persistent context, proxy, screenshot,
-  authenticated page, custom header, cookie, browser action, or unmetered AI path is allowed.
+- Firecrawl free hosted scraping cannot satisfy its Enterprise-only ZDR gate; no ordinary-retention
+  fallback is permitted.
+- Application work cannot start before a Browserbase session proves no retained target URL,
+  content, logs, or recording and the provider dashboard confirms that result.
+- No search/crawl, agent/Stagehand/model, persistent context, proxy, screenshot, authenticated page,
+  custom header, cookie, browser action, or unmetered AI path is allowed.
 - `.agents/` and `skills-lock.json` are unrelated user files and remain untracked.
 
 ## Verify
 
-Run `if rg -n 'TBD|TODO|FIXME|public-research-v1|RESEARCH_ZDR_VERIFIED' docs/superpowers/specs/2026-08-31-organization-public-research-design.md; then exit 1; fi; git diff --check`.
-Good means there are no placeholders, obsolete consent/environment identifiers, or whitespace
-errors.
+Run `npm test -- --reporter=dot --maxWorkers=1 && npm run typecheck && git status --short --branch`.
+Good means 54 files and 429 tests pass, TypeScript passes, and only `.agents/` plus
+`skills-lock.json` remain unrelated and untracked before the Browserbase retry.
