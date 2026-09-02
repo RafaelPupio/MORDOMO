@@ -320,7 +320,8 @@ export function OrganizationResearchPanel({
   }
 
   const showStart = !research.status
-    || (research.status === 'failed' && !research.source);
+    || (research.status === 'failed' && !research.source)
+    || (research.status === 'review_ready' && research.facts.length === 0);
   const showReview = research.status === 'review_ready'
     || research.status === 'applied';
 

@@ -103,6 +103,22 @@ describe('Organization research panel', () => {
     expect(markup).not.toContain('PROVIDER EXCERPT MUST NOT RENDER');
   });
 
+  it('offers a fresh approved URL after a grounded run returns no facts', async () => {
+    const markup = await renderPanel({
+      available: true,
+      briefId: '22222222-2222-4222-8222-222222222222',
+      status: 'review_ready',
+      source: { title: 'Thin public page', url: 'https://example.com' },
+      facts: [],
+    });
+
+    expect(markup).toContain('No grounded facts were found');
+    expect(markup).toContain('Thin public page');
+    expect(markup).toContain('name="url"');
+    expect(markup).toContain('name="consent"');
+    expect(markup).toContain('Start public research');
+  });
+
   it('offers proposal retry without another URL when a failed brief kept its source', async () => {
     const markup = await renderPanel({
       available: true,
