@@ -30,12 +30,12 @@ function harness(options: {
   let downloadHandler: ((download: { cancel(): Promise<void> }) => Promise<void> | void) | undefined;
 
   const closeBrowser = vi.fn(async () => {});
-  const goto = vi.fn(async (_url: string, _options: unknown) => {
+  const goto = vi.fn(async () => {
     if (options.gotoError) throw options.gotoError;
     return { ok: () => options.ok ?? true };
   });
-  const waitForTimeout = vi.fn(async (_milliseconds: number) => {});
-  const innerText = vi.fn(async (_options: unknown) => {
+  const waitForTimeout = vi.fn(async () => {});
+  const innerText = vi.fn(async () => {
     if (options.innerTextError) throw options.innerTextError;
     return Object.hasOwn(options, 'body')
       ? options.body
@@ -64,15 +64,15 @@ function harness(options: {
   } as unknown as Browser;
 
   const createSession = options.createError
-    ? vi.fn(async (_input: unknown) => { throw options.createError; })
-    : vi.fn(async (_input: unknown) => ({ id: 'opaque-session', connectUrl: 'wss://opaque-connect-url' }));
-  const updateSession = vi.fn(async (_id: string, _input: unknown) => ({}));
-  const createClient = vi.fn((_factoryOptions: unknown) => ({
+    ? vi.fn(async () => { throw options.createError; })
+    : vi.fn(async () => ({ id: 'opaque-session', connectUrl: 'wss://opaque-connect-url' }));
+  const updateSession = vi.fn(async () => ({}));
+  const createClient = vi.fn(() => ({
     sessions: { create: createSession, update: updateSession },
   })) as unknown as BrowserbaseClientFactory;
   const connectOverCDP = (options.connectError
-    ? vi.fn(async (_url: string) => { throw options.connectError; })
-    : vi.fn(async (_url: string) => browser)) as unknown as BrowserConnector;
+    ? vi.fn(async () => { throw options.connectError; })
+    : vi.fn(async () => browser)) as unknown as BrowserConnector;
 
   return {
     createClient,

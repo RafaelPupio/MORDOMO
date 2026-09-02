@@ -18,7 +18,10 @@ const USAGE = {
 };
 
 function generator(output: unknown, usage = USAGE) {
-  const mock = vi.fn(async (_options: unknown) => ({ output, usage }));
+  const mock = vi.fn(async (options: unknown) => {
+    void options;
+    return { output, usage };
+  });
   return { mock, generate: mock as unknown as typeof generateText };
 }
 
