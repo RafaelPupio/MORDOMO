@@ -1,20 +1,10 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from '@clerk/nextjs/server';
 
-const isProtectedRoute = createRouteMatcher([
-  "/onboarding(.*)",
-  "/studio(.*)",
-  "/(en|pt)/onboarding(.*)",
-  "/(en|pt)/studio(.*)",
-  "/staff(.*)",
-  "/api/ingest(.*)",
-  "/api/cron(.*)",
-]);
-
-export default clerkMiddleware(async (auth, request) => {
-  if (isProtectedRoute(request)) {
-    await auth.protect();
-  }
-});
+// Clerk still needs request context on matching requests. Authentication belongs at each
+// resource instead: the Secretary pages/actions use Clerk, while staff, ingest and cron
+// deliberately use their own session/secret checks and must remain reachable without a
+// browser Clerk session.
+export default clerkMiddleware();
 
 export const config = {
   matcher: [

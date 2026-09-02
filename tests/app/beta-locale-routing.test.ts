@@ -10,6 +10,7 @@ const {
   getLatestOrganizationSecretaryProfile,
   notFound,
   organizationSwitcher,
+  protectResource,
   refresh,
   redirect,
   requireSecretaryContext,
@@ -25,6 +26,7 @@ const {
     });
   }),
   organizationSwitcher: vi.fn(() => null),
+  protectResource: vi.fn(),
   refresh: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw Object.assign(new Error('NEXT_REDIRECT'), {
@@ -58,6 +60,9 @@ vi.mock('@/app/[locale]/studio/research-actions', () => ({
   startResearchAction: vi.fn(),
 }));
 vi.mock('@clerk/nextjs', () => ({ OrganizationSwitcher: organizationSwitcher }));
+vi.mock('@clerk/nextjs/server', () => ({
+  auth: Object.assign(vi.fn(), { protect: protectResource }),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -77,6 +82,7 @@ beforeEach(() => {
     available: true,
     facts: [],
   });
+  protectResource.mockResolvedValue({ userId: 'user_fictional' });
 });
 
 describe('beta locale routing', () => {
@@ -293,6 +299,7 @@ describe('beta locale routing', () => {
     expect(result).toEqual(expect.objectContaining({
       props: expect.objectContaining({ locale }),
     }));
+    expect(protectResource).toHaveBeenCalledOnce();
   });
 
   it.each(['fr', 'es', 'de', 'EN'])('returns not found for the unsupported %s onboarding locale', async (locale) => {
@@ -303,6 +310,7 @@ describe('beta locale routing', () => {
     await expect(OnboardingPage({
       params: Promise.resolve({ locale }),
     })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+    expect(protectResource).toHaveBeenCalledOnce();
   });
 
   it.each(['fr', 'es', 'de', 'EN'])('returns not found for the unsupported %s Studio locale', async (locale) => {
@@ -312,6 +320,7 @@ describe('beta locale routing', () => {
       params: Promise.resolve({ locale }),
       searchParams: Promise.resolve({ context: 'personal' }),
     })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+    expect(protectResource).toHaveBeenCalledOnce();
     expect(requireSecretaryContext).not.toHaveBeenCalled();
     expect(requireStudioWriteContext).not.toHaveBeenCalled();
   });
@@ -325,6 +334,7 @@ describe('beta locale routing', () => {
     });
 
     expect(requireSecretaryContext).toHaveBeenCalledWith('personal');
+    expect(protectResource).toHaveBeenCalledOnce();
     expect(requireStudioWriteContext).not.toHaveBeenCalled();
     expect(getLatestOrganizationSecretaryProfile).not.toHaveBeenCalled();
     expect(createResearchServiceDeps).not.toHaveBeenCalled();
@@ -360,6 +370,7 @@ describe('beta locale routing', () => {
       expect.anything(),
       'trusted-organization-id',
     );
+    expect(protectResource).toHaveBeenCalledOnce();
     expect(getCurrentOrganizationResearch).toHaveBeenCalledWith(
       { dependency: 'trusted' },
       'organization',
@@ -384,6 +395,7 @@ describe('beta locale routing', () => {
       params: Promise.resolve({ locale: 'en' }),
       searchParams: Promise.resolve({ context: ['organization', 'personal'] }),
     })).rejects.toMatchObject({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' });
+    expect(protectResource).toHaveBeenCalledTimes(2);
     expect(requireSecretaryContext).not.toHaveBeenCalled();
     expect(requireStudioWriteContext).not.toHaveBeenCalled();
   });

@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { notFound } from 'next/navigation';
 import { SecretaryStudio } from '@/components/studio/secretary-studio';
 import {
@@ -36,6 +37,7 @@ function requireStudioSelector(value: unknown): SecretaryContextKind {
 }
 
 export default async function StudioPage({ params, searchParams }: StudioPageProps) {
+  await auth.protect();
   const locale = requireBetaRouteLocale((await params).locale);
   const kind = requireStudioSelector((await searchParams).context);
 

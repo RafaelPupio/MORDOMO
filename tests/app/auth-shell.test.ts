@@ -4,15 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const clerkProvider = vi.fn();
 const signIn = vi.fn();
 const signUp = vi.fn();
-const protect = vi.fn();
 
-const clerkMiddleware = vi.hoisted(() => vi.fn((handler) => handler));
-const createRouteMatcher = vi.hoisted(() => vi.fn((patterns: string[]) => {
-  const matchers = patterns.map((pattern) => new RegExp(`^${pattern}$`));
-  return (request: { nextUrl: { pathname: string } }) => (
-    matchers.some((matcher) => matcher.test(request.nextUrl.pathname))
-  );
-}));
+const clerkMiddleware = vi.hoisted(() => vi.fn(() => Symbol('clerk-proxy')));
 
 vi.mock('@clerk/nextjs', () => ({
   ClerkProvider: clerkProvider,
@@ -22,7 +15,6 @@ vi.mock('@clerk/nextjs', () => ({
 
 vi.mock('@clerk/nextjs/server', () => ({
   clerkMiddleware,
-  createRouteMatcher,
 }));
 
 vi.mock('next/font/google', () => ({
@@ -30,9 +22,7 @@ vi.mock('next/font/google', () => ({
   Geist_Mono: () => ({ variable: 'geist-mono' }),
 }));
 
-beforeEach(() => {
-  protect.mockReset();
-});
+beforeEach(() => vi.clearAllMocks());
 
 describe('authentication shell', () => {
   it('wraps the app in ClerkProvider and exposes Clerk sign-in and sign-up pages', async () => {
@@ -49,45 +39,10 @@ describe('authentication shell', () => {
     expect(SignUpPage().type).toBe(signUp);
   });
 
-  it.each([
-    '/studio',
-    '/studio/profile',
-    '/onboarding',
-    '/onboarding/start',
-    '/en/studio',
-    '/en/studio/profile',
-    '/pt/onboarding',
-    '/pt/onboarding/start',
-  ])('protects the account route %s', async (pathname) => {
+  it('keeps Clerk request context without using proxy path matching as an auth gate', async () => {
     const { default: proxy } = await import('@/proxy');
-    const proxyHandler = proxy as unknown as (
-      auth: { protect: typeof protect },
-      request: { nextUrl: { pathname: string } },
-    ) => Promise<void>;
 
-    await proxyHandler(
-      { protect },
-      { nextUrl: { pathname } },
-    );
-
-    expect(protect).toHaveBeenCalledOnce();
+    expect(clerkMiddleware).toHaveBeenCalledWith();
+    expect(proxy).toBeTypeOf('symbol');
   });
-
-  it.each(['/', '/en', '/pt', '/en/about', '/pt/portfolio'])(
-    'leaves the public portfolio route %s unprotected',
-    async (pathname) => {
-      const { default: proxy } = await import('@/proxy');
-      const proxyHandler = proxy as unknown as (
-        auth: { protect: typeof protect },
-        request: { nextUrl: { pathname: string } },
-      ) => Promise<void>;
-
-      await proxyHandler(
-        { protect },
-        { nextUrl: { pathname } },
-      );
-
-      expect(protect).not.toHaveBeenCalled();
-    },
-  );
 });

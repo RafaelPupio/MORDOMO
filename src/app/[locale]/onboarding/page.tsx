@@ -1,3 +1,4 @@
+import { auth } from '@clerk/nextjs/server';
 import { notFound } from 'next/navigation';
 import { ContextPicker } from '@/components/studio/context-picker';
 import { getBetaMessages, parseBetaLocale } from '@/i18n/beta-messages';
@@ -12,6 +13,7 @@ function requireBetaRouteLocale(value: string): BetaLocale {
 }
 
 export default async function OnboardingPage({ params }: OnboardingPageProps) {
+  await auth.protect();
   const locale = requireBetaRouteLocale((await params).locale);
   return <ContextPicker locale={locale} messages={getBetaMessages(locale)} />;
 }
