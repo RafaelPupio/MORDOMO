@@ -89,6 +89,34 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
   product surfaces and explains why the visitor hot path uses one agent while ingest and
   reporting use separate two-agent pipelines.
 
+## ⚠ Blocker found 2026-09-04: the attached Neon database is NOT ours
+
+`vercel integration list` shows a Neon resource on the `mordomo` project, and the earlier
+note treated that as "the database is provisioned". Inspecting it before running any
+migration showed it belongs to a **different application** and holds that app's live data:
+
+    organizations (2)  organization_profiles (1)  personal_contexts (1)
+    data_control_events (19)  secretary_profile_versions (5)
+    research_briefs (3)  research_facts (9)  research_sources (3)
+    + documents (3), chunks (22), messages (16), usage_ledger (16), events (6) …
+
+It is neither MORDOMO's nor ChurchChatBox V1's — V1's migrations create `church`,
+`admin_user`, `menu_item` (singular), a different schema entirely. Two proofs it is not
+ours: `churches` **does not exist** (every MORDOMO table FKs to it), and the drizzle
+journal shows **8 applied migrations** where MORDOMO has 5.
+
+**Why this mattered:** the documented next step was `npm run db:migrate`. That would have
+run MORDOMO's migrations into a live foreign database whose `documents`, `chunks`,
+`messages`, `events`, `conversations`, `tickets`, `budgets`, `rate_limits` and
+`usage_ledger` names collide with ours but whose shapes differ — a partial, failed
+migration against someone else's data.
+
+**Do not migrate or seed until MORDOMO has its own Neon database.** `.env.local` has been
+reset to a placeholder so nothing in this repo can reach the foreign one.
+
+Deciding what to do is Rafael's: provision a fresh Neon project for MORDOMO and connect
+it, and disconnect the foreign resource from the `mordomo` Vercel project.
+
 ## Deployment state (checked live 2026-08-31, not inferred)
 
 The long-standing "blocked on Neon Marketplace terms" note was **stale**. A Neon database

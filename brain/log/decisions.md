@@ -23,3 +23,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-31` The project is MORDOMO: renamed everywhere except V1 references and the Vercel project
 - `2026-08-31` Correction: the Vercel project is renamed, deployments already existed, and the URL stays churchchatboxv2.vercel.app
 - `2026-08-31` Correction: Neon terms were already accepted; the blocker was stale, and cloud state must be checked live
+- `2026-09-04` The Neon database attached to the mordomo project belongs to another app — do not migrate into it

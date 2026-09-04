@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# NOTE: the Vercel CLI re-appends a bare `.env*` at the end of this file on
+# `env pull`, which silently overrides the negation above. Delete it when it
+# reappears; check with: git check-ignore -v --no-index .env.example
 
 # Dependencies & build
 node_modules/
