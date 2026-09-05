@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState } from 'react';
+import { syncDraft } from './draft-sync';
 import { formatDateTime } from '@/core/format';
 import type { SentTicketReply } from '@/core/staff-operations';
 import {
@@ -65,11 +66,9 @@ export function TicketCard({ ticket }: { ticket: TicketRow }) {
   // while a genuinely fresh draft still appears on an untouched textarea.
   const [replyText, setReplyText] = useState(draft);
   const lastDraftRef = useRef(draft);
+  // The compare-then-advance ordering lives in syncDraft, with the reason it matters.
   useEffect(() => {
-    if (draft !== lastDraftRef.current) {
-      setReplyText((current) => (current === lastDraftRef.current ? draft : current));
-      lastDraftRef.current = draft;
-    }
+    syncDraft(lastDraftRef, draft, setReplyText);
   }, [draft]);
 
   const replyFieldId = `reply-${ticket.id}`;
