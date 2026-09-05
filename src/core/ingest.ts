@@ -319,7 +319,15 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('ingest failed', { churchId, documentId, error });
+    // `stack` as a plain string on purpose: Next's console patching collapses the frames of
+    // an inspected Error into "at ignore-listed frames" whenever none of them is ours, which
+    // is exactly the case for a failure inside an async library path (the first production
+    // PDF failure, 2026-09-05, logged a DataCloneError with no call site at all).
+    console.error('ingest failed', {
+      churchId, documentId, error,
+      stack: error instanceof Error ? error.stack : undefined,
+      cause: error instanceof Error && error.cause instanceof Error ? error.cause.stack : undefined,
+    });
     try {
       const current = await getDocument(db, churchId, documentId);
       if (current && current.ingestStatus !== 'published') {
