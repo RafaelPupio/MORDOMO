@@ -26,21 +26,12 @@ the only work left is the first real deployment.
   `mordomo.vercel.app` belongs to an unrelated app. A custom domain is the only fix.
 
 ## Next action
-The Neon terms blocker is GONE (resolved 2026-08-25) — a Neon database and a Clerk
-instance are already attached to the Vercel project `mordomo`. Verify live state with
-`vercel env ls` and `vercel integration list` before trusting any note about this.
+One step, and only Rafael can do it: Vercel dashboard → mordomo → Settings → Deployment
+Protection → turn **Vercel Authentication** off. Not CLI-toggleable. Everything behind it
+is already verified in production and the budget caps are live.
 
-Remaining, in order:
-1. Promote the Neon vars from `Development` to `Production` (and Preview) — today
-   `vercel env ls production` is empty, so a prod build has no `DATABASE_URL`.
-2. Add the app's own secrets, absent everywhere: `AI_GATEWAY_API_KEY`, `STAFF_PASSWORD`,
-   `STAFF_SESSION_SECRET`, `CRON_SECRET`, `DEMO_GLOBAL_MONTHLY_USD_CAP`.
-   Rafael must supply these values — do not invent or handle them for him.
-3. `npm run db:migrate`, then `npm run seed` (REAL embedder, never `SEED_FAKE_EMBEDDER`).
-4. `BENCHMARK_REAL_EMBEDDER=1 npm run benchmark:retrieval` — the launch gate.
-5. Only then turn off `ssoProtection`, which is what makes the URL public. An open URL is
-   a spend path, so it opens last, after the budget caps are proven live.
-6. Consider removing the unused Clerk integration — this codebase never calls it.
+After that: load the production URL from a logged-out browser and confirm the chat answers
+with citations. Then the demo is genuinely public.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.
