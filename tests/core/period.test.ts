@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPeriodLabel } from '@/app/staff/(dashboard)/relatorios/period';
+import { formatPeriodLabel } from '@/core/period';
 
 describe('formatPeriodLabel', () => {
   it('formats a Monday-to-Sunday week as an inclusive dd/mm/aaaa range', () => {

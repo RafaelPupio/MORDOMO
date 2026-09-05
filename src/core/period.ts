@@ -21,6 +21,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * INCLUSIVE last day of the period (the Sunday), one day before `periodEnd`, so a reader
  * sees "10/08/2026 a 16/08/2026" for a Monday-through-Sunday week, not a period that
  * appears to run through the following Monday.
+ *
+ * Lives in core, not beside the page that renders it, because the report WRITER
+ * (src/agent/report-writer.ts) states the same period inside the prose. When it built
+ * that line itself from the raw exclusive `periodEnd`, one report carried two different
+ * end dates — the heading said 06/09 and the body said 07/09. Same failure mode as
+ * src/agent/time-convention.ts: two places computing one fact.
  */
 export function formatPeriodLabel(periodStart: Date, periodEnd: Date): string {
   const inclusiveEnd = new Date(periodEnd.getTime() - DAY_MS);

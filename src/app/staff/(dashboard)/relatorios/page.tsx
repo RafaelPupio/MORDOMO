@@ -3,7 +3,7 @@ import { getDb } from '@/db/client';
 import { listReports } from '@/db/repo/reports';
 import { FindingsSummary } from './findings-summary';
 import { GenerateReportButton } from './generate-button';
-import { formatPeriodLabel } from './period';
+import { formatPeriodLabel } from '@/core/period';
 import { ReportBody } from './report-body';
 
 export const metadata = { title: 'Relatórios — Secretaria' };

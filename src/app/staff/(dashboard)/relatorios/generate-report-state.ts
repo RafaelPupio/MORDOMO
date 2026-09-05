@@ -1,5 +1,5 @@
 import type { WeeklyReportResult } from '@/core/weekly-report';
-import { formatPeriodLabel } from './period';
+import { formatPeriodLabel } from '@/core/period';
 
 // Mirrors `SuggestReplyState` (atendimentos/suggest-reply-state.ts): kept as a plain
 // function, not exported from `actions.ts` itself, both because a `'use server'` file may

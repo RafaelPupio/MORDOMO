@@ -3,6 +3,7 @@ import type { LanguageModel } from 'ai';
 import type { WeekFindings } from '@/agent/analyst';
 import { CHAT_MODEL, priceableModelId } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
+import { formatPeriodLabel } from '@/core/period';
 import type { WeekActivity } from '@/core/week-activity';
 import type { Db } from '@/db/client';
 
@@ -40,7 +41,9 @@ function buildPrompt(input: ReportWriterInput): string {
   const { churchName, findings, activity } = input;
   return [
     `IGREJA: ${churchName}`,
-    `PERÍODO: ${activity.periodStart.toISOString()} a ${activity.periodEnd.toISOString()}`,
+    // The heading above the report renders this exact string; handing the model the raw
+    // half-open `periodEnd` instead made the prose claim a week one day longer.
+    `PERÍODO: ${formatPeriodLabel(activity.periodStart, activity.periodEnd)}`,
     `CONTAGENS DA SEMANA: ${JSON.stringify(activity.counts)}`,
     `CUSTO DE IA DA SEMANA (USD): US$ ${activity.costUsd.toFixed(4)}`,
     '',
