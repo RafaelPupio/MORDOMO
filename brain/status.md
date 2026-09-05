@@ -5,10 +5,11 @@ _Present state only. The dated build chronology is in [[log/status-archive]]._
 > Naming: the project is **MORDOMO** everywhere — folder, GitHub repo
 > (`RafaelPupio/MORDOMO`), package name, docs, and UI. Bare "ChurchChatBox" in these
 > notes always means **V1**, the separate private WhatsApp product this one succeeds.
-> The Vercel project is renamed to `mordomo` too, but its auto-assigned domain is still
-> `churchchatboxv2.vercel.app`: `mordomo.vercel.app` is already taken by an unrelated app
-> ("Mordomo — Controle Financeiro Inteligente") that is not ours. A custom domain is the
-> only way to get a MORDOMO-branded URL.
+> The Vercel project is renamed to `mordomo` too, but its production domain is still
+> `churchchatboxv2.vercel.app` — renaming a project does not rename its domain, and
+> `mordomo.vercel.app` is already taken by an unrelated app ("Mordomo — Controle
+> Financeiro Inteligente") that is not ours. That domain is **public**; see the
+> correction below before repeating the claim that protection blocks the demo.
 
 ## What runs today
 
@@ -91,9 +92,8 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
 
 ## Deployed and working — 2026-09-04
 
-MORDOMO is live on its own infrastructure and verified end to end in production. The one
-remaining step is Rafael's: **turn off Vercel Authentication** so the URL is reachable by
-someone who is not signed into the account.
+MORDOMO is live on its own infrastructure, **public**, and verified end to end in
+production by an anonymous client — no cookie, no bypass token, no Vercel session.
 
 - **Own database.** The Neon resource previously attached to this project belonged to a
   different application (organizations, personal_contexts, research_briefs, live rows).
@@ -116,14 +116,41 @@ someone who is not signed into the account.
 - **Cost metering works in production**: `chat.reply` US$0.0126, `chat.retrieval` US$0,
   `ingest.embed` US$0.000024 against a US$40 tenant cap.
 
-Production URL: `https://mordomo-eokk4j8ig-rafael-e2fe.vercel.app`
-(`mordomo.vercel.app` belongs to an unrelated app; a custom domain is the only branded option.)
+**Public URL: <https://churchchatboxv2.vercel.app>** — the project's production domain.
 
-### The last step — Rafael only
+### Correction (2026-09-05): deployment protection was never blocking the demo
 
-Vercel dashboard → mordomo → Settings → Deployment Protection → turn **Vercel
-Authentication** off. It cannot be toggled from the CLI. Everything it gates is already
-verified, and the budget caps that make an open URL safe are live.
+Three notes here, and the handoff, said the last step was Rafael turning off Vercel
+Authentication. That was wrong, and the error was the same shape as the earlier ones:
+reading a setting's *name* instead of measuring the URL.
+
+`ssoProtection.deploymentType` is `all_except_custom_domains`, which protects the
+per-deployment URLs (`mordomo-<hash>-rafael-e2fe.vercel.app`) and the branch aliases —
+**but exempts the project's production domain**. Measured 2026-09-05:
+
+| URL | anonymous |
+| --- | --- |
+| `mordomo-eokk4j8ig-rafael-e2fe.vercel.app` | 302 → `vercel.com/sso-api` |
+| `mordomo-rafael-e2fe.vercel.app` | 302 → `vercel.com/sso-api` |
+| **`churchchatboxv2.vercel.app`** | **200** |
+
+Every earlier smoke test had been aimed at a deployment URL, so it only ever proved the
+protected side. Against the production domain, with an empty cookie jar:
+
+- landing `<title>MORDOMO</title>`, `/chat` 200, `/staff/login` 200
+- `/api/cron/weekly-report` → 401 without the secret
+- `POST /api/chat` "Que horas é o culto de domingo?" → *"aos domingos às **10h** e às
+  **18h30**"* with five cited excerpts, and `ccb_visitor` minted `HttpOnly; Secure;
+  SameSite=Lax` on the response
+
+The demo has been public since the deploy. Nothing is pending on Rafael.
+
+**Still true:** the public URL carries V1's old name. Renaming the Vercel project did not
+rename its production domain, and `mordomo.vercel.app` belongs to an unrelated app
+("Mordomo — Controle Financeiro Inteligente"). `mordomo-demo`, `mordomo-app`,
+`mordomo-ai` and `mordomo-chat` under `.vercel.app` are all free (404). Adding one as a
+project domain, or a real custom domain, is the only way to a MORDOMO-branded link — and
+that is a naming call, not a blocker.
 
 ## What runs today
 

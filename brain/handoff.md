@@ -24,14 +24,24 @@ the only work left is the first real deployment.
   there is no database. Do not claim deployment state without running `vercel ls`.
 - The Vercel project is `mordomo`, but its domain stays `churchchatboxv2.vercel.app`;
   `mordomo.vercel.app` belongs to an unrelated app. A custom domain is the only fix.
+- `ssoProtection: all_except_custom_domains` protects the per-deployment URLs but NOT the
+  project's production domain. Smoke-test `churchchatboxv2.vercel.app`, never a
+  `mordomo-<hash>-rafael-e2fe.vercel.app` — the latter only ever proves the protected side.
 
 ## Next action
-One step, and only Rafael can do it: Vercel dashboard → mordomo → Settings → Deployment
-Protection → turn **Vercel Authentication** off. Not CLI-toggleable. Everything behind it
-is already verified in production and the budget caps are live.
+**Nothing is blocking. The demo is public and working.**
 
-After that: load the production URL from a logged-out browser and confirm the chat answers
-with citations. Then the demo is genuinely public.
+Corrected 2026-09-05: this section previously said Rafael had to turn off Vercel
+Authentication. He does not — that setting never covered the production domain.
+<https://churchchatboxv2.vercel.app> was verified anonymously (empty cookie jar): landing
+200, `/chat` 200, `/staff/login` 200, cron 401 without the secret, and a real Portuguese
+answer with citations from `POST /api/chat`. See the correction block in [[status]].
+
+Open, and both are naming calls rather than work:
+1. The public URL still says `churchchatboxv2`. `mordomo-demo|app|ai|chat.vercel.app` are
+   free; adding one as a project domain gives a MORDOMO-branded link.
+2. Pricing and competitor comparison — deliberately deferred, and it belongs in the
+   private V1 repo, not this public one.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.
