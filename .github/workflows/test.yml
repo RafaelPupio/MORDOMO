@@ -17,3 +17,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # typecheck + lint + tests all passed on a commit that could not build:
+      # a synchronous export from a 'use server' module is a build-time error only.
+      - run: npm run build

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeIngest } from '@/app/staff/(dashboard)/documentos/actions';
+import { describeIngest } from '@/core/ingest-summary';
 
 const base = {
   chunkCount: 7,

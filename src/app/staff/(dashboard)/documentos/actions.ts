@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { describeIngest } from '@/core/ingest-summary';
 import { GatewayEmbedder } from '@/ai/embedder';
 import { FAST_MODEL } from '@/ai/pricing';
 import { checkBudget } from '@/ai/usage';
@@ -99,37 +100,4 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     console.error('uploadDocument: unexpected failure', { churchId, fileName: file.name, error });
     return { error: 'Não foi possível processar o documento. Tente novamente.' };
   }
-}
-
-/**
- * Turns an `IngestResult` into one sentence a secretary can act on. The distinction that
- * matters is WHY no event was published: nothing dated in the document is a normal
- * outcome, everything rejected is a review prompt, and a failed extraction is neither.
- */
-export function describeIngest(result: {
-  chunkCount: number;
-  extracted: number;
-  published: number;
-  rejected: number;
-  extractionFailed: boolean;
-  truncatedForExtraction: boolean;
-}): string {
-  const parts = [`Documento processado: ${result.chunkCount} trechos indexados`];
-
-  if (result.extractionFailed) {
-    parts.push('a leitura de eventos falhou — a agenda não foi alterada');
-  } else if (result.extracted === 0) {
-    parts.push('nenhum evento com data encontrado');
-  } else if (result.published === 0) {
-    parts.push(`${result.extracted} evento(s) encontrado(s), todos rejeitados na verificação`);
-  } else {
-    parts.push(`${result.published} de ${result.extracted} evento(s) publicado(s)`);
-    if (result.rejected > 0) parts.push(`${result.rejected} rejeitado(s) na verificação`);
-  }
-
-  if (result.truncatedForExtraction) {
-    parts.push('só o início do documento foi lido em busca de eventos');
-  }
-
-  return `${parts.join(', ')}.`;
 }
