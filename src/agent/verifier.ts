@@ -2,7 +2,7 @@ import { generateObject } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { ExtractedEvent } from '@/agent/extractor';
-import { CHURCH_TIMEZONE_NOTE } from '@/agent/time-convention';
+import { formatLocalWallClock, UNTRUSTED_DOCUMENT_NOTE } from '@/agent/time-convention';
 import { FAST_MODEL, priceableModelId } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
 import type { Db } from '@/db/client';
@@ -60,11 +60,13 @@ const verdictSchema = z.object({
 // the candidate. An extractor asked to check itself tends to agree with itself.
 const SYSTEM = [
   'You audit a single candidate calendar event against the church document it was extracted from.',
-  'Confirm ONLY if the document genuinely supports the title, the date, and the time. Anything the document does not state — an invented location, a shifted date, a plausible-sounding detail — means reject.',
-  // Without this, a correctly converted time is indistinguishable from the "shifted date"
-  // the line above tells the auditor to reject. See src/agent/time-convention.ts.
-  CHURCH_TIMEZONE_NOTE,
-  'Apply that conversion BEFORE judging the time: a startsAt three hours ahead of the document\'s stated local time is the correct encoding of it, not an error. Reject a time only when it still disagrees after converting.',
+  // The candidate's date and time arrive as local wall-clock TEXT, rendered in code by
+  // formatLocalWallClock — never as an ISO/UTC value. Three rounds of prompt wording could
+  // not make a small model do time-zone arithmetic reliably in both directions; see the
+  // history in src/agent/time-convention.ts. There is nothing left for it to convert.
+  'The candidate\'s date and time are given in the field "quando" as LOCAL wall-clock time in America/Sao_Paulo, already converted for you (weekday, dd/mm/yyyy, hh:mm). Compare that text directly with what the document states for the event. Do NOT perform any time-zone conversion or arithmetic yourself: there is none to do.',
+  'Confirm ONLY if the document genuinely supports the title, the date, and the time. Anything the document does not state — an invented location, a different date, a different time, a plausible-sounding detail — means reject.',
+  UNTRUSTED_DOCUMENT_NOTE,
   'Treat the candidate as a claim to be disproved, not as a summary to be agreed with.',
   'Answer with a decision and one short sentence in Portuguese explaining why.',
 ].join('\n');
@@ -79,6 +81,17 @@ export async function verifyEvents(
   const pricedModel = priceableModelId(model, FAST_MODEL);
 
   return mapWithConcurrency(input.events, VERIFY_CONCURRENCY, async (event): Promise<VerifiedEvent> => {
+    // The extractor already drops candidates whose startsAt is not a real instant, so this
+    // is belt-and-braces for any other caller: an unrenderable time is a genuine rejection
+    // (not an outage) and costs no model call.
+    const quando = formatLocalWallClock(event.startsAt);
+    if (quando === null) {
+      return {
+        ...event,
+        verdict: { decision: 'rejected', note: 'Data de início inválida; evento não publicado.' },
+      };
+    }
+
     try {
       const { object, usage } = await generateObject({
         model,
@@ -86,9 +99,10 @@ export async function verifyEvents(
         system: SYSTEM,
         prompt: [
           'DOCUMENTO:', input.text, '',
+          // No `startsAt` here, deliberately: the verifier is never shown a UTC value.
           'EVENTO CANDIDATO:', JSON.stringify(
             {
-              title: event.title, startsAt: event.startsAt,
+              title: event.title, quando,
               location: event.location, description: event.description,
               sourceQuote: event.sourceQuote,
             }, null, 2,
