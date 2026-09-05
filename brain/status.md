@@ -175,10 +175,17 @@ two real defects, both now fixed and deployed.
 - **A report claimed two different end dates** — heading 06/09, prose 07/09 — because the
   writer built its own period line from the raw half-open `periodEnd`. `formatPeriodLabel`
   moved to `src/core/period.ts` so both read one computation.
-- **CI now exists** (`.github/workflows/test.yml`: typecheck, lint, tests on every push and
-  PR; the suite is fully offline and needs no secrets). It failed on its first run and was
-  right to: `tsc --noEmit` had been passing only because `.next/types` lingered locally,
-  and `LayoutProps<"/">` does not exist on a clean clone.
+- **CI now exists** (`.github/workflows/test.yml`: typecheck, lint, tests **and build** on
+  every push and PR; all of it offline, no secrets needed). It failed on its first run and
+  was right to: `tsc --noEmit` had been passing only because `.next/types` lingered
+  locally, and `LayoutProps<"/">` does not exist on a clean clone.
+- **Then all three checks passed on a commit that could not build.** `describeIngest` was
+  exported from the upload action's module, and Next allows a `'use server'` module to
+  export only async functions. Typecheck, lint and 326 tests went green; `next build`
+  failed, and two production deploys sat in ERROR while the alias quietly kept serving
+  the last good build — so the live site looked perfectly healthy. Helper moved to
+  `src/core/ingest-summary.ts`; `npm run build` is now a CI step. **Check deployment
+  state after pushing; a green alias is not a green deploy.**
 - **Verified working in production**: anonymous chat with citations; prayer request and
   human escalation both firing their tools; a real weekly report whose prayer section reads
   "Saúde: 1 pedido" — the closed-enum privacy design holding, no name and no diagnosis
