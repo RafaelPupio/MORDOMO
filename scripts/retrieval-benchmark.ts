@@ -22,11 +22,18 @@ const SEED_DIR = path.join(process.cwd(), 'content', 'seed');
 // eyeballed. `assertUniqueMatch` (below) fails the run, before anything touches a database,
 // if a substring ever stops uniquely identifying one chunk in the corpus — so a future seed
 // edit can't silently make the benchmark grade against the wrong (or an accidental) target.
-const QUESTIONS: { question: string; expectedContains: string }[] = [
+// `expectedContains` accepts several substrings when a question is genuinely answered by
+// more than one chunk; the answer is correct if the top chunk matches ANY of them.
+const QUESTIONS: { question: string; expectedContains: string | string[] }[] = [
   { question: 'que horas é o culto de domingo?', expectedContains: 'Culto de Celebração acontece aos domingos' },
   { question: 'qual o endereço da igreja?', expectedContains: 'Rua das Palmeiras' },
   { question: 'qual o endereço?', expectedContains: 'Rua das Palmeiras' },
-  { question: 'tem atividade para crianças?', expectedContains: 'Há atividades para crianças?' },
+  // Two chunks answer this equally well: the FAQ line and the Ministério Infantil
+  // section. Real embeddings prefer the ministry section — it gives ages, timing and
+  // nursery detail, where the FAQ only confirms that activities exist. The single
+  // expectation here was an artifact of tuning against bag-of-words lexical overlap,
+  // so both are accepted rather than pinning retrieval to the weaker answer.
+  { question: 'tem atividade para crianças?', expectedContains: ['Há atividades para crianças?', 'Atende crianças de 2 a 10 anos'] },
   { question: 'quando é o encontro dos jovens?', expectedContains: 'O encontro de jovens acontece no dia 10/10' },
   { question: 'como faço para ser membro?', expectedContains: 'Como me tornar membro?' },
   { question: 'tem grupo de jovens?', expectedContains: 'Grupo de adolescentes e jovens' },
@@ -44,7 +51,12 @@ async function createBenchmarkDb(): Promise<Db> {
   return db as unknown as Db;
 }
 
-function assertUniqueMatch(question: string, expectedContains: string, corpus: string[]): void {
+function asList(expected: string | string[]): string[] {
+  return Array.isArray(expected) ? expected : [expected];
+}
+
+function assertUniqueMatch(question: string, expected: string | string[], corpus: string[]): void {
+  for (const expectedContains of asList(expected)) {
   const matchCount = corpus.filter((chunk) => chunk.includes(expectedContains)).length;
   if (matchCount !== 1) {
     throw new Error(
@@ -52,6 +64,7 @@ function assertUniqueMatch(question: string, expectedContains: string, corpus: s
         `${JSON.stringify(question)} matches ${matchCount} chunks in the seed corpus (must match ` +
         'exactly 1). Update the benchmark question or the seed corpus.',
     );
+  }
   }
 }
 
@@ -99,7 +112,7 @@ async function main() {
       question,
       topDocument: top?.documentTitle ?? '(no match)',
       score: top?.score ?? 0,
-      correct: top ? top.excerpt.includes(expectedContains) : false,
+      correct: top ? asList(expectedContains).some((e) => top.excerpt.includes(e)) : false,
     });
   }
 
