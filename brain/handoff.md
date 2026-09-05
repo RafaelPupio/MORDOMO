@@ -30,7 +30,7 @@ the only work left is the first real deployment.
 
 ## Next action
 **Nothing is blocking.** The demo is public, and as of the 2026-09-05 acceptance pass every
-advertised capability has run in production at least once. 342 tests / 39 files, typecheck,
+advertised capability has run in production at least once. 350 tests / 41 files, typecheck,
 lint and build clean, CI green on GitHub. Public URL: <https://mordomo-demo.vercel.app>.
 
 That pass found and fixed two real defects — read the acceptance section in [[status]]
