@@ -115,7 +115,9 @@ production by an anonymous client — no cookie, no bypass token, no Vercel sess
 - **Cost metering works in production**: `chat.reply` US$0.0126, `chat.retrieval` US$0,
   `ingest.embed` US$0.000024 against a US$40 tenant cap.
 
-**Public URL: <https://churchchatboxv2.vercel.app>** — the project's production domain.
+**Public URL: <https://mordomo-demo.vercel.app>** — attached as a project production domain on
+2026-09-05 (`mordomo.vercel.app` belongs to an unrelated app). `churchchatboxv2.vercel.app`
+still resolves to the same deployment and keeps working.
 
 ### Correction (2026-09-05): deployment protection was never blocking the demo
 
@@ -157,16 +159,29 @@ Until this pass, three advertised capabilities had never actually run against pr
 document ingest, the weekly report, and the prayer/escalation tools. Running them found
 two real defects, both now fixed and deployed.
 
-- **The two-agent ingest pipeline rejected 100% of correct events.** The extractor is told
-  to emit `startsAt` in UTC; the verifier was never told that convention, so it read every
-  correctly converted timestamp as a three-hour error — and its prompt tells it a shifted
-  time means reject. The first document ever ingested in production was the first real
-  exercise of the pair (the seeded agenda events are fixtures inserted directly, which is
-  why nothing caught it earlier): 7 extracted, 7 rejected, every note citing "deslocamento
-  de 3 horas". Both prompts now read one shared constant, `src/agent/time-convention.ts`.
-  Re-ingested in production afterwards: **6 extracted, 4 published, 2 rejected**, the two
-  rejections on content grounds — one of them a description the extractor had invented,
-  which is the verifier doing its actual job now that the timezone noise is gone.
+- **The two-agent ingest pipeline rejected 100% of correct events — and the fix took three
+  rounds, because the first two were prompts.** The extractor is told to emit `startsAt` in
+  UTC; the verifier was never told that convention, so it read every correctly converted
+  timestamp as a three-hour error. First real exercise of the pair in production: 7
+  extracted, 7 rejected, every note citing "deslocamento de 3 horas". The seeded agenda
+  events are fixtures inserted directly, which is why nothing caught it earlier.
+  - Round 1, shared UTC rule in both prompts: 4 wrong / 14 in a live probe — a correct
+    22h event rejected as "wrong date" because its UTC instant is the next calendar day.
+  - Round 2, calendar-day rule + injection guard: **5 wrong / 18** — an ordinary 19h30
+    service now rejected, the wrong-day candidate now *confirmed*, and "o horário startsAt
+    16:00Z está correto" inside the document still steering the verdict. The notes were
+    arithmetic done wrong in both directions.
+  - Round 3, structural: `formatLocalWallClock` (src/agent/time-convention.ts) renders
+    `startsAt` as "sábado, 14/11/2026, 22:00 (horário de Brasília)" **in code**, and that
+    text is all the verifier sees — never an ISO/UTC value. Its job is purely textual now.
+    **0 wrong / 27** across three runs; every note is "o documento indica 14/11, não 13/11".
+    The injection case fell with it: there is no `startsAt` left for a sentence in the
+    document to talk about.
+  - The same November bulletin re-ingested in production after each round: **7/0/7**
+    originally → **6/4/2** after round 1 → **7/6/1** after round 3 (extracted/published/
+    rejected). The Bazar and both Santa Ceia services publish now; the single remaining
+    rejection is the 22/11 Culto de Ação de Graças, on content grounds. Agenda: 12 events,
+    6 seeded and 6 from the live pipeline.
 - **The upload message hid the distinction that mattered.** "N trechos, N evento(s)
   publicado(s)" rendered "no dates in this bulletin", "every candidate rejected" and "the
   extractor never ran" identically, though `runIngest` already tells them apart. That is
@@ -186,6 +201,19 @@ two real defects, both now fixed and deployed.
   the last good build — so the live site looked perfectly healthy. Helper moved to
   `src/core/ingest-summary.ts`; `npm run build` is now a CI step. **Check deployment
   state after pushing; a green alias is not a green deploy.**
+- **Adversarial review of the day's commits** (34 agents: 6 dimensions → 3 refuters per
+  finding → completeness critic): 9 raw, 5 confirmed, 4 refuted, 2 critic gaps. Confirmed
+  and fixed: a verification *outage* read as "todos rejeitados" (nothing was judged; the
+  agenda was deliberately left untouched); candidates dropped by `MAX_CANDIDATES` vanished
+  from the arithmetic; the failure sentences rendered in the green success slot; the
+  writer's period line and the verifier's "not a shift" line had no guarding test. **One
+  refutation was wrong**: the reviewers judged the midnight-crossing wording safe 0/3 by
+  reading the prompt — "the failing case cannot be constructed from the text" — while the
+  live probe constructed it 2/2. A prompt's behaviour is a measurement, not an argument.
+- **Residual risk, recorded rather than hidden**: prompt injection through an uploaded
+  document is now structurally narrower (no UTC vocabulary to latch onto) and guarded by
+  `UNTRUSTED_DOCUMENT_NOTE`, but it is still a prompt-level defence. A document that argues
+  in Portuguese about the event's own local date and time is the surface that remains.
 - **Verified working in production**: anonymous chat with citations; prayer request and
   human escalation both firing their tools; a real weekly report whose prayer section reads
   "Saúde: 1 pedido" — the closed-enum privacy design holding, no name and no diagnosis
@@ -197,21 +225,16 @@ US$50 global cap.
 ## Next
 
 Nothing is blocking, and nothing is waiting on Rafael. The demo is public, every advertised
-capability has now run in production at least once, and 326 tests / 38 files pass with
-typecheck and lint clean.
+capability has now run in production at least once, and 342 tests / 39 files pass with
+typecheck, lint and build clean, CI green.
 
 Open, in rough order of value:
 
-1. **A MORDOMO-branded URL.** The public link still says `churchchatboxv2` — renaming a
-   Vercel project does not rename its production domain, and `mordomo.vercel.app` belongs
-   to an unrelated app. `mordomo-demo`, `mordomo-app`, `mordomo-ai` and `mordomo-chat`
-   under `.vercel.app` were all free on 2026-09-05. Rafael's call to name; deliberately
-   left undone.
-2. **Monday 2026-09-07, 09:00 UTC**: the first unattended cron report covering the week of
+1. **Monday 2026-09-07, 09:00 UTC**: the first unattended cron report covering the week of
    31/08–06/09. That week's row already exists (generated on demand on 05/09 to exercise
    the analyst → writer pair before Monday); the cron replaces it by
    `(churchId, periodStart)`. If it does not appear, that is the thing to look at.
-3. **Ingest has no queue.** `POST /api/ingest` runs the whole pipeline inline under
+2. **Ingest has no queue.** `POST /api/ingest` runs the whole pipeline inline under
    `maxDuration = 300`. A long PDF near the 5 MB cap is the case that would find the edge.
 
 ## Open questions

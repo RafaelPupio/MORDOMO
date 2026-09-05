@@ -30,22 +30,21 @@ the only work left is the first real deployment.
 
 ## Next action
 **Nothing is blocking.** The demo is public, and as of the 2026-09-05 acceptance pass every
-advertised capability has run in production at least once. 326 tests / 38 files, typecheck
-and lint clean, CI green on GitHub.
+advertised capability has run in production at least once. 342 tests / 39 files, typecheck,
+lint and build clean, CI green on GitHub. Public URL: <https://mordomo-demo.vercel.app>.
 
 That pass found and fixed two real defects — read the acceptance section in [[status]]
-before assuming anything about the ingest pipeline. Short version: the verifier had never
-been told the extractor's UTC convention and was rejecting 100% of correct events, and the
-upload message hid the fact that it was happening.
+before assuming anything about the ingest pipeline. Short version: the verifier was rejecting
+100% of correct events; two prompt fixes made it differently wrong; the fix that held moves
+the UTC→local conversion into code so the verifier never sees UTC (0/27 in a live probe).
+The upload message had hidden all of it.
 
 Open, in rough order of value:
-1. **A MORDOMO-branded URL** — the public link still says `churchchatboxv2`. Rafael's call
-   to name; deliberately left undone. `mordomo-demo|app|ai|chat.vercel.app` were free.
-2. **Monday 2026-09-07, 09:00 UTC** — first unattended cron report. The 31/08–06/09 row
+1. **Monday 2026-09-07, 09:00 UTC** — first unattended cron report. The 31/08–06/09 row
    already exists (generated on demand to exercise the analyst → writer pair); the cron
    replaces it by `(churchId, periodStart)`. If it does not appear, look there.
-3. **Ingest has no queue** — `POST /api/ingest` runs inline under `maxDuration = 300`.
-4. `brain/log/decisions/2026-Q3.md` is 52 KB, over the 20 KB split rule. It is read on
+2. **Ingest has no queue** — `POST /api/ingest` runs inline under `maxDuration = 300`.
+3. `brain/log/decisions/2026-Q3.md` is 52 KB, over the 20 KB split rule. It is read on
    demand only (`decisions.md` is the index), so it costs nothing per session — but a
    Q4 file should start rather than growing this one further.
 

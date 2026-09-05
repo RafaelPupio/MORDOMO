@@ -28,3 +28,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-09-05` Correction: the demo was already public — `all_except_custom_domains` exempts the production domain, and every smoke test had probed a protected deployment URL
 - `2026-09-05` Acceptance pass: the two-agent ingest pipeline had never worked — the verifier was never told the extractor's UTC convention and rejected 100% of correct events
 - `2026-09-05` Typecheck, lint and tests all passed on a commit `next build` rejected; two prod deploys sat in ERROR behind a healthy alias — CI now builds
+- `2026-09-05` Review pass: static reviewers refuted the midnight-crossing bug 0/3, a live probe hit it 2/2; the verifier now gets local time rendered in code and never sees UTC (0/27)
