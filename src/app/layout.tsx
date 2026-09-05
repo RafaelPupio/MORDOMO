@@ -17,7 +17,10 @@ export const metadata: Metadata = {
   description: "AI church secretary — a portfolio project (fictional demo church).",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Typed explicitly rather than with Next's generated `LayoutProps<"/">` global: that
+// type only exists in .next/types after a build, so `tsc --noEmit` on a clean clone
+// (CI, or a fresh checkout) fails on it while passing locally where .next lingers.
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
