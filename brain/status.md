@@ -24,13 +24,12 @@ The whole chat path exists and is tested end to end against an in-memory Postgre
 - The secretary is one tool-using agent: `searchKnowledge`, `getCalendar`,
   `createPrayerRequest`, `escalateToHuman`.
 - RAG over pgvector with citation excerpts centred on the matching text.
-- Seed corpus for the fictional *Igreja da Colina*: 3 Portuguese documents + 6 events.
-  `scripts/retrieval-benchmark.ts` (`npm run benchmark:retrieval`) scores 10/10 on the ten
-  benchmark visitor questions — but only measured offline, against the deterministic
-  bag-of-words `HashEmbedder`. It has NOT yet been run against the real embedder
-  (`GatewayEmbedder`, `openai/text-embedding-3-small`) that will actually serve visitors.
-  Re-running it with `BENCHMARK_REAL_EMBEDDER=1` against the real production seed is a gate
-  before the demo is public.
+- Seed corpus for the fictional *Igreja da Colina*: 3 Portuguese documents + 6 events,
+  plus a November bulletin ingested through the live pipeline on 2026-09-05 (4 documents,
+  10 events in production). `scripts/retrieval-benchmark.ts` (`npm run benchmark:retrieval`)
+  scores **10/10 against the real embedder** (`GatewayEmbedder`,
+  `openai/text-embedding-3-small`, via `BENCHMARK_REAL_EMBEDDER=1`) and 10/10 offline
+  against the deterministic `HashEmbedder`.
 - Cost controls: `usage_ledger` on every LLM/embedding call, per-tenant monthly budget
   (fails closed), atomic per-visitor rate limit, request-size bounds.
 - Chat UI at `/chat` with source chips, bilingual disclaimer, and error recovery.
@@ -152,166 +151,61 @@ rename its production domain, and `mordomo.vercel.app` belongs to an unrelated a
 project domain, or a real custom domain, is the only way to a MORDOMO-branded link — and
 that is a naming call, not a blocker.
 
-## What runs today
+## Acceptance pass — 2026-09-05: every capability exercised in production
 
-The whole chat path exists and is tested end to end against an in-memory Postgres:
+Until this pass, three advertised capabilities had never actually run against production:
+document ingest, the weekly report, and the prayer/escalation tools. Running them found
+two real defects, both now fixed and deployed.
 
-- `POST /api/chat` → rate limit → budget gate → conversation ownership → secretary agent
-  → streamed reply, with the user turn and the assistant turn persisted.
-- `GET /api/chat/history` resumes a returning visitor's own conversation (matched by the
-  same `ccb_visitor` cookie the POST path trusts for ownership) instead of the client
-  starting a fresh, empty one on every page load — this is also how a staff-sent support
-  reply actually reaches the visitor who asked, the next time they open `/chat`.
-- The secretary is one tool-using agent: `searchKnowledge`, `getCalendar`,
-  `createPrayerRequest`, `escalateToHuman`.
-- RAG over pgvector with citation excerpts centred on the matching text.
-- Seed corpus for the fictional *Igreja da Colina*: 3 Portuguese documents + 6 events.
-  `scripts/retrieval-benchmark.ts` (`npm run benchmark:retrieval`) scores 10/10 on the ten
-  benchmark visitor questions — but only measured offline, against the deterministic
-  bag-of-words `HashEmbedder`. It has NOT yet been run against the real embedder
-  (`GatewayEmbedder`, `openai/text-embedding-3-small`) that will actually serve visitors.
-  Re-running it with `BENCHMARK_REAL_EMBEDDER=1` against the real production seed is a gate
-  before the demo is public.
-- Cost controls: `usage_ledger` on every LLM/embedding call, per-tenant monthly budget
-  (fails closed), atomic per-visitor rate limit, request-size bounds.
-- Chat UI at `/chat` with source chips, bilingual disclaimer, and error recovery.
-- **Document ingest pipeline** (`runIngest`, Plan 2): upload → parse → chunk → embed →
-  extract → verify → publish, driving each document through an explicit `ingest_status`
-  state machine (`uploaded → parsing → extracting → verifying → published`, `failed`
-  reachable from any non-terminal state, `published` terminal so a served document is
-  never silently pulled back into the pipeline). An extractor agent pulls candidate
-  calendar events out of the document text; a separate verifier agent — a distinct model
-  call, prompted to disprove each candidate rather than confirm it — audits every
-  candidate against the source before anything reaches the calendar. The pipeline fails
-  closed throughout: a verification-call outage rejects that candidate instead of
-  publishing it unchecked, and any unhandled failure parks the document at `failed` with
-  the error recorded rather than leaving it stuck mid-run. Fail-closed does NOT mean
-  fail-destructive: an agent-stage outage on re-ingest (extractor or verifier) leaves the
-  document's previously verified events untouched rather than replacing them with an
-  empty set — `IngestResult.eventsReplaced` says whether this run's outcome was trustworthy
-  enough to actually replace them. `events.verified` is enforced at read time
-  (`listUpcomingEvents`), not just written by the verifier and trusted. `POST /api/ingest`
-  runs this inline (`maxDuration = 300`, no queue yet) behind the staff session cookie
-  (see below) — an unset session secret, a missing cookie, a bad signature, an expired
-  session, or a session signed for a different church all fail closed with 401 — and
-  returns a non-201 status when the run itself ends `failed`. An optional `documentId`
-  form field re-ingests (replaces) that document instead of creating a new one, rejecting
-  one that doesn't belong to the caller's church. Proven end to end in
-  `tests/e2e/ingest-to-answer.test.ts`: a freshly ingested bulletin is retrievable via the
-  secretary's `searchKnowledge` tool, cited to the right document, and its verified event
-  shows up in `getCalendar`.
-- **Staff area** (`/staff`, Plan 3): a password check (`STAFF_PASSWORD`, fails closed
-  when unset) signs an HMAC-signed, httpOnly session cookie; the `(dashboard)` route
-  group re-checks that cookie on every request and redirects to `/staff/login` otherwise
-  — `/staff/login` itself sits outside the guarded group, so an unauthenticated visit
-  redirects exactly once, never loops. Every staff page and Server Action derives
-  `churchId` from that session alone (`requireStaffContext()`), never from a form field.
-  Documents: list, upload (through the same `runIngest` pipeline `POST /api/ingest`
-  uses), per-document ingest status. Agenda: verified events with their extraction
-  provenance (source quote + verifier note). Prayer requests and support tickets: status
-  workflow, plus a reply-drafter agent (`draftReply`) that proposes a grounded Portuguese
-  reply for a ticket — a staff member always edits and sends it; the drafter returns an
-  empty draft rather than throwing if retrieval or generation fails, so a broken drafter
-  never blocks the inbox. Usage page: month-to-date cost per feature
-  (`chat.reply`, `chat.retrieval`, `ingest.embed`, `ingest.extract`, `ingest.verify`,
-  `support.draft`, `support.retrieval`) against the tenant's budget. All staff mutations
-  remain rate-limited and budget-gated exactly like the public chat path — an
-  authenticated session on a public demo is still an untrusted spend path, not a reason
-  to relax the gates.
-- **Reporting + portfolio shell** (Plan 4): `gatherWeekActivity` bounds each raw activity
-  kind before the analyst sees it; the analyst produces structured findings and a separate
-  writer turns only those findings, aggregate counts, and the week's AI cost into Portuguese
-  markdown. A report is never published after a failed analysis or writer call. The cron
-  checks the same monthly tenant/global budget before either model runs. Prayer themes are a closed
-  Portuguese vocabulary (plus `outro`), so personal names and diagnoses are structurally
-  impossible in a digest theme. The other operational fields remain free-text summaries
-  and do not make the same structural guarantee. `/staff/relatorios` shows reports and can run last week's
-  report on demand; `GET /api/cron/weekly-report` runs each Monday at 09:00 UTC behind
-  `CRON_SECRET`. The public `/` page now maps all ten built AI capabilities to the actual
-  product surfaces and explains why the visitor hot path uses one agent while ingest and
-  reporting use separate two-agent pipelines.
+- **The two-agent ingest pipeline rejected 100% of correct events.** The extractor is told
+  to emit `startsAt` in UTC; the verifier was never told that convention, so it read every
+  correctly converted timestamp as a three-hour error — and its prompt tells it a shifted
+  time means reject. The first document ever ingested in production was the first real
+  exercise of the pair (the seeded agenda events are fixtures inserted directly, which is
+  why nothing caught it earlier): 7 extracted, 7 rejected, every note citing "deslocamento
+  de 3 horas". Both prompts now read one shared constant, `src/agent/time-convention.ts`.
+  Re-ingested in production afterwards: **6 extracted, 4 published, 2 rejected**, the two
+  rejections on content grounds — one of them a description the extractor had invented,
+  which is the verifier doing its actual job now that the timezone noise is gone.
+- **The upload message hid the distinction that mattered.** "N trechos, N evento(s)
+  publicado(s)" rendered "no dates in this bulletin", "every candidate rejected" and "the
+  extractor never ran" identically, though `runIngest` already tells them apart. That is
+  how a total-rejection bug looked like an ordinary result. `describeIngest` now reports
+  the whole outcome.
+- **A report claimed two different end dates** — heading 06/09, prose 07/09 — because the
+  writer built its own period line from the raw half-open `periodEnd`. `formatPeriodLabel`
+  moved to `src/core/period.ts` so both read one computation.
+- **CI now exists** (`.github/workflows/test.yml`: typecheck, lint, tests on every push and
+  PR; the suite is fully offline and needs no secrets). It failed on its first run and was
+  right to: `tsc --noEmit` had been passing only because `.next/types` lingered locally,
+  and `LayoutProps<"/">` does not exist on a clean clone.
+- **Verified working in production**: anonymous chat with citations; prayer request and
+  human escalation both firing their tools; a real weekly report whose prayer section reads
+  "Saúde: 1 pedido" — the closed-enum privacy design holding, no name and no diagnosis
+  reaching the digest.
 
-## ⚠ Blocker found 2026-09-04: the attached Neon database is NOT ours
-
-`vercel integration list` shows a Neon resource on the `mordomo` project, and the earlier
-note treated that as "the database is provisioned". Inspecting it before running any
-migration showed it belongs to a **different application** and holds that app's live data:
-
-    organizations (2)  organization_profiles (1)  personal_contexts (1)
-    data_control_events (19)  secretary_profile_versions (5)
-    research_briefs (3)  research_facts (9)  research_sources (3)
-    + documents (3), chunks (22), messages (16), usage_ledger (16), events (6) …
-
-It is neither MORDOMO's nor ChurchChatBox V1's — V1's migrations create `church`,
-`admin_user`, `menu_item` (singular), a different schema entirely. Two proofs it is not
-ours: `churches` **does not exist** (every MORDOMO table FKs to it), and the drizzle
-journal shows **8 applied migrations** where MORDOMO has 5.
-
-**Why this mattered:** the documented next step was `npm run db:migrate`. That would have
-run MORDOMO's migrations into a live foreign database whose `documents`, `chunks`,
-`messages`, `events`, `conversations`, `tickets`, `budgets`, `rate_limits` and
-`usage_ledger` names collide with ours but whose shapes differ — a partial, failed
-migration against someone else's data.
-
-**Do not migrate or seed until MORDOMO has its own Neon database.** `.env.local` has been
-reset to a placeholder so nothing in this repo can reach the foreign one.
-
-Deciding what to do is Rafael's: provision a fresh Neon project for MORDOMO and connect
-it, and disconnect the foreign resource from the `mordomo` Vercel project.
-
-## Deployment state (checked live 2026-08-31, not inferred)
-
-The long-standing "blocked on Neon Marketplace terms" note was **stale**. A Neon database
-(`neon-cordovan-canvas`) and a Clerk instance (`clerk-pink-button`) are both provisioned
-and attached to the Vercel project `mordomo` — the terms were accepted around 2026-08-25.
-Clerk is not used by this codebase (staff auth is our own signed cookie) and is unused
-cruft worth removing.
-
-What actually stands between here and a working public demo:
-
-1. **Every Neon variable is scoped to `Development` only.** `vercel env ls production`
-   returns nothing, so a production build has no `DATABASE_URL`.
-2. **None of the app's own secrets exist in any environment**: `AI_GATEWAY_API_KEY`,
-   `STAFF_PASSWORD`, `STAFF_SESSION_SECRET`, `CRON_SECRET`,
-   `DEMO_GLOBAL_MONTHLY_USD_CAP`.
-3. **Migrations and seed have not been run against that database** (unverified — checking
-   needs the connection string).
-4. **Deployment protection is on** (`ssoProtection: all_except_custom_domains`), so every
-   URL redirects to a Vercel login. Turn this off LAST — an open URL is a spend path, so
-   it should only open once the budget caps are live.
-5. **Retrieval benchmark still offline-only** — `BENCHMARK_REAL_EMBEDDER=1 npm run
-   benchmark:retrieval` against the real seed is the launch gate.
-
-## Previously blocked — now resolved
-
-~~Deployment is blocked on Neon Marketplace terms-of-service acceptance.~~
-**Resolved 2026-08-25** — the terms were accepted and the database provisioned. Kept here
-because the reasoning still applies to any future marketplace integration: Provisioning the production database via
-`vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
-interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
-accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
-the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
-`STAFF_PASSWORD`, and `STAFF_SESSION_SECRET`, `BENCHMARK_REAL_EMBEDDER=1 npm run
-benchmark:retrieval` against that real seed to confirm retrieval quality holds with real
-embeddings (not just the offline HashEmbedder number), `vercel deploy --prod`.
-
-**Correction (2026-08-31):** this note previously claimed nothing had been deployed.
-That was wrong. The GitHub integration has been auto-building every push since
-2026-08-20 — roughly twenty preview and production deployments exist. They are not a
-working demo: deployment protection (`ssoProtection: all_except_custom_domains`) makes
-every deployment URL redirect to a Vercel login, and with no database provisioned every
-DB-backed route would fail anyway. What is true is that no Neon database exists and no
-publicly reachable demo exists.
+Month-to-date spend after all of it: well under a dollar against the US$40 tenant cap and
+US$50 global cap.
 
 ## Next
 
-All four product plans are merged to `main` (318 tests, typecheck and lint clean). The
-only remaining work is deployment, and it is blocked on Rafael — see above.
+Nothing is blocking, and nothing is waiting on Rafael. The demo is public, every advertised
+capability has now run in production at least once, and 326 tests / 38 files pass with
+typecheck and lint clean.
 
-1. Rafael accepts the Neon Marketplace terms in a browser → finish deployment (provision,
-   migrate, seed, benchmark against the real embedder, deploy, verify).
-2. After the first real deploy: re-run the retrieval benchmark against the real embedder
-   and record the number here, replacing the offline-only caveat above.
+Open, in rough order of value:
+
+1. **A MORDOMO-branded URL.** The public link still says `churchchatboxv2` — renaming a
+   Vercel project does not rename its production domain, and `mordomo.vercel.app` belongs
+   to an unrelated app. `mordomo-demo`, `mordomo-app`, `mordomo-ai` and `mordomo-chat`
+   under `.vercel.app` were all free on 2026-09-05. Rafael's call to name; deliberately
+   left undone.
+2. **Monday 2026-09-07, 09:00 UTC**: the first unattended cron report covering the week of
+   31/08–06/09. That week's row already exists (generated on demand on 05/09 to exercise
+   the analyst → writer pair before Monday); the cron replaces it by
+   `(churchId, periodStart)`. If it does not appear, that is the thing to look at.
+3. **Ingest has no queue.** `POST /api/ingest` runs the whole pipeline inline under
+   `maxDuration = 300`. A long PDF near the 5 MB cap is the case that would find the edge.
 
 ## Open questions
 

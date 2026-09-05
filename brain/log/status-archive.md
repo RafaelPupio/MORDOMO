@@ -83,3 +83,84 @@ dropped (M9); the hub's agenda tile shows a real event count instead of "Ver age
 (M10); and two slightly different Portuguese "try again" strings were unified (M13).
 Full findings, decisions, and verification output:
 `.superpowers/sdd/plan3-final-fixes-report.md`.
+
+
+## Archived 2026-09-05 — superseded by the deployed-and-verified state in [[../status]]
+
+Three blocks below described a project that was not yet deployed, plus a blocker that
+was resolved on 2026-09-04. They are kept because the corrections they record are the
+project's most repeated lesson: cloud state is not repo state, and a setting's name is
+not a measurement.
+
+## ⚠ Blocker found 2026-09-04: the attached Neon database is NOT ours
+
+`vercel integration list` shows a Neon resource on the `mordomo` project, and the earlier
+note treated that as "the database is provisioned". Inspecting it before running any
+migration showed it belongs to a **different application** and holds that app's live data:
+
+    organizations (2)  organization_profiles (1)  personal_contexts (1)
+    data_control_events (19)  secretary_profile_versions (5)
+    research_briefs (3)  research_facts (9)  research_sources (3)
+    + documents (3), chunks (22), messages (16), usage_ledger (16), events (6) …
+
+It is neither MORDOMO's nor ChurchChatBox V1's — V1's migrations create `church`,
+`admin_user`, `menu_item` (singular), a different schema entirely. Two proofs it is not
+ours: `churches` **does not exist** (every MORDOMO table FKs to it), and the drizzle
+journal shows **8 applied migrations** where MORDOMO has 5.
+
+**Why this mattered:** the documented next step was `npm run db:migrate`. That would have
+run MORDOMO's migrations into a live foreign database whose `documents`, `chunks`,
+`messages`, `events`, `conversations`, `tickets`, `budgets`, `rate_limits` and
+`usage_ledger` names collide with ours but whose shapes differ — a partial, failed
+migration against someone else's data.
+
+**Do not migrate or seed until MORDOMO has its own Neon database.** `.env.local` has been
+reset to a placeholder so nothing in this repo can reach the foreign one.
+
+Deciding what to do is Rafael's: provision a fresh Neon project for MORDOMO and connect
+it, and disconnect the foreign resource from the `mordomo` Vercel project.
+
+## Deployment state (checked live 2026-08-31, not inferred)
+
+The long-standing "blocked on Neon Marketplace terms" note was **stale**. A Neon database
+(`neon-cordovan-canvas`) and a Clerk instance (`clerk-pink-button`) are both provisioned
+and attached to the Vercel project `mordomo` — the terms were accepted around 2026-08-25.
+Clerk is not used by this codebase (staff auth is our own signed cookie) and is unused
+cruft worth removing.
+
+What actually stands between here and a working public demo:
+
+1. **Every Neon variable is scoped to `Development` only.** `vercel env ls production`
+   returns nothing, so a production build has no `DATABASE_URL`.
+2. **None of the app's own secrets exist in any environment**: `AI_GATEWAY_API_KEY`,
+   `STAFF_PASSWORD`, `STAFF_SESSION_SECRET`, `CRON_SECRET`,
+   `DEMO_GLOBAL_MONTHLY_USD_CAP`.
+3. **Migrations and seed have not been run against that database** (unverified — checking
+   needs the connection string).
+4. **Deployment protection is on** (`ssoProtection: all_except_custom_domains`), so every
+   URL redirects to a Vercel login. Turn this off LAST — an open URL is a spend path, so
+   it should only open once the budget caps are live.
+5. **Retrieval benchmark still offline-only** — `BENCHMARK_REAL_EMBEDDER=1 npm run
+   benchmark:retrieval` against the real seed is the launch gate.
+
+## Previously blocked — now resolved
+
+~~Deployment is blocked on Neon Marketplace terms-of-service acceptance.~~
+**Resolved 2026-08-25** — the terms were accepted and the database provisioned. Kept here
+because the reasoning still applies to any future marketplace integration: Provisioning the production database via
+`vercel integration add neon` surfaces a Marketplace terms screen that only renders in an
+interactive browser session, so it cannot be driven unattended from the CLI. Once Rafael
+accepts those terms, the remaining steps are: `npm run db:migrate`, `npm run seed` (with
+the REAL embedder — never `SEED_FAKE_EMBEDDER`), set `AI_GATEWAY_API_KEY`,
+`STAFF_PASSWORD`, and `STAFF_SESSION_SECRET`, `BENCHMARK_REAL_EMBEDDER=1 npm run
+benchmark:retrieval` against that real seed to confirm retrieval quality holds with real
+embeddings (not just the offline HashEmbedder number), `vercel deploy --prod`.
+
+**Correction (2026-08-31):** this note previously claimed nothing had been deployed.
+That was wrong. The GitHub integration has been auto-building every push since
+2026-08-20 — roughly twenty preview and production deployments exist. They are not a
+working demo: deployment protection (`ssoProtection: all_except_custom_domains`) makes
+every deployment URL redirect to a Vercel login, and with no database provisioned every
+DB-backed route would fail anyway. What is true is that no Neon database exists and no
+publicly reachable demo exists.
+

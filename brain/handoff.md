@@ -29,19 +29,25 @@ the only work left is the first real deployment.
   `mordomo-<hash>-rafael-e2fe.vercel.app` — the latter only ever proves the protected side.
 
 ## Next action
-**Nothing is blocking. The demo is public and working.**
+**Nothing is blocking.** The demo is public, and as of the 2026-09-05 acceptance pass every
+advertised capability has run in production at least once. 326 tests / 38 files, typecheck
+and lint clean, CI green on GitHub.
 
-Corrected 2026-09-05: this section previously said Rafael had to turn off Vercel
-Authentication. He does not — that setting never covered the production domain.
-<https://churchchatboxv2.vercel.app> was verified anonymously (empty cookie jar): landing
-200, `/chat` 200, `/staff/login` 200, cron 401 without the secret, and a real Portuguese
-answer with citations from `POST /api/chat`. See the correction block in [[status]].
+That pass found and fixed two real defects — read the acceptance section in [[status]]
+before assuming anything about the ingest pipeline. Short version: the verifier had never
+been told the extractor's UTC convention and was rejecting 100% of correct events, and the
+upload message hid the fact that it was happening.
 
-Open, and both are naming calls rather than work:
-1. The public URL still says `churchchatboxv2`. `mordomo-demo|app|ai|chat.vercel.app` are
-   free; adding one as a project domain gives a MORDOMO-branded link.
-2. Pricing and competitor comparison — deliberately deferred, and it belongs in the
-   private V1 repo, not this public one.
+Open, in rough order of value:
+1. **A MORDOMO-branded URL** — the public link still says `churchchatboxv2`. Rafael's call
+   to name; deliberately left undone. `mordomo-demo|app|ai|chat.vercel.app` were free.
+2. **Monday 2026-09-07, 09:00 UTC** — first unattended cron report. The 31/08–06/09 row
+   already exists (generated on demand to exercise the analyst → writer pair); the cron
+   replaces it by `(churchId, periodStart)`. If it does not appear, look there.
+3. **Ingest has no queue** — `POST /api/ingest` runs inline under `maxDuration = 300`.
+4. `brain/log/decisions/2026-Q3.md` is 52 KB, over the 20 KB split rule. It is read on
+   demand only (`decisions.md` is the index), so it costs nothing per session — but a
+   Q4 file should start rather than growing this one further.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.
