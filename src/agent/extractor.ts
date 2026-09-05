@@ -1,6 +1,7 @@
 import { generateObject, NoObjectGeneratedError } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
+import { CHURCH_TIMEZONE_NOTE } from '@/agent/time-convention';
 import { FAST_MODEL, priceableModelId } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
 import type { Db } from '@/db/client';
@@ -52,7 +53,8 @@ export type ExtractResult = { candidates: ExtractedEvent[]; failed: boolean };
 function systemPrompt(referenceDate: string): string {
   return [
     'You extract calendar events from Brazilian church documents written in Portuguese.',
-    `Today's reference date for resolving relative dates is ${referenceDate}. Assume times are America/Sao_Paulo (UTC-3) unless the document says otherwise, and output startsAt in UTC.`,
+    `Today's reference date for resolving relative dates is ${referenceDate}.`,
+    CHURCH_TIMEZONE_NOTE,
     'Extract ONLY events that have a date. Recurring weekly services stated as a general schedule are NOT events — skip them.',
     'sourceQuote must be copied verbatim from the document. Never paraphrase it, and never invent one: it is how a second reviewer checks your work.',
     'Prefer recall over precision — a low confidence value is better than omitting a plausible event, because everything you return is independently verified before it is published.',

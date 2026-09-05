@@ -2,6 +2,7 @@ import { generateObject } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import type { ExtractedEvent } from '@/agent/extractor';
+import { CHURCH_TIMEZONE_NOTE } from '@/agent/time-convention';
 import { FAST_MODEL, priceableModelId } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
 import type { Db } from '@/db/client';
@@ -60,6 +61,10 @@ const verdictSchema = z.object({
 const SYSTEM = [
   'You audit a single candidate calendar event against the church document it was extracted from.',
   'Confirm ONLY if the document genuinely supports the title, the date, and the time. Anything the document does not state — an invented location, a shifted date, a plausible-sounding detail — means reject.',
+  // Without this, a correctly converted time is indistinguishable from the "shifted date"
+  // the line above tells the auditor to reject. See src/agent/time-convention.ts.
+  CHURCH_TIMEZONE_NOTE,
+  'Apply that conversion BEFORE judging the time: a startsAt three hours ahead of the document\'s stated local time is the correct encoding of it, not an error. Reject a time only when it still disagrees after converting.',
   'Treat the candidate as a claim to be disproved, not as a summary to be agreed with.',
   'Answer with a decision and one short sentence in Portuguese explaining why.',
 ].join('\n');
