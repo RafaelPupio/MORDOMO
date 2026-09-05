@@ -128,6 +128,11 @@ describe('writeReport', () => {
     expect(sentToModel).not.toContain('RAW_PRAYER_MARKER_2');
     expect(sentToModel).not.toContain('RAW_TICKET_MARKER_3');
     expect(sentToModel).toContain('US$ 1.7500');
+    // The period line must be the same inclusive label the report heading shows
+    // (src/core/period.ts). Reverting to the raw ISO pair passes every other test in the
+    // suite while re-creating "heading says 16/08, prose says 17/08".
+    expect(sentToModel).toContain('PERÍODO: 10/08/2026 a 16/08/2026');
+    expect(sentToModel).not.toContain('2026-08-17');
   });
 
   it('does not discard a successful draft when the ledger write fails', async () => {

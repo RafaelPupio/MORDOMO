@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { describeIngest } from '@/core/ingest-summary';
+import { buildUploadState, type UploadState } from './upload-state';
 import { GatewayEmbedder } from '@/ai/embedder';
 import { FAST_MODEL } from '@/ai/pricing';
 import { checkBudget } from '@/ai/usage';
@@ -16,7 +16,6 @@ import { createDocument } from '@/db/repo/documents';
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
-export type UploadState = { error?: string; ok?: string };
 
 /**
  * Runs an uploaded file through the SAME pipeline the public ingest endpoint uses
@@ -87,15 +86,9 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     revalidatePath('/staff/documentos');
     revalidatePath('/staff/agenda');
 
-    if (result.status === 'failed') return { error: 'A leitura do documento falhou. Veja o status na lista.' };
-
-    // Report the whole outcome, not just `published`. `runIngest` already distinguishes
-    // "this document has no dated events" from "candidates were found and every one was
-    // rejected" from "the extractor never ran" — and collapsing all three into a bare
-    // "0 evento(s) publicado(s)" is what let a pipeline bug that rejected 100% of correct
-    // candidates look exactly like a bulletin with nothing in it. See
-    // src/agent/time-convention.ts for the bug that hid here.
-    return { ok: describeIngest(result) };
+    // Which slot each outcome lands in — green, amber or red — is decided in one tested
+    // place, src/app/staff/(dashboard)/documentos/upload-state.ts.
+    return buildUploadState(result);
   } catch (error) {
     console.error('uploadDocument: unexpected failure', { churchId, fileName: file.name, error });
     return { error: 'Não foi possível processar o documento. Tente novamente.' };

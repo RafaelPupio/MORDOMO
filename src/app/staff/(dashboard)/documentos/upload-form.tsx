@@ -1,7 +1,8 @@
 'use client';
 
 import { useActionState } from 'react';
-import { uploadDocument, type UploadState } from './actions';
+import { uploadDocument } from './actions';
+import type { UploadState } from './upload-state';
 
 const INITIAL_STATE: UploadState = {};
 
@@ -33,6 +34,7 @@ export function UploadForm() {
       />
 
       {state?.error && <p role="alert" className="text-sm text-red-700">{state.error}</p>}
+      {state?.notice && <p role="status" className="text-sm text-amber-700">{state.notice}</p>}
       {state?.ok && <p role="status" className="text-sm text-emerald-700">{state.ok}</p>}
 
       <button
