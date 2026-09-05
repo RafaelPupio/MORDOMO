@@ -24,4 +24,5 @@ next-env.d.ts
 # Agent tooling artifacts (installed locally, not part of the product)
 .agents/
 skills-lock.json
+.claude/skills/
 .env*
