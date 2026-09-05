@@ -6,6 +6,20 @@ import { FAST_MODEL, priceableModelId } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
 import type { Db } from '@/db/client';
 
+/**
+ * How many events the extractor is asked to return, at most. This is the same number as
+ * `MAX_CANDIDATES` in src/core/ingest.ts — that constant is defined FROM this one — because
+ * a candidate the verifier will never see is pure cost.
+ *
+ * It also keeps the extractor's output inside `maxOutputTokens`. A 235-page bulletin with
+ * a dated line every few lines made the model emit events until the 4096-token cap cut the
+ * JSON mid-string ("Unterminated string in JSON at position 11544"), so `generateObject`
+ * threw, `extractEvents` reported `failed`, and the document published with zero events
+ * instead of its first eight (2026-09-05, first production load test). A bounded list is
+ * far more useful than an unbounded one that cannot finish.
+ */
+export const MAX_EXTRACTED_EVENTS = 8;
+
 export type ExtractorDeps = { db: Db; model?: LanguageModel };
 export type ExtractorInput = {
   churchId: string;
@@ -59,6 +73,7 @@ function systemPrompt(referenceDate: string): string {
     'Extract ONLY events that have a date. Recurring weekly services stated as a general schedule are NOT events — skip them.',
     'sourceQuote must be copied verbatim from the document. Never paraphrase it, and never invent one: it is how a second reviewer checks your work.',
     'Prefer recall over precision — a low confidence value is better than omitting a plausible event, because everything you return is independently verified before it is published.',
+    `Return at most ${MAX_EXTRACTED_EVENTS} events. When the document has more, keep the ${MAX_EXTRACTED_EVENTS} that start soonest on or after the reference date and omit the rest: a short, complete list is far more useful than a long one that never finishes.`,
     'Return an empty list when the document contains no dated events.',
   ].join('\n');
 }

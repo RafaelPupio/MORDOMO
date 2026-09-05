@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { LanguageModel } from 'ai';
-import { extractEvents, type ExtractedEvent } from '@/agent/extractor';
+import { MAX_EXTRACTED_EVENTS, extractEvents, type ExtractedEvent } from '@/agent/extractor';
 import { verifyEvents, type Verdict, type VerifiedEvent } from '@/agent/verifier';
 import type { Embedder } from '@/ai/embedder';
 import { recordUsage } from '@/ai/usage';
@@ -100,7 +100,7 @@ export const MAX_EXTRACTION_CHARS = 40_000;
 // candidates before this cap existed. 8 is deliberately generous for a real church
 // bulletin (which realistically names a handful of dated events, not dozens) while keeping
 // the worst case a known, checkable number rather than a provider default.
-export const MAX_CANDIDATES = 8;
+export const MAX_CANDIDATES = MAX_EXTRACTED_EVENTS;
 
 // A crashed run's recovery write must itself never fail. `error.message` can carry
 // arbitrary bytes from wherever the run actually broke — including, in the exact scenario
