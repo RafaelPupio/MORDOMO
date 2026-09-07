@@ -109,7 +109,13 @@ clean; CI (typecheck + lint + tests + build) green on every push.
   the reply box, sent, and **reaching the visitor's own conversation** via
   `GET /api/chat/history` — and nobody else's (no cookie → empty).
 - A real weekly report (analyst → writer) whose prayer section reads "Saúde: 1 pedido" —
-  the closed-enum privacy design holding.
+  the closed-enum privacy design holding. **The first unattended cron run happened**:
+  Monday 2026-09-07 09:00:41Z, `/api/cron/weekly-report` → 200, `report.generate:
+  published`, replacing the on-demand row for 31/08–06/09 in place (same `reportId`) with
+  the completed week — 10 conversations, both pastoral tickets, period line consistent.
+- A scanned (image-only) PDF is told apart from a broken file: `POST /api/ingest` → 422
+  `empty_document` with `pdfNoTextLayer: true`; the form shows "O PDF não tem texto
+  selecionável — … envie o texto ou um PDF com OCR" in the red slot; no row is created.
 - Budget metering on every call; month-to-date spend a few cents against US$40 / US$50 caps.
 - Retrieval gate **10/10** against the real embedder, re-run after the test corpus was removed.
 
@@ -134,15 +140,13 @@ clean; CI (typecheck + lint + tests + build) green on every push.
 ## Next
 
 Nothing is blocking, and nothing is waiting on Rafael. The demo is public, every advertised
-capability has now run in production at least once, and 350 tests / 41 files pass with
+capability has now run in production at least once, and 356 tests / 41 files pass with
 typecheck, lint and build clean, CI green.
 
 Open, in rough order of value:
 
-1. **Monday 2026-09-07, 09:00 UTC**: the first unattended cron report covering the week of
-   31/08–06/09. That week's row already exists (generated on demand on 05/09 to exercise
-   the analyst → writer pair before Monday); the cron replaces it by
-   `(churchId, periodStart)`. If it does not appear, that is the thing to look at.
+1. ~~Monday cron~~ — ran 2026-09-07 09:00:41Z and replaced the on-demand row as designed.
+   Nothing scheduled is unproven any more.
 2. **Ingest has no queue.** `POST /api/ingest` runs the whole pipeline inline under
    `maxDuration = 300`. Measured: a 964 KB, 235-page PDF takes 31 s end to end, so the
    5 MB cap is not near the time limit for text PDFs; a scanned/image PDF is untested.

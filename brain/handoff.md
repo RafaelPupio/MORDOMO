@@ -30,7 +30,7 @@ the only work left is the first real deployment.
 
 ## Next action
 **Nothing is blocking.** The demo is public, and as of the 2026-09-05 acceptance pass every
-advertised capability has run in production at least once. 350 tests / 41 files, typecheck,
+advertised capability has run in production at least once. 356 tests / 41 files, typecheck,
 lint and build clean, CI green on GitHub. Public URL: <https://mordomo-demo.vercel.app>.
 
 That pass found and fixed two real defects — read the acceptance section in [[status]]
@@ -40,9 +40,7 @@ the UTC→local conversion into code so the verifier never sees UTC (0/27 in a l
 The upload message had hidden all of it.
 
 Open, in rough order of value:
-1. **Monday 2026-09-07, 09:00 UTC** — first unattended cron report. The 31/08–06/09 row
-   already exists (generated on demand to exercise the analyst → writer pair); the cron
-   replaces it by `(churchId, periodStart)`. If it does not appear, look there.
+1. ~~Monday cron~~ — ran 2026-09-07 09:00:41Z, published, row replaced in place. Done.
 2. **Ingest has no queue** — `POST /api/ingest` runs inline under `maxDuration = 300`.
 3. `brain/log/decisions/2026-Q3.md` is 52 KB, over the 20 KB split rule. It is read on
    demand only (`decisions.md` is the index), so it costs nothing per session — but a
