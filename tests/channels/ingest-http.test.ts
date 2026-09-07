@@ -145,6 +145,32 @@ describe('handleIngestRequest', () => {
     expect(await db.select().from(documents)).toHaveLength(0);
   });
 
+  // A scanned bulletin: structurally valid PDF, no text layer. Must not be a 400 that reads
+  // like a malformed request — the caller needs to know to ask for an OCR'd copy.
+  it('rejects a PDF with no text layer with 422 and says so, persisting nothing', async () => {
+    const { db, cookie } = await setupDemo();
+    const enc = new TextEncoder();
+    const objs = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>',
+    ];
+    let out = '%PDF-1.4\n';
+    const offsets: number[] = [];
+    objs.forEach((o, i) => { offsets.push(enc.encode(out).length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = enc.encode(out).length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+
+    const res = await handleIngestRequest(deps(db), ingestReq(form(out, 'scan.pdf', 'application/pdf'), cookie));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('empty_document');
+    expect(body.pdfNoTextLayer).toBe(true);
+    expect(body.pageCount).toBe(1);
+    expect(await db.select().from(documents)).toHaveLength(0);
+  });
+
   it('rejects an oversized file with 413', async () => {
     const { db, cookie } = await setupDemo();
     const big = 'a'.repeat(6 * 1024 * 1024);

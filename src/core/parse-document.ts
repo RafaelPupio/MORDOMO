@@ -7,6 +7,26 @@ export class UnsupportedMediaTypeError extends Error {
   }
 }
 
+/**
+ * The parser found no text at all. For a PDF this almost always means a scanned document —
+ * page images with no text layer — which is what a church secretary is most likely to
+ * upload from a photocopier. Typed, so the upload paths can say "this PDF has no
+ * selectable text" instead of the generic "could not read the file" a corrupt upload gets;
+ * the two need different actions from the person (get an OCR'd copy vs. try another file).
+ */
+export class EmptyDocumentError extends Error {
+  readonly isPdf: boolean;
+  readonly pageCount: number | null;
+  constructor(isPdf: boolean, pageCount: number | null) {
+    super(isPdf
+      ? `PDF has no text layer (${pageCount ?? '?'} page(s)) — scanned document? Nothing to ingest`
+      : 'Parsed document is empty — nothing to ingest');
+    this.name = 'EmptyDocumentError';
+    this.isPdf = isPdf;
+    this.pageCount = pageCount;
+  }
+}
+
 const TEXT_TYPES = new Set(['text/markdown', 'text/plain', 'text/x-markdown']);
 
 export async function parseDocument(bytes: Uint8Array, mimeType: string): Promise<ParsedDocument> {
@@ -39,7 +59,7 @@ export async function parseDocument(bytes: Uint8Array, mimeType: string): Promis
   }
 
   text = normalize(text);
-  if (!text) throw new Error('Parsed document is empty — nothing to ingest');
+  if (!text) throw new EmptyDocumentError(type === 'application/pdf', pageCount);
   return { text, pageCount };
 }
 

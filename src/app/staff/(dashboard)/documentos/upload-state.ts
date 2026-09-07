@@ -1,4 +1,5 @@
 import { describeIngest, ingestNeedsAttention, type IngestOutcome } from '@/core/ingest-summary';
+import { EmptyDocumentError, UnsupportedMediaTypeError } from '@/core/parse-document';
 import type { IngestStatus } from '@/core/ingest-status';
 
 // Mirrors `GenerateReportState` (relatorios/generate-report-state.ts): a plain function,
@@ -20,4 +21,22 @@ export function buildUploadState(result: IngestOutcome & { status: IngestStatus 
   }
   const message = describeIngest(result);
   return ingestNeedsAttention(result) ? { notice: message } : { ok: message };
+}
+
+/**
+ * The upload is rejected before a document row exists. Three different situations, three
+ * different next steps for the secretary, so three different sentences: wrong format,
+ * a PDF with no text layer (a scan — get an OCR'd copy or send the text), and a file that
+ * genuinely could not be read.
+ */
+export function buildParseFailureState(error: unknown): UploadState {
+  if (error instanceof UnsupportedMediaTypeError) {
+    return { error: 'Formato não suportado. Envie PDF ou Markdown.' };
+  }
+  if (error instanceof EmptyDocumentError) {
+    return error.isPdf
+      ? { error: 'O PDF não tem texto selecionável — se for um documento digitalizado, envie o texto ou um PDF com OCR.' }
+      : { error: 'O arquivo está vazio.' };
+  }
+  return { error: 'Não foi possível ler o arquivo.' };
 }

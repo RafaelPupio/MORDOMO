@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildUploadState } from '@/app/staff/(dashboard)/documentos/upload-state';
+import { buildParseFailureState, buildUploadState } from '@/app/staff/(dashboard)/documentos/upload-state';
+import { EmptyDocumentError, UnsupportedMediaTypeError } from '@/core/parse-document';
 
 const published = {
   status: 'published' as const,
@@ -45,5 +46,26 @@ describe('buildUploadState', () => {
     expect(state.error).toContain('A leitura do documento falhou');
     expect(state.ok).toBeUndefined();
     expect(state.notice).toBeUndefined();
+  });
+});
+
+// Three parse failures, three different next steps for the secretary.
+describe('buildParseFailureState', () => {
+  it('names the format problem', () => {
+    expect(buildParseFailureState(new UnsupportedMediaTypeError('image/png')).error).toContain('Formato não suportado');
+  });
+
+  it('tells her a PDF with no text layer is probably a scan, and what to send instead', () => {
+    const state = buildParseFailureState(new EmptyDocumentError(true, 3));
+    expect(state.error).toContain('não tem texto selecionável');
+    expect(state.error).toContain('OCR');
+  });
+
+  it('calls an empty text file empty, not unreadable', () => {
+    expect(buildParseFailureState(new EmptyDocumentError(false, null)).error).toBe('O arquivo está vazio.');
+  });
+
+  it('keeps the generic sentence for everything else', () => {
+    expect(buildParseFailureState(new Error('boom')).error).toBe('Não foi possível ler o arquivo.');
   });
 });

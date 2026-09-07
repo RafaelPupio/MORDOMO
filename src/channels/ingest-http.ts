@@ -5,7 +5,7 @@ import { INGEST_LIMIT } from '@/core/config';
 import { readStaffSession } from '@/core/staff-auth';
 import { STAFF_COOKIE_NAME } from '@/core/staff-session';
 import { runIngest } from '@/core/ingest';
-import { parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document';
+import { parseDocument, EmptyDocumentError, UnsupportedMediaTypeError } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
 import { hasUnstorableChars } from '@/core/text-safety';
 import type { Db } from '@/db/client';
@@ -170,6 +170,15 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
     } catch (error) {
       if (error instanceof UnsupportedMediaTypeError) {
         return Response.json({ code: 'unsupported_media_type' }, { status: 415 });
+      }
+      // A well-formed file with nothing to ingest — for a PDF, almost always a scan with no
+      // text layer. 422 rather than 400: the request was fine, the content is unusable, and
+      // the caller needs to know which so it can ask for an OCR'd copy instead of retrying.
+      if (error instanceof EmptyDocumentError) {
+        return Response.json(
+          { code: 'empty_document', pdfNoTextLayer: error.isPdf, pageCount: error.pageCount },
+          { status: 422 },
+        );
       }
       return Response.json({ code: 'bad_request' }, { status: 400 });
     }

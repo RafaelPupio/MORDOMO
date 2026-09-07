@@ -1,13 +1,13 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { buildUploadState, type UploadState } from './upload-state';
+import { buildParseFailureState, buildUploadState, type UploadState } from './upload-state';
 import { GatewayEmbedder } from '@/ai/embedder';
 import { FAST_MODEL } from '@/ai/pricing';
 import { checkBudget } from '@/ai/usage';
 import { INGEST_LIMIT, parseGlobalCapUsd } from '@/core/config';
 import { runIngest } from '@/core/ingest';
-import { UnsupportedMediaTypeError, parseDocument } from '@/core/parse-document';
+import { parseDocument } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
 import { requireStaffContext } from '@/core/staff-context';
 import { hasUnstorableChars } from '@/core/text-safety';
@@ -70,10 +70,7 @@ export async function uploadDocument(_prev: UploadState, formData: FormData): Pr
     try {
       parsed = await parseDocument(bytes, mimeType);
     } catch (error) {
-      if (error instanceof UnsupportedMediaTypeError) {
-        return { error: 'Formato não suportado. Envie PDF ou Markdown.' };
-      }
-      return { error: 'Não foi possível ler o arquivo.' };
+      return buildParseFailureState(error);
     }
     if (hasUnstorableChars(parsed.text)) return { error: 'O arquivo contém caracteres inválidos.' };
 

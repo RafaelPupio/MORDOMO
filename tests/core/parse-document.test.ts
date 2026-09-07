@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document';
+import { EmptyDocumentError, parseDocument, UnsupportedMediaTypeError } from '@/core/parse-document';
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
@@ -28,6 +28,7 @@ describe('parseDocument', () => {
 
   it('rejects empty input rather than producing an empty document', async () => {
     await expect(parseDocument(enc('   \n  '), 'text/plain')).rejects.toThrow(/empty/i);
+    await expect(parseDocument(enc('   \n  '), 'text/plain')).rejects.toBeInstanceOf(EmptyDocumentError);
   });
 
   it('extracts text and a page count from a real PDF', async () => {
@@ -124,5 +125,34 @@ describe('parseDocument (PDF) and the bytes it is handed', () => {
     expect(bytes.byteLength).toBeGreaterThan(0); // not detached by the transfer
     const second = await parseDocument(bytes, 'application/pdf');
     expect(second.text).toBe(first.text);
+  });
+});
+
+// A scanned bulletin is page images with no text layer. pdf.js parses it fine and returns
+// nothing, and the secretary was told "Não foi possível ler o arquivo" — the same sentence
+// a corrupt file gets, with no hint that an OCR'd copy is what she needs (2026-09-05, a
+// 1 MB image-only PDF). The error is typed so the upload paths can say what happened.
+describe('parseDocument (PDF) with no text layer', () => {
+  it('throws EmptyDocumentError marked as a PDF, with the page count', async () => {
+    const enc = new TextEncoder();
+    // One page, no content stream: structurally valid, textually empty — what a scan looks
+    // like to a text extractor.
+    const objs = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>',
+    ];
+    let out = '%PDF-1.4\n';
+    const offsets: number[] = [];
+    objs.forEach((o, i) => { offsets.push(enc.encode(out).length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+    const xref = enc.encode(out).length;
+    out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+    out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+
+    const err = await parseDocument(enc.encode(out), 'application/pdf').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EmptyDocumentError);
+    expect((err as EmptyDocumentError).isPdf).toBe(true);
+    expect((err as EmptyDocumentError).pageCount).toBe(1);
+    expect((err as Error).message).toMatch(/no text layer/);
   });
 });
