@@ -29,22 +29,18 @@ the only work left is the first real deployment.
   `mordomo-<hash>-rafael-e2fe.vercel.app` — the latter only ever proves the protected side.
 
 ## Next action
-**Nothing is blocking.** The demo is public, and as of the 2026-09-05 acceptance pass every
-advertised capability has run in production at least once. 356 tests / 41 files, typecheck,
-lint and build clean, CI green on GitHub. Public URL: <https://mordomo-demo.vercel.app>.
+**Nothing is blocking.** Every user-reachable surface a 207-item inventory could name has
+now been exercised in production or ruled unreachable; the last real defects (a `Date` in
+`getCalendar`'s output killing every "próximos eventos" answer; Next's 1 MB Server Action
+body cap under a form that promised 5 MB; a public page still saying "not deployed") were
+fixed on 2026-09-07/08. 357 tests / 41 files, CI green, production READY.
 
-That pass found and fixed two real defects — read the acceptance section in [[status]]
-before assuming anything about the ingest pipeline. Short version: the verifier was rejecting
-100% of correct events; two prompt fixes made it differently wrong; the fix that held moves
-the UTC→local conversion into code so the verifier never sees UTC (0/27 in a live probe).
-The upload message had hidden all of it.
+Read the "Next" list in [[status]] — it is deliberate gaps, not work in progress. If one
+thing is picked up next, it is data retention.
 
-Open, in rough order of value:
-1. ~~Monday cron~~ — ran 2026-09-07 09:00:41Z, published, row replaced in place. Done.
-2. **Ingest has no queue** — `POST /api/ingest` runs inline under `maxDuration = 300`.
-3. `brain/log/decisions/2026-Q3.md` is 52 KB, over the 20 KB split rule. It is read on
-   demand only (`decisions.md` is the index), so it costs nothing per session — but a
-   Q4 file should start rather than growing this one further.
+Standing rules that cost the most to learn are in [[status]] under "Standing rules": test
+the first production run of anything; compute shared facts in code; reload after a deploy
+before testing a Server Action; a tool result must survive JSON.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.

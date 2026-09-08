@@ -118,6 +118,19 @@ clean; CI (typecheck + lint + tests + build) green on every push.
   selecionável — … envie o texto ou um PDF com OCR" in the red slot; no row is created.
 - Budget metering on every call; month-to-date spend a few cents against US$40 / US$50 caps.
 - Retrieval gate **10/10** against the real embedder, re-run after the test corpus was removed.
+- **2026-09-07/08, inventory-driven pass** (a workflow enumerated 207 user-reachable surfaces
+  and flagged 61 as unverified; after triage, everything with user impact was exercised):
+  visitor chat lists upcoming events via `getCalendar`; English question → English answer;
+  unanswerable question → "não encontrei" + offer to escalate, no invention; tenant budget
+  gate → `402 budget_exhausted / tenant` with no model call, then restored; chat rate limit
+  → `429 rate_limited` on the 18th request from one IP within the hour (keyed by
+  `x-real-ip`, so three earlier probes counted) and exactly the accepted turns persisted;
+  `403 conversation_forbidden` on someone else's conversation; `307 → /staff/login` for a
+  missing, tampered, or **expired** staff cookie (the 8 h TTL fired mid-session); `401` on
+  `/api/ingest` and the cron with no/bad credentials; prayer request Nova → Orando →
+  Concluída with the current state disabled and persisted; "Encerrar sem responder" →
+  Encerrado + "Nenhuma resposta foi registrada"; a 2 MB scan through the staff form →
+  the OCR sentence (no 413); a 6 MB file stopped in the browser with zero requests sent.
 
 **Standing rules learned the hard way** (details in [[log/decisions]], measurements in
 [[log/status-archive]]):
@@ -133,23 +146,33 @@ clean; CI (typecheck + lint + tests + build) green on every push.
   on a "second bug" that was this.
 - `vercel env pull` writes `[SENSITIVE]` for Sensitive vars (`STAFF_PASSWORD`,
   `STAFF_SESSION_SECRET`, `CRON_SECRET`); the pulled file never contains them.
+- **A tool's output is a message in the next model step.** Anything a tool returns must
+  survive JSON unchanged — a `Date` in a tool result fails the SDK's `ModelMessage[]`
+  validation *after* the tool has run, and a mocked model never takes the second step that
+  would show it. `getCalendar` shipped that way and every "próximos eventos" question died.
+- **Next Server Actions cap the request body at 1 MB by default**; route handlers do not.
+  The staff form promised 5 MB. `serverActions.bodySizeLimit` is now 6 MB and the form
+  refuses an oversized file before sending.
 - Residual risk, recorded rather than hidden: prompt injection through an uploaded
   document is narrower now (no UTC vocabulary to latch onto) but still a prompt-level
   defence for text that argues about an event's own local date and time.
 
 ## Next
 
-Nothing is blocking, and nothing is waiting on Rafael. The demo is public, every advertised
-capability has now run in production at least once, and 356 tests / 41 files pass with
-typecheck, lint and build clean, CI green.
+Nothing is blocking and nothing is unproven that a user can reach. Known, deliberate gaps
+(from the surface inventory), none of them defects:
 
-Open, in rough order of value:
-
-1. ~~Monday cron~~ — ran 2026-09-07 09:00:41Z and replaced the on-demand row as designed.
-   Nothing scheduled is unproven any more.
-2. **Ingest has no queue.** `POST /api/ingest` runs the whole pipeline inline under
-   `maxDuration = 300`. Measured: a 964 KB, 235-page PDF takes 31 s end to end, so the
-   5 MB cap is not near the time limit for text PDFs; a scanned/image PDF is untested.
+1. **No data retention / purge.** Conversations, messages, prayer requests, tickets,
+   `usage_ledger` and `rate_limits` grow forever; there is no church-settable retention.
+   The one design item worth doing next if this becomes more than a demo.
+2. **Logout does not revoke server-side.** "Sair" clears the cookie; the old value still
+   verifies until its 8 h expiry. Acceptable for a demo; a session table would fix it.
+3. **Ingest has no queue** — measured 31 s for a 964 KB, 235-page text PDF, well inside
+   `maxDuration = 300`. Scanned PDFs are now refused with an OCR hint rather than ingested.
+4. A cron-regenerated report keeps its original `created_at`; the page reads as "generated
+   Saturday" for a row Monday rewrote. Cosmetic; a `generated_at` column would say it.
+5. `brain/log/decisions/2026-Q3.md` is over the 20 KB split rule (read on demand only); a Q4
+   file should start rather than growing it.
 
 ## Open questions
 
