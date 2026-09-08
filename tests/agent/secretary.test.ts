@@ -108,6 +108,27 @@ describe('secretaryTools', () => {
     expect(out.events.map((e: { title: string }) => e.title)).not.toContain('Nao verificado');
   });
 
+  // The tool's output becomes a tool-result in the NEXT model step, and the SDK validates
+  // that step's messages as ModelMessage[]: a Date inside the output is not a JSON value and
+  // the whole request fails after the tool has already run. In production every "quais são
+  // os próximos eventos?" ended in "An error occurred" (2026-09-07). Raw rows must never
+  // reach the model; what does must survive a JSON round trip unchanged.
+  it('getCalendar returns a JSON-safe, model-shaped list, never raw rows', async () => {
+    const { db, church, tools } = await setup();
+    const startsAt = new Date('2026-11-15T01:00:00Z'); // 22h local on Saturday 14/11
+    await db.insert(events).values({
+      churchId: church.id, title: 'Vigília', startsAt, location: 'Templo', verified: true,
+    });
+    const out = (await tools.getCalendar.execute!({}, {} as never)) as ToolOutput<typeof tools.getCalendar.execute>;
+
+    expect(JSON.parse(JSON.stringify(out))).toEqual(out);
+    const ev = out.events.find((e: { title: string }) => e.title === 'Vigília') as Record<string, unknown>;
+    expect(typeof ev.startsAt).toBe('string');
+    expect(ev.when).toBe('sábado, 14/11/2026, 22:00 (horário de Brasília)');
+    expect(ev).not.toHaveProperty('churchId');
+    expect(ev).not.toHaveProperty('id');
+  });
+
   it('createPrayerRequest persists with the conversation id', async () => {
     const { db, church, conversationId, tools } = await setup();
     const out = (await tools.createPrayerRequest.execute!({ request: 'Pela minha avó', name: 'Ana' }, {} as never)) as ToolOutput<

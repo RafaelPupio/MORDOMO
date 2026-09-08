@@ -8,6 +8,7 @@ import type { IncomingChat } from '@/core/channel';
 import { searchKnowledgeBase } from '@/core/retrieval';
 import type { Db } from '@/db/client';
 import { listUpcomingEvents } from '@/db/repo/events';
+import { formatLocalWallClock } from '@/agent/time-convention';
 import { createPrayerRequest } from '@/db/repo/prayer';
 import { createTicket } from '@/db/repo/tickets';
 
@@ -63,7 +64,25 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
     getCalendar: tool({
       description: 'List the next upcoming church events with dates and locations.',
       inputSchema: z.object({}),
-      execute: async () => ({ events: await listUpcomingEvents(deps.db, ctx.churchId, 10) }),
+      // Returns a JSON-safe, model-shaped list — never the raw rows. A raw row carries
+      // `startsAt` as a Date, which the UI stream serializes happily but the SDK REJECTS
+      // when it rebuilds the next model step ("messages do not match the ModelMessage[]
+      // schema"): the visitor got a tool call, then "An error occurred", and no answer —
+      // every time anyone asked for upcoming events (2026-09-07, found by asking). The
+      // model is also handed local wall-clock text so it never converts UTC itself; see
+      // src/agent/time-convention.ts for why that matters.
+      execute: async () => {
+        const rows = await listUpcomingEvents(deps.db, ctx.churchId, 10);
+        return {
+          events: rows.map((e) => ({
+            title: e.title,
+            when: formatLocalWallClock(e.startsAt.toISOString()),
+            startsAt: e.startsAt.toISOString(),
+            location: e.location ?? null,
+            description: e.description ?? null,
+          })),
+        };
+      },
     }),
     createPrayerRequest: tool({
       description: 'Save a prayer request for the church intercession team.',
