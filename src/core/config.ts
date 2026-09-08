@@ -41,3 +41,12 @@ export function parseGlobalCapUsd(raw: string | undefined): number {
 // (`ingest:${churchId}`), so the numbers can't silently drift apart again either (M5, the
 // Plan 3 whole-branch review).
 export const INGEST_LIMIT = { limit: 10, windowSeconds: 3600 };
+
+/**
+ * Largest upload the staff form and `POST /api/ingest` accept. One constant, three places
+ * (the form's client-side check, the Server Action, the route handler) — and one more
+ * that must agree with it: `experimental.serverActions.bodySizeLimit` in next.config.ts,
+ * which caps the whole multipart body BEFORE the action runs. A 2 MB scan hit Next's
+ * default 1 MB there and came back as a bare 413 while the form still said "até 5 MB".
+ */
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

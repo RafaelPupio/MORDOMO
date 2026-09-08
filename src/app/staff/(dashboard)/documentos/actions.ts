@@ -7,6 +7,7 @@ import { FAST_MODEL } from '@/ai/pricing';
 import { checkBudget } from '@/ai/usage';
 import { INGEST_LIMIT, parseGlobalCapUsd } from '@/core/config';
 import { runIngest } from '@/core/ingest';
+import { MAX_UPLOAD_BYTES } from '@/core/config';
 import { parseDocument } from '@/core/parse-document';
 import { checkRateLimit } from '@/core/rate-limit';
 import { requireStaffContext } from '@/core/staff-context';
@@ -14,7 +15,6 @@ import { hasUnstorableChars } from '@/core/text-safety';
 import { getDb } from '@/db/client';
 import { createDocument } from '@/db/repo/documents';
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 
 /**

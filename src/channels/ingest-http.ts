@@ -1,3 +1,4 @@
+import { MAX_UPLOAD_BYTES } from '@/core/config';
 import type { LanguageModel } from 'ai';
 import { checkBudget } from '@/ai/usage';
 import type { Embedder } from '@/ai/embedder';
@@ -29,7 +30,6 @@ export type IngestChannelDeps = {
   verifierModel?: LanguageModel;
 };
 
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 // A 1 MB title was accepted and persisted before this bound existed — nothing downstream
 // needs more than a short label, so this is deliberately generous for any real title while
 // still ruling out someone using the field to stash arbitrary payload.
