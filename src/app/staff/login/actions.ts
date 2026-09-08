@@ -20,7 +20,17 @@ export async function signIn(_prev: { error?: string }, formData: FormData) {
   const secret = process.env.STAFF_SESSION_SECRET;
   if (!secret) return { error: 'Senha inválida.' };
 
-  const church = await getChurchBySlug(getDb(), DEMO_CHURCH_SLUG);
+  // /staff/login sits outside the dashboard's error boundary, so a DB failure here — a
+  // Neon cold start surfacing as "connection terminated unexpectedly" is the realistic one
+  // — would be an uncaught Server Action rejection and Next's bare error page, on the one
+  // screen a secretary sees before anything else. Same posture as every other action.
+  let church: Awaited<ReturnType<typeof getChurchBySlug>>;
+  try {
+    church = await getChurchBySlug(getDb(), DEMO_CHURCH_SLUG);
+  } catch (error) {
+    console.error('signIn: could not load the demo church', { error });
+    return { error: 'Não foi possível entrar agora. Tente novamente em instantes.' };
+  }
   if (!church) return { error: 'A igreja demo ainda não foi carregada.' };
 
   const issuedAt = Date.now();
