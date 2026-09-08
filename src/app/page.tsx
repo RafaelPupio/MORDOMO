@@ -74,7 +74,7 @@ export default function Home() {
               <dl className="mt-10 grid max-w-xl grid-cols-3 gap-5 border-t border-white/10 pt-5">
                 <div><dt className="font-mono text-[10px] tracking-[0.16em] text-slate-400 uppercase">Grounding</dt><dd className="mt-1 text-sm font-medium">Cited RAG</dd></div>
                 <div><dt className="font-mono text-[10px] tracking-[0.16em] text-slate-400 uppercase">Guardrail</dt><dd className="mt-1 text-sm font-medium">Human approval</dd></div>
-                <div><dt className="font-mono text-[10px] tracking-[0.16em] text-slate-400 uppercase">Status</dt><dd className="mt-1 text-sm font-medium text-amber-200">Built, not deployed</dd></div>
+                <div><dt className="font-mono text-[10px] tracking-[0.16em] text-slate-400 uppercase">Status</dt><dd className="mt-1 text-sm font-medium text-emerald-200">Deployed — public demo</dd></div>
               </dl>
             </div>
 
@@ -133,8 +133,8 @@ export default function Home() {
           <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
             <div>
               <p className="font-mono text-xs font-semibold tracking-[0.16em] text-emerald-800 uppercase">Project status</p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-[#102421]">All four product plans are built.</h2>
-              <p className="mt-3 max-w-2xl leading-7 text-[#3d5b50]">The codebase has not been deployed yet. Production setup still needs a Neon database, real embeddings benchmarked against the seeded corpus, and Vercel environment configuration.</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-[#102421]">Built, deployed, and exercised in production.</h2>
+              <p className="mt-3 max-w-2xl leading-7 text-[#3d5b50]">Runs on Vercel with its own Neon Postgres and real embeddings, benchmarked at 10/10 on the seeded corpus. Every capability on this page has been run against production at least once — including the two-agent ingest pipeline, the weekly report cron, and a staff reply reaching a visitor. Monthly spend is capped per tenant and globally, so the public demo cannot run away.</p>
             </div>
             <div className="flex flex-wrap gap-3 lg:justify-end">
               <a href="https://github.com/RafaelPupio/MORDOMO" target="_blank" rel="noreferrer" className="rounded-xl bg-[#102421] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#203a34]">Repository <Arrow /></a>
