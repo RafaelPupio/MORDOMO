@@ -32,3 +32,4 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-09-05` Afternoon pass: PDF upload had never worked on Vercel (untransferable buffer), the AI draft never landed (lazy updater vs advanced ref), the extractor failed on long docs — and a 40-minute chase that was skew protection
 - `2026-09-07` The first unattended cron report ran and replaced the on-demand row in place; scanned PDFs now get an OCR hint (422 empty_document) instead of the generic failure
 - `2026-09-08` Inventory-driven pass: a `Date` in `getCalendar`'s output killed every upcoming-events answer; Next's 1 MB Server Action cap sat under a 5 MB form; budget gate, rate limit, session expiry and status workflows proven live
+- `2026-09-09` Data retention shipped inert by default (30..3650 days, resolved rows age by updated_at, protective reference checks unscoped, deletes re-checked); two review passes, 31 findings; turning it on is a one-variable choice

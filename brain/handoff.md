@@ -29,18 +29,16 @@ the only work left is the first real deployment.
   `mordomo-<hash>-rafael-e2fe.vercel.app` — the latter only ever proves the protected side.
 
 ## Next action
-**Nothing is blocking.** Every user-reachable surface a 207-item inventory could name has
-now been exercised in production or ruled unreachable; the last real defects (a `Date` in
-`getCalendar`'s output killing every "próximos eventos" answer; Next's 1 MB Server Action
-body cap under a form that promised 5 MB; a public page still saying "not deployed") were
-fixed on 2026-09-07/08. 357 tests / 41 files, CI green, production READY.
+**Nothing is blocking.** Data retention shipped on 2026-09-09, inert by default: nothing
+is deleted until `RETENTION_DAYS` is set in Vercel. That choice is Rafael's; 365 is the
+sensible default. The `/staff/uso` card shows the policy state and what the first night
+would remove; the nightly job logs "dry run" with counts until then.
 
-Read the "Next" list in [[status]] — it is deliberate gaps, not work in progress. If one
-thing is picked up next, it is data retention.
+377 tests / 43 files, CI green, production READY. Migrations 0005 (`reports.generated_at`)
+and 0006 (`tickets/prayer_requests.updated_at`) are applied to production; legacy resolved
+rows carry the migration timestamp on purpose (see the decisions log).
 
-Standing rules that cost the most to learn are in [[status]] under "Standing rules": test
-the first production run of anything; compute shared facts in code; reload after a deploy
-before testing a Server Action; a tool result must survive JSON.
+The "Next" list in [[status]] is a choice plus two deliberate gaps, not work in progress.
 
 ## Files in play
 - `brain/status.md` — the live picture of what runs; read this before anything else.

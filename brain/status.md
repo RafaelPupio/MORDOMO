@@ -118,6 +118,21 @@ clean; CI (typecheck + lint + tests + build) green on every push.
   selecionável — … envie o texto ou um PDF com OCR" in the red slot; no row is created.
 - Budget metering on every call; month-to-date spend a few cents against US$40 / US$50 caps.
 - Retrieval gate **10/10** against the real embedder, re-run after the test corpus was removed.
+- **Data retention exists and is inert by default** (2026-09-09). `RETENTION_DAYS` unset,
+  unparseable, or outside 30..3650 → the nightly job (03:00 UTC, `/api/cron/retention`)
+  counts and deletes nothing. Once set: answered/closed tickets and done prayer requests
+  aged by `updated_at`; quiet, unreferenced conversations with their messages; stale
+  rate-limit windows by exact key shape. Never: open tickets, unfinished requests or the
+  threads they reference; documents, chunks, events, reports, the usage ledger. Deletes
+  are batched and re-checked at delete time (no transaction on neon-http). `/staff/uso`
+  shows the policy and tonight's would-be counts through a helper that cannot delete.
+  Verified live 2026-09-09: the card renders "desativada" with tonight's counts, the cron
+  answers 401 to anything but the secret, the branded 404 serves. Two adversarial review
+  passes (31 findings) shaped the tests. **Turning it on is
+  Rafael's call**: set `RETENTION_DAYS` (e.g. 365) in Vercel → the card turns green and
+  the next 03:00 UTC run purges. Until then, every night's log line says "dry run".
+- Reports carry `generated_at`, refreshed on every upsert (`/staff/relatorios` "Gerado em");
+  a branded 404 and a root error page exist for the public side.
 - **2026-09-07/08, inventory-driven pass** (a workflow enumerated 207 user-reachable surfaces
   and flagged 61 as unverified; after triage, everything with user impact was exercised):
   visitor chat lists upcoming events via `getCalendar`; English question → English answer;
@@ -146,6 +161,12 @@ clean; CI (typecheck + lint + tests + build) green on every push.
   on a "second bug" that was this.
 - `vercel env pull` writes `[SENSITIVE]` for Sensitive vars (`STAFF_PASSWORD`,
   `STAFF_SESSION_SECRET`, `CRON_SECRET`); the pulled file never contains them.
+- **A job that deletes is inert until a human chooses a value**, and refuses nonsense
+  values in the job itself, not only in the parser. Resolved rows age by when they were
+  resolved. Reference checks that protect a row are never tenant-scoped; the eligibility
+  that would remove a row always is.
+- **Raw `Date` values in `sql` fragments travel in the process's local time.** Compare
+  timestamps through Drizzle operators.
 - **A tool's output is a message in the next model step.** Anything a tool returns must
   survive JSON unchanged — a `Date` in a tool result fails the SDK's `ModelMessage[]`
   validation *after* the tool has run, and a mocked model never takes the second step that
@@ -159,20 +180,18 @@ clean; CI (typecheck + lint + tests + build) green on every push.
 
 ## Next
 
-Nothing is blocking and nothing is unproven that a user can reach. Known, deliberate gaps
-(from the surface inventory), none of them defects:
+Nothing is blocking. What remains is a choice and two small gaps:
 
-1. **No data retention / purge.** Conversations, messages, prayer requests, tickets,
-   `usage_ledger` and `rate_limits` grow forever; there is no church-settable retention.
-   The one design item worth doing next if this becomes more than a demo.
+1. **Choose a retention period, or leave it off.** Set `RETENTION_DAYS` (30..3650; 365 is
+   the reasonable default for a church) in Vercel for Production; the `/staff/uso` card
+   confirms the policy and shows what the first night will remove. The first nightly run
+   after the deploy (03:00 UTC) is a dry run and logs its counts — read that log once.
 2. **Logout does not revoke server-side.** "Sair" clears the cookie; the old value still
-   verifies until its 8 h expiry. Acceptable for a demo; a session table would fix it.
-3. **Ingest has no queue** — measured 31 s for a 964 KB, 235-page text PDF, well inside
-   `maxDuration = 300`. Scanned PDFs are now refused with an OCR hint rather than ingested.
-4. A cron-regenerated report keeps its original `created_at`; the page reads as "generated
-   Saturday" for a row Monday rewrote. Cosmetic; a `generated_at` column would say it.
-5. `brain/log/decisions/2026-Q3.md` is over the 20 KB split rule (read on demand only); a Q4
-   file should start rather than growing it.
+   verifies until its 8 h expiry. A session table would fix it.
+3. **Ingest has no queue** — measured 31 s for a 964 KB, 235-page text PDF; not near the
+   limit. Scanned PDFs are refused with an OCR hint.
+4. `brain/log/decisions/2026-Q3.md` is over the 20 KB split rule (read on demand only); a
+   Q4 file should start rather than growing it.
 
 ## Open questions
 
