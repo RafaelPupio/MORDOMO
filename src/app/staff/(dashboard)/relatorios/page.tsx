@@ -3,6 +3,7 @@ import { getDb } from '@/db/client';
 import { listReports } from '@/db/repo/reports';
 import { FindingsSummary } from './findings-summary';
 import { GenerateReportButton } from './generate-button';
+import { formatDateTime } from '@/core/format';
 import { formatPeriodLabel } from '@/core/period';
 import { ReportBody } from './report-body';
 
@@ -41,6 +42,7 @@ export default async function RelatoriosPage() {
             <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
               Semana de {formatPeriodLabel(latest.periodStart, latest.periodEnd)}
             </p>
+            <p className="mt-1 text-xs text-neutral-500">Gerado em {formatDateTime(latest.generatedAt)}</p>
             <div className="mt-3">
               <ReportBody markdown={latest.body} />
             </div>

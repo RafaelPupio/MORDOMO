@@ -20,13 +20,14 @@ export async function upsertReport(
 ) {
   const [row] = await db
     .insert(reports)
-    .values(input)
+    .values({ ...input, generatedAt: new Date() })
     .onConflictDoUpdate({
       target: [reports.churchId, reports.periodStart],
       set: {
         periodEnd: input.periodEnd,
         findings: input.findings,
         body: input.body,
+        generatedAt: new Date(),
       },
     })
     .returning();
