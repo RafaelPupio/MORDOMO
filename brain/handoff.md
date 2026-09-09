@@ -7,21 +7,22 @@ both histories and behaviors, verify the result, push it, and open a GitHub PR.
 
 ## Done
 
-- The merge branch preserves main at `92dcd5d` and all 61 linear feature commits through
-  `2820fe9`; no rebase, squash, force push, or history rewrite was used.
+- Merge commit `f39df9c` preserves main at `92dcd5d` and all 61 linear feature commits
+  through `2820fe9`; no rebase, squash, force push, or history rewrite was used.
 - All ten source conflicts are resolved with organization tenancy plus main's retention,
   timestamp, error-handling, and bounded-ingest behavior preserved.
 - Public docs and brain conflicts are unioned and deduplicated; `CLAUDE.md` remains below
   3 KB.
 - Rafael approved the chronological journal union plus idempotent `0010_merge_saas_beta`
   compatibility bridge. All five historical SQL files remain byte-for-byte intact.
-- The focused main-derived PGlite regression passes, Drizzle metadata validation passes,
-  all 591 tests across 73 files pass, and typecheck passes. No external migration ran.
+- Focused main-derived and feature-derived PGlite regressions pass, Drizzle metadata
+  validation passes, all 592 tests across 73 files pass, and typecheck passes. No external
+  migration ran.
 
 ## Next action
 
-Create the merge commit, push both configured origin URLs, and open the GitHub PR against
-`main` with the migration evidence and approved decision in its body.
+Push both configured origin URLs and open the GitHub PR against `main` with the migration
+evidence and approved decision in its body.
 
 ## Files in play
 
@@ -44,5 +45,5 @@ Create the merge commit, push both configured origin URLs, and open the GitHub P
 npm test && npm run typecheck
 ```
 
-Good means 591 tests pass across 73 files, TypeScript exits 0, `git diff --check` is clean,
+Good means 592 tests pass across 73 files, TypeScript exits 0, `git diff --check` is clean,
 and no unmerged paths remain.

@@ -56,6 +56,76 @@ describe('organization tenancy migration', () => {
     });
   });
 
+  it('adds main timestamp fields without replaying a feature-derived database', async () => {
+    const client = new PGlite({ extensions: { vector } });
+    const migrationDir = path.join(process.cwd(), 'drizzle');
+    for (const name of [
+      '0000_true_bug.sql',
+      '0001_colossal_valeria_richards.sql',
+      '0002_famous_speedball.sql',
+      '0003_drop_document_source_text.sql',
+      '0004_brief_landau.sql',
+    ]) {
+      await client.exec(readFileSync(path.join(migrationDir, name), 'utf8'));
+    }
+
+    const organizationId = '20202020-2020-4020-8020-202020202020';
+    const briefId = '30303030-3030-4030-8030-303030303030';
+    await client.query('INSERT INTO churches (id, slug, name) VALUES ($1, $2, $3)', [
+      organizationId,
+      'feature-derived',
+      'Feature Derived',
+    ]);
+    for (const name of [
+      '0005_rename_churches_to_organizations.sql',
+      '0006_bilingual_personal_studio.sql',
+      '0007_public_research.sql',
+    ]) {
+      await client.exec(readFileSync(path.join(migrationDir, name), 'utf8'));
+    }
+    await client.query(
+      `INSERT INTO research_briefs (
+        id, organization_id, requested_by_clerk_user_id, segment, locale, requested_url,
+        consent_version, consented_at
+      ) VALUES ($1, $2, 'user_fixture', 'general', 'en', 'https://example.com',
+        'public-research-v2', now())`,
+      [briefId, organizationId],
+    );
+    await client.exec(`
+      CREATE SCHEMA drizzle;
+      CREATE TABLE drizzle.__drizzle_migrations (
+        id serial PRIMARY KEY,
+        hash text NOT NULL,
+        created_at bigint
+      );
+      INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+      VALUES ('feature-derived-fixture', 1788290661313);
+    `);
+
+    await migrate(drizzle(client), { migrationsFolder: migrationDir });
+
+    const columns = await client.query(`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE (table_name = 'reports' AND column_name = 'generated_at')
+         OR (table_name IN ('tickets', 'prayer_requests') AND column_name = 'updated_at')
+      ORDER BY table_name, column_name
+    `);
+    expect(columns.rows).toEqual([
+      { table_name: 'prayer_requests', column_name: 'updated_at' },
+      { table_name: 'reports', column_name: 'generated_at' },
+      { table_name: 'tickets', column_name: 'updated_at' },
+    ]);
+    expect(await client.query('SELECT id, slug FROM organizations')).toMatchObject({
+      rows: [{ id: organizationId, slug: 'feature-derived' }],
+    });
+    expect(await client.query('SELECT id FROM research_briefs')).toMatchObject({
+      rows: [{ id: briefId }],
+    });
+    expect(await client.query('SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1'))
+      .toMatchObject({ rows: [{ created_at: 1788977000000 }] });
+  });
+
   it('renames an existing church row without changing its id and seeds its profile', async () => {
     const client = new PGlite({ extensions: { vector } });
     const migrationDir = path.join(process.cwd(), 'drizzle');

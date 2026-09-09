@@ -224,7 +224,7 @@ describe('runIngest', () => {
     await expect(
       runIngest({ db, embedder: new HashEmbedder() },
         { organizationId: a.id, documentId: docB.id, bytes: bytes(), mimeType: 'text/markdown' }),
-    ).rejects.toThrow(/not found/i);
+    ).rejects.toThrow(/not found for organization/i);
   });
 
   it('a corrupted ingest_status is parked in failed, with a diagnostic, instead of stuck forever', async () => {

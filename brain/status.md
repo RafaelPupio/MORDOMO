@@ -72,16 +72,17 @@ Billing and self-serve production onboarding are intentionally absent.
   `0007_public_research.sql`.
 - The dev Neon migration table's last row is id 7, timestamp `2026-09-08T18:51:26.478Z`, matching
   main's `0006_tickets_prayers_updated_at` journal timestamp; its stored hash matches no current
-  SQL file on either side. No migration has been run during this merge.
+  SQL file on either side. No external database migration has been run during this merge.
 - All five historical SQL files remain byte-for-byte intact. Their journal entries are ordered
   by their original timestamps, followed by the new idempotent `0010_merge_saas_beta` bridge.
   The bridge catches main-derived databases up, no-ops after a complete feature history, and
   refuses partially migrated phases.
-- Drizzle metadata validation is green. PGlite verifies clean and main-derived histories;
-  `npm test` passes 591 tests across 73 files and `npm run typecheck` exits 0.
+- Drizzle metadata validation is green. PGlite verifies clean, main-derived, and
+  feature-derived histories; `npm test` passes 592 tests across 73 files and
+  `npm run typecheck` exits 0.
 
 ## Merge completion
 
-The remaining workflow is mechanical: create the merge commit, push through origin's GitHub
-and GitLab push URLs, and open the PR against `main` with the migration evidence and approved
-decision in its body.
+Merge commit `f39df9c` preserves both parents and is ready to push through origin's GitHub and
+GitLab URLs. The remaining step is opening the PR against `main` with the migration evidence
+and approved decision in its body.

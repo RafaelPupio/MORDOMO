@@ -138,7 +138,7 @@ export async function runIngest(deps: IngestDeps, input: IngestInput): Promise<I
   const { organizationId, documentId } = input;
 
   const doc = await getDocument(db, organizationId, documentId);
-  if (!doc) throw new Error(`Document ${documentId} not found for church ${organizationId}`);
+  if (!doc) throw new Error(`Document ${documentId} not found for organization ${organizationId}`);
 
   const result: IngestResult = {
     documentId, status: doc.ingestStatus as IngestStatus,
