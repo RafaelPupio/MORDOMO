@@ -51,7 +51,9 @@ export function UploadForm() {
       />
 
       {tooLarge && <p role="alert" className="text-sm text-red-700">{tooLarge}</p>}
-      {state?.error && <p role="alert" className="text-sm text-red-700">{state.error}</p>}
+      {/* A stale server-side error from the previous attempt should not stack under the
+          client-side one — one sentence at a time. */}
+      {!tooLarge && state?.error && <p role="alert" className="text-sm text-red-700">{state.error}</p>}
       {state?.notice && <p role="status" className="text-sm text-amber-700">{state.notice}</p>}
       {state?.ok && <p role="status" className="text-sm text-emerald-700">{state.ok}</p>}
 
