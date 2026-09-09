@@ -134,6 +134,25 @@ describe('Organization research panel', () => {
     expect(markup).not.toContain('name="url"');
   });
 
+  it('shows an applied brief as complete without offering to apply it again', async () => {
+    const markup = await renderPanel({
+      available: true,
+      briefId: '22222222-2222-4222-8222-222222222222',
+      status: 'applied',
+      source: { title: 'Saved source', url: 'https://example.com/about' },
+      facts: [{
+        id: FACT_ID,
+        proposedText: 'Open Monday.',
+        supportingQuote: 'Open Monday.',
+        reviewStatus: 'accepted',
+        acceptedText: 'Open every Monday.',
+      }],
+    });
+
+    expect(markup).toContain('Accepted facts are applied');
+    expect(markup).not.toContain('Apply accepted facts to draft');
+  });
+
   it('renders accepted fact IDs inside the Organization profile Save form only', async () => {
     const { SecretaryStudio } = await import(
       '@/components/studio/secretary-studio'

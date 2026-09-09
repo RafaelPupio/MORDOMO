@@ -12,7 +12,12 @@ import {
   type SecretaryProfile,
 } from '@/core/secretary-profile';
 import { getDb } from '@/db/client';
-import { listAcceptedResearchFacts } from '@/db/repo/public-research';
+import {
+  assertResearchReadyToApply,
+  listAcceptedResearchFacts,
+  markResearchApplied,
+  recordDataControlEvent,
+} from '@/db/repo/public-research';
 import {
   publishOrganizationSecretaryProfile,
   saveOrganizationSecretaryProfileDraft,
@@ -20,7 +25,7 @@ import {
 
 export type StudioActionState = {
   ok?: 'draftSaved' | 'published';
-  error?: 'forbidden' | 'invalid' | 'notFound' | 'personalNotSaved';
+  error?: 'forbidden' | 'invalid' | 'notFound' | 'personalNotSaved' | 'unavailable';
   fieldErrors?: Partial<Record<keyof SecretaryProfile, StudioFieldErrorCode>>;
 };
 
@@ -49,12 +54,12 @@ function toFieldErrors(error: z.ZodError): StudioActionState['fieldErrors'] {
   return errors;
 }
 
-async function getAuthorizedOrganizationId(
+async function getAuthorizedOrganizationContext(
   kind: SecretaryContextKind,
-): Promise<string | null> {
+): Promise<Extract<Awaited<ReturnType<typeof requireStudioWriteContext>>, { kind: 'organization' }> | null> {
   try {
     const context = await requireStudioWriteContext(kind);
-    return context.kind === 'organization' ? context.organizationId : null;
+    return context.kind === 'organization' ? context : null;
   } catch {
     return null;
   }
@@ -76,8 +81,9 @@ export async function saveStudioDraft(
     return { error: 'personalNotSaved' };
   }
 
-  const organizationId = await getAuthorizedOrganizationId(kind.data);
-  if (!organizationId) return { error: 'forbidden' };
+  const context = await getAuthorizedOrganizationContext(kind.data);
+  if (!context) return { error: 'forbidden' };
+  const organizationId = context.organizationId;
 
   const parsed = secretaryProfileSchema.safeParse({
     segment: formData.get('segment'),
@@ -119,19 +125,50 @@ export async function saveStudioDraft(
       resolvedFacts.map((fact) => [fact.researchFactId, fact]),
     );
     const approvedPublicFacts = [];
+    const briefIds = new Set<string>();
     for (const id of uniqueFactIds) {
       const fact = factsById.get(id);
       if (!fact) return { error: 'invalid' };
-      approvedPublicFacts.push(fact);
+      briefIds.add(fact.briefId);
+      approvedPublicFacts.push({
+        researchFactId: fact.researchFactId,
+        sourceId: fact.sourceId,
+        text: fact.text,
+        sourceTitle: fact.sourceTitle,
+        sourceUrl: fact.sourceUrl,
+      });
     }
-    await saveOrganizationSecretaryProfileDraft(
+    const briefStates = new Map<string, 'review_ready' | 'applied'>();
+    try {
+      const statuses = await Promise.all([...briefIds].map((briefId) => (
+        assertResearchReadyToApply(db, organizationId, briefId)
+      )));
+      [...briefIds].forEach((briefId, index) => {
+        briefStates.set(briefId, statuses[index]);
+      });
+    } catch {
+      return { error: 'invalid' };
+    }
+    const saved = await saveOrganizationSecretaryProfileDraft(
       db,
       organizationId,
       { ...parsed.data, approvedPublicFacts },
     );
+    for (const [briefId, status] of briefStates) {
+      if (status === 'applied') continue;
+      await markResearchApplied(db, organizationId, briefId);
+      await recordDataControlEvent(db, {
+        organizationId,
+        actorClerkUserId: context.userId,
+        action: 'research.applied',
+        targetType: 'profile_version',
+        targetId: saved.id,
+        outcome: 'succeeded',
+      });
+    }
     return { ok: 'draftSaved' };
   } catch {
-    return { error: 'forbidden' };
+    return { error: 'unavailable' };
   }
 }
 
@@ -151,8 +188,9 @@ export async function publishStudioProfile(
     return { error: 'personalNotSaved' };
   }
 
-  const organizationId = await getAuthorizedOrganizationId(kind.data);
-  if (!organizationId) return { error: 'forbidden' };
+  const context = await getAuthorizedOrganizationContext(kind.data);
+  if (!context) return { error: 'forbidden' };
+  const organizationId = context.organizationId;
 
   const versionId = versionIdSchema.safeParse(versionIdInput);
   if (!versionId.success) return { error: 'invalid' };

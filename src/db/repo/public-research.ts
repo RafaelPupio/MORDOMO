@@ -37,6 +37,7 @@ type ReviewResearchFactInput =
 
 export type AcceptedResearchFact = {
   researchFactId: string;
+  briefId: string;
   sourceId: string;
   text: string;
   sourceTitle: string;
@@ -345,6 +346,7 @@ export async function listAcceptedResearchFacts(
   const rows = await db
     .select({
       researchFactId: researchFacts.id,
+      briefId: researchFacts.briefId,
       sourceId: researchSources.id,
       text: researchFacts.acceptedText,
       sourceTitle: researchSources.title,
@@ -367,6 +369,32 @@ export async function listAcceptedResearchFacts(
     const row = byId.get(id);
     return row ? [row] : [];
   });
+}
+
+export async function assertResearchReadyToApply(
+  db: Db,
+  organizationId: string,
+  briefId: string,
+): Promise<'review_ready' | 'applied'> {
+  const proposedFacts = db
+    .select({ id: researchFacts.id })
+    .from(researchFacts)
+    .where(and(
+      eq(researchFacts.organizationId, organizationId),
+      eq(researchFacts.briefId, briefId),
+      eq(researchFacts.reviewStatus, 'proposed'),
+    ));
+  const [brief] = await db
+    .select({ status: researchBriefs.status })
+    .from(researchBriefs)
+    .where(and(
+      eq(researchBriefs.organizationId, organizationId),
+      eq(researchBriefs.id, briefId),
+      inArray(researchBriefs.status, ['review_ready', 'applied']),
+      notExists(proposedFacts),
+    ));
+  if (!brief) throw new Error('Research brief is not ready to apply.');
+  return brief.status as 'review_ready' | 'applied';
 }
 
 export async function markResearchApplied(
@@ -392,8 +420,19 @@ export async function markResearchApplied(
       notExists(proposedFacts),
     ))
     .returning();
-  if (!applied) throw new Error('Research brief is not ready to apply.');
-  return applied;
+  if (applied) return applied;
+
+  const [alreadyApplied] = await db
+    .select()
+    .from(researchBriefs)
+    .where(and(
+      eq(researchBriefs.organizationId, organizationId),
+      eq(researchBriefs.id, briefId),
+      eq(researchBriefs.status, 'applied'),
+      notExists(proposedFacts),
+    ));
+  if (!alreadyApplied) throw new Error('Research brief is not ready to apply.');
+  return alreadyApplied;
 }
 
 export async function recordDataControlEvent(db: Db, input: DataControlEventInput) {

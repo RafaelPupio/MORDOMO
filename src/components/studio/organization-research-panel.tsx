@@ -299,7 +299,8 @@ export function OrganizationResearchPanel({
   const acceptedFactIds = research.facts
     .filter((fact) => fact.reviewStatus === 'accepted')
     .map((fact) => fact.id);
-  const canApply = canApplyAcceptedFacts({ facts: research.facts, pending: locked });
+  const canApply = research.status !== 'applied'
+    && canApplyAcceptedFacts({ facts: research.facts, pending: locked });
 
   function retryProposal() {
     if (!research.briefId || locked) return;

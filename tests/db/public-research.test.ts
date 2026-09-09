@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import {
   beginProposalAttempt,
+  assertResearchReadyToApply,
   createResearchBrief,
   failResearchBrief,
   getLatestOrganizationResearchDTO,
@@ -126,13 +127,22 @@ describe('public research repository', () => {
 
     await expect(markResearchApplied(db, organizationA.id, briefA.id))
       .rejects.toThrow('Research brief is not ready to apply.');
+    await expect(assertResearchReadyToApply(db, organizationA.id, briefA.id))
+      .rejects.toThrow('Research brief is not ready to apply.');
     await reviewResearchFact(db, organizationA.id, actorA, { factId: dinner.id, decision: 'reject' });
+    await expect(assertResearchReadyToApply(db, organizationA.id, briefA.id))
+      .resolves.toBe('review_ready');
     const applied = await markResearchApplied(db, organizationA.id, briefA.id);
     expect(applied.status).toBe('applied');
+    await expect(markResearchApplied(db, organizationA.id, briefA.id))
+      .resolves.toMatchObject({ status: 'applied' });
+    await expect(assertResearchReadyToApply(db, organizationA.id, briefA.id))
+      .resolves.toBe('applied');
 
     const acceptedFacts = await listAcceptedResearchFacts(db, organizationA.id, [monday.id, dinner.id]);
     expect(acceptedFacts).toEqual([expect.objectContaining({
       researchFactId: monday.id,
+      briefId: briefA.id,
       sourceId: sourceA.id,
       text: 'Open every Monday.',
       sourceTitle: 'Example Organization',

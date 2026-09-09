@@ -2,19 +2,25 @@ import type { Db } from '@/db/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  assertResearchReadyToApply,
   ensureActiveClerkOrganization,
   getDb,
   listAcceptedResearchFacts,
+  markResearchApplied,
   publishOrganizationSecretaryProfile,
+  recordDataControlEvent,
   redirect,
   requireSecretaryContext,
   requireStudioWriteContext,
   saveOrganizationSecretaryProfileDraft,
 } = vi.hoisted(() => ({
+  assertResearchReadyToApply: vi.fn(),
   ensureActiveClerkOrganization: vi.fn(),
   getDb: vi.fn(() => ({}) as Db),
   listAcceptedResearchFacts: vi.fn(),
+  markResearchApplied: vi.fn(),
   publishOrganizationSecretaryProfile: vi.fn(),
+  recordDataControlEvent: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw Object.assign(new Error('NEXT_REDIRECT'), {
       digest: `NEXT_REDIRECT;push;${path};303;`,
@@ -40,7 +46,12 @@ vi.mock('@/db/repo/secretary-profile-versions', () => ({
   saveOrganizationSecretaryProfileDraft,
 }));
 
-vi.mock('@/db/repo/public-research', () => ({ listAcceptedResearchFacts }));
+vi.mock('@/db/repo/public-research', () => ({
+  assertResearchReadyToApply,
+  listAcceptedResearchFacts,
+  markResearchApplied,
+  recordDataControlEvent,
+}));
 
 function formWith(overrides: Record<string, string | string[]> = {}) {
   const fields: Record<string, string | string[]> = {
@@ -79,6 +90,9 @@ beforeEach(() => {
   saveOrganizationSecretaryProfileDraft.mockResolvedValue({ id: 'draft-id' });
   publishOrganizationSecretaryProfile.mockResolvedValue({ id: 'published-id' });
   listAcceptedResearchFacts.mockResolvedValue([]);
+  assertResearchReadyToApply.mockResolvedValue('review_ready');
+  markResearchApplied.mockResolvedValue({ status: 'applied' });
+  recordDataControlEvent.mockResolvedValue({ id: 'audit-id' });
 });
 
 describe('Studio Server Actions', () => {
@@ -126,6 +140,7 @@ describe('Studio Server Actions', () => {
     const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
     const acceptedFact = {
       researchFactId: '11111111-1111-4111-8111-111111111111',
+      briefId: '55555555-5555-4555-8555-555555555555',
       sourceId: '22222222-2222-4222-8222-222222222222',
       text: 'The fictional clinic opens Monday.',
       sourceTitle: 'Fictional Clinic',
@@ -150,7 +165,36 @@ describe('Studio Server Actions', () => {
     expect(saveOrganizationSecretaryProfileDraft).toHaveBeenCalledWith(
       expect.anything(),
       'trusted-organization-id',
-      expect.objectContaining({ approvedPublicFacts: [acceptedFact] }),
+      expect.objectContaining({
+        approvedPublicFacts: [{
+          researchFactId: acceptedFact.researchFactId,
+          sourceId: acceptedFact.sourceId,
+          text: acceptedFact.text,
+          sourceTitle: acceptedFact.sourceTitle,
+          sourceUrl: acceptedFact.sourceUrl,
+        }],
+      }),
+    );
+    expect(assertResearchReadyToApply).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      acceptedFact.briefId,
+    );
+    expect(markResearchApplied).toHaveBeenCalledWith(
+      expect.anything(),
+      'trusted-organization-id',
+      acceptedFact.briefId,
+    );
+    expect(recordDataControlEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: 'trusted-organization-id',
+        actorClerkUserId: 'user_fictional',
+        action: 'research.applied',
+        targetType: 'profile_version',
+        targetId: 'draft-id',
+        outcome: 'succeeded',
+      }),
     );
     expect(JSON.stringify(saveOrganizationSecretaryProfileDraft.mock.calls)).not.toContain('forged text');
     expect(JSON.stringify(saveOrganizationSecretaryProfileDraft.mock.calls)).not.toContain('evil.invalid');
@@ -164,6 +208,7 @@ describe('Studio Server Actions', () => {
     ];
     listAcceptedResearchFacts.mockResolvedValueOnce([{
       researchFactId: requestedIds[0],
+      briefId: '55555555-5555-4555-8555-555555555555',
       sourceId: '33333333-3333-4333-8333-333333333333',
       text: 'Only one trusted fact resolved.',
       sourceTitle: 'Fictional Clinic',
@@ -183,6 +228,7 @@ describe('Studio Server Actions', () => {
     const snapshots = [
       {
         researchFactId: firstId,
+        briefId: '55555555-5555-4555-8555-555555555555',
         sourceId: '33333333-3333-4333-8333-333333333333',
         text: 'First submitted fact.',
         sourceTitle: 'Source One',
@@ -190,12 +236,20 @@ describe('Studio Server Actions', () => {
       },
       {
         researchFactId: secondId,
+        briefId: '55555555-5555-4555-8555-555555555555',
         sourceId: '44444444-4444-4444-8444-444444444444',
         text: 'Second submitted fact.',
         sourceTitle: 'Source Two',
         sourceUrl: 'https://example.com/two',
       },
     ];
+    const persistedSnapshots = snapshots.map((snapshot) => ({
+      researchFactId: snapshot.researchFactId,
+      sourceId: snapshot.sourceId,
+      text: snapshot.text,
+      sourceTitle: snapshot.sourceTitle,
+      sourceUrl: snapshot.sourceUrl,
+    }));
     listAcceptedResearchFacts.mockResolvedValueOnce(snapshots);
 
     await expect(saveStudioDraft('organization', formWith({
@@ -209,7 +263,9 @@ describe('Studio Server Actions', () => {
     expect(saveOrganizationSecretaryProfileDraft).toHaveBeenCalledWith(
       expect.anything(),
       'trusted-organization-id',
-      expect.objectContaining({ approvedPublicFacts: snapshots }),
+      expect.objectContaining({
+        approvedPublicFacts: persistedSnapshots,
+      }),
     );
 
     vi.clearAllMocks();
@@ -238,6 +294,57 @@ describe('Studio Server Actions', () => {
     });
     expect(serialized).not.toContain(submittedValue);
     expect(serialized).not.toContain('trusted-organization-id');
+  });
+
+  it('does not save accepted facts while another proposal in their brief is unreviewed', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    const factId = '11111111-1111-4111-8111-111111111111';
+    listAcceptedResearchFacts.mockResolvedValueOnce([{
+      researchFactId: factId,
+      briefId: '55555555-5555-4555-8555-555555555555',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      text: 'A grounded accepted fact.',
+      sourceTitle: 'Fictional source',
+      sourceUrl: 'https://example.com/about',
+    }]);
+    assertResearchReadyToApply.mockRejectedValueOnce(new Error('not fully reviewed'));
+
+    await expect(saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: [factId],
+    }))).resolves.toEqual({ error: 'invalid' });
+    expect(saveOrganizationSecretaryProfileDraft).not.toHaveBeenCalled();
+    expect(markResearchApplied).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat the applied transition or its audit for a previously applied brief', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    const factId = '11111111-1111-4111-8111-111111111111';
+    listAcceptedResearchFacts.mockResolvedValueOnce([{
+      researchFactId: factId,
+      briefId: '55555555-5555-4555-8555-555555555555',
+      sourceId: '22222222-2222-4222-8222-222222222222',
+      text: 'A previously applied fact.',
+      sourceTitle: 'Fictional source',
+      sourceUrl: 'https://example.com/about',
+    }]);
+    assertResearchReadyToApply.mockResolvedValueOnce('applied');
+
+    await expect(saveStudioDraft('organization', formWith({
+      approvedPublicFactIds: [factId],
+    }))).resolves.toEqual({ ok: 'draftSaved' });
+    expect(markResearchApplied).not.toHaveBeenCalled();
+    expect(recordDataControlEvent).not.toHaveBeenCalled();
+  });
+
+  it('reports an unavailable save without mislabeling a storage failure as permission denial', async () => {
+    const { saveStudioDraft } = await import('@/app/[locale]/studio/actions');
+    saveOrganizationSecretaryProfileDraft.mockRejectedValueOnce(
+      new Error('temporary database failure'),
+    );
+
+    await expect(saveStudioDraft('organization', formWith())).resolves.toEqual({
+      error: 'unavailable',
+    });
   });
 
   it('publishes only a version resolved inside the Clerk-derived organization', async () => {

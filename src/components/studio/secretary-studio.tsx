@@ -67,6 +67,7 @@ type StudioCopy = {
   invalid: string;
   notFound: string;
   personalNotSaved: string;
+  unavailable: string;
   noDraft: string;
   refreshingDraft: string;
   fieldErrors: Record<StudioFieldErrorCode, string>;
@@ -120,6 +121,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     invalid: 'Review the marked profile fields.',
     notFound: 'That profile version is not available in the active Organization.',
     personalNotSaved: 'Personal configuration remains browser-local and was not saved.',
+    unavailable: 'The profile could not be saved right now. Try again.',
     noDraft: 'Save a draft to enable publishing.',
     refreshingDraft: 'Refreshing the trusted draft…',
     fieldErrors: {
@@ -158,6 +160,7 @@ const STUDIO_COPY: Record<BetaLocale, StudioCopy> = {
     invalid: 'Revise os campos marcados do perfil.',
     notFound: 'Essa versão do perfil não está disponível na Organização ativa.',
     personalNotSaved: 'A configuração Pessoal permanece local no navegador e não foi salva.',
+    unavailable: 'Não foi possível salvar o perfil agora. Tente novamente.',
     noDraft: 'Salve um rascunho para habilitar a publicação.',
     refreshingDraft: 'Atualizando o rascunho confiável…',
     fieldErrors: {
