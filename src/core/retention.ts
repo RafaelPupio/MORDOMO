@@ -57,7 +57,7 @@ export type RetentionResult = {
 };
 
 export type RetentionInput = {
-  churchId: string;
+  organizationId: string;
   /** null disables deletion; the counts are still computed against `previewDays`. */
   retentionDays: number | null;
   /** Used to compute the preview cutoff when `retentionDays` is null (staff page). */
@@ -94,17 +94,17 @@ export async function runRetention(db: Db, input: RetentionInput): Promise<Reten
 
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const rateCutoff = new Date(now.getTime() - RATE_LIMIT_WINDOW_KEEP_MS);
-  const churchId = input.churchId;
-  // rate_limits has no church_id; the tenant lives in the key. Matched by exact shape
-  // (`chat:<churchId>:<visitor>`, `ingest:<churchId>`, `staff-suggest:<churchId>`,
-  // `report-generate:<churchId>`), not by substring: a visitor can choose their own cookie
+  const organizationId = input.organizationId;
+  // rate_limits has no organization_id; the tenant lives in the key. Matched by exact shape
+  // (`chat:<organizationId>:<visitor>`, `ingest:<organizationId>`, `staff-suggest:<organizationId>`,
+  // `report-generate:<organizationId>`), not by substring: a visitor can choose their own cookie
   // value, and choosing another church's UUID must not move a window between tenants.
   // Without any scoping, church A's pass deleted church B's stale windows.
   const staleWindowWhere = and(
     lt(rateLimits.windowStart, rateCutoff),
     or(
-      like(rateLimits.key, `chat:${churchId}:%`),
-      inArray(rateLimits.key, [`ingest:${churchId}`, `staff-suggest:${churchId}`, `report-generate:${churchId}`]),
+      like(rateLimits.key, `chat:${organizationId}:%`),
+      inArray(rateLimits.key, [`ingest:${organizationId}`, `staff-suggest:${organizationId}`, `report-generate:${organizationId}`]),
     ),
   );
 
@@ -113,27 +113,27 @@ export async function runRetention(db: Db, input: RetentionInput): Promise<Reten
   // a raw `sql\`${date}\`` fragment — the driver would serialise a Date in the process's
   // local time and the cutoff would move with the server's TZ.
   const ticketWhere = and(
-    eq(tickets.churchId, churchId),
+    eq(tickets.organizationId, organizationId),
     inArray(tickets.status, ['answered', 'closed']),
     lt(tickets.updatedAt, cutoff),
   );
   const prayerWhere = and(
-    eq(prayerRequests.churchId, churchId),
+    eq(prayerRequests.organizationId, organizationId),
     eq(prayerRequests.status, 'done'),
     lt(prayerRequests.updatedAt, cutoff),
   );
   // "Eligible" is church-scoped exactly like the deletes above: the preview may only treat
   // a referencing row as about-to-vanish when THIS run will actually delete it. The outer
   // reference checks below stay unscoped on purpose.
-  const ticketEligible = and(eq(tickets.churchId, churchId), inArray(tickets.status, ['answered', 'closed']), lt(tickets.updatedAt, cutoff))!;
-  const prayerEligible = and(eq(prayerRequests.churchId, churchId), eq(prayerRequests.status, 'done'), lt(prayerRequests.updatedAt, cutoff))!;
+  const ticketEligible = and(eq(tickets.organizationId, organizationId), inArray(tickets.status, ['answered', 'closed']), lt(tickets.updatedAt, cutoff))!;
+  const prayerEligible = and(eq(prayerRequests.organizationId, organizationId), eq(prayerRequests.status, 'done'), lt(prayerRequests.updatedAt, cutoff))!;
 
   // A conversation is eligible when it started before the cutoff, has no message at or
   // after it, and nothing still points at it that is itself ineligible. The reference
   // checks are deliberately NOT church-scoped: a row from any church that still points at
   // the conversation must keep it (deleting it would break that row's FK).
   const conversationWhere = (afterDeletes: boolean) => and(
-    eq(conversations.churchId, churchId),
+    eq(conversations.organizationId, organizationId),
     lt(conversations.startedAt, cutoff),
     notExists(db.select({ one: sql`1` }).from(messages)
       .where(and(eq(messages.conversationId, conversations.id), gte(messages.createdAt, cutoff)))),

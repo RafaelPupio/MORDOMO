@@ -1,7 +1,7 @@
 import { isAuthorizedCron } from '@/core/cron-auth';
 import { parseRetentionDays, runRetention } from '@/core/retention';
 import { getDb } from '@/db/client';
-import { churches } from '@/db/schema';
+import { organizations } from '@/db/schema';
 
 export const maxDuration = 60;
 
@@ -17,16 +17,16 @@ export async function GET(req: Request) {
   const retentionDays = parseRetentionDays(process.env.RETENTION_DAYS);
   try {
     const db = getDb();
-    const all = await db.select({ id: churches.id, slug: churches.slug }).from(churches);
+    const all = await db.select({ id: organizations.id, slug: organizations.slug }).from(organizations);
     const results = [];
     for (const church of all) {
-      const result = await runRetention(db, { churchId: church.id, retentionDays, previewDays: 90 });
+      const result = await runRetention(db, { organizationId: church.id, retentionDays, previewDays: 90 });
       console.log(result.dryRun ? 'cron/retention: dry run' : 'cron/retention: purged', {
         church: church.slug, retentionDays: result.retentionDays, cutoff: result.cutoff, ...result.counts,
       });
       results.push({ church: church.slug, ...result });
     }
-    return Response.json({ dryRun: retentionDays === null, retentionDays, churches: results });
+    return Response.json({ dryRun: retentionDays === null, retentionDays, organizations: results });
   } catch (error) {
     console.error('cron/retention: unexpected failure', { error });
     return Response.json({ code: 'internal_error' }, { status: 500 });

@@ -3,7 +3,7 @@ import type { ExtractedEvent } from '@/agent/extractor';
 import { verifyEvents, VERIFY_CONCURRENCY } from '@/agent/verifier';
 import { CHAT_MODEL } from '@/ai/pricing';
 import { usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // generateObject is mocked at the module level, by default delegating to the real
 // implementation (same pattern as tests/agent/extractor.test.ts's `generateObjectMock`),
@@ -59,14 +59,14 @@ function candidate(overrides: Partial<ExtractedEvent> = {}): ExtractedEvent {
 describe('verifyEvents', () => {
   it('attaches a verdict to each candidate and meters one call per event', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await verdictModel([
       { decision: 'confirmed', note: 'Data e local conferem com o documento.' },
       { decision: 'rejected', note: 'O documento nao menciona este evento.' },
     ]);
 
     const out = await verifyEvents({ db, model }, {
-      churchId: church.id,
+      organizationId: church.id,
       documentId: crypto.randomUUID(),
       text: TEXT,
       events: [candidate(), candidate({ title: 'Outro' })],
@@ -80,14 +80,14 @@ describe('verifyEvents', () => {
 
   it('returns an empty array without calling the model when there are no candidates', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     let called = false;
     const { MockLanguageModelV3 } = await import('ai/test');
     const model = new MockLanguageModelV3({
       doGenerate: async () => { called = true; throw new Error('should not be called'); },
     });
     const out = await verifyEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [],
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [],
     });
     expect(out).toEqual([]);
     expect(called).toBe(false);
@@ -99,14 +99,14 @@ describe('verifyEvents', () => {
   // replace a document's previously verified events.
   it('rejects — never silently confirms — an event whose verification call fails, and marks it as an outage', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     const model = new MockLanguageModelV3({
       doGenerate: async () => { throw new Error('gateway down'); },
     });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const out = await verifyEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
     });
     expect(out).toHaveLength(1);
     expect(out[0].verdict.decision).toBe('rejected');
@@ -119,10 +119,10 @@ describe('verifyEvents', () => {
   // candidate) must NOT carry the outage marker — only the catch-block path does.
   it('does not mark a genuine model-produced rejection as an outage', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await verdictModel([{ decision: 'rejected', note: 'O documento nao menciona este evento.' }]);
     const out = await verifyEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
     });
     expect(out[0].verdict.decision).toBe('rejected');
     expect(out[0].verdict.outage).toBeUndefined();
@@ -135,13 +135,13 @@ describe('verifyEvents', () => {
   // resolution via the module mock instead of routing a string through a live call.
   it('prices the ledger row under the actual string model id passed via deps.model, not a hardcoded FAST_MODEL', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockResolvedValueOnce({
       object: { decision: 'confirmed', note: 'Confere.' },
       usage: { inputTokens: 55, outputTokens: 9 },
     });
     const out = await verifyEvents({ db, model: CHAT_MODEL }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: [candidate()],
     });
     expect(out[0].verdict.decision).toBe('confirmed');
     const ledger = await db.select().from(usageLedger);
@@ -153,7 +153,7 @@ describe('verifyEvents', () => {
   // candidate's call simultaneously via a bare Promise.all.
   it('never runs more than VERIFY_CONCURRENCY verifier calls at the same time', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     let inFlight = 0;
     let maxInFlight = 0;
@@ -177,7 +177,7 @@ describe('verifyEvents', () => {
     const manyEvents = Array.from({ length: VERIFY_CONCURRENCY * 3 }, (_, i) => candidate({ title: `Evento ${i}` }));
 
     const out = await verifyEvents({ db, model }, {
-      churchId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: manyEvents,
+      organizationId: church.id, documentId: crypto.randomUUID(), text: TEXT, events: manyEvents,
     });
 
     expect(out).toHaveLength(manyEvents.length);

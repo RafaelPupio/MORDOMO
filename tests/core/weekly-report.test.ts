@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { generateWeeklyReport, weekStart } from '@/core/weekly-report';
 import { getReport, getReportForPeriod, listReports } from '@/db/repo/reports';
 import { prayerRequests, tickets, usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 const PERIOD_START = new Date('2026-08-10T00:00:00Z');
 const PERIOD_END = new Date('2026-08-17T00:00:00Z');
@@ -58,8 +58,8 @@ async function throwingModel(message: string) {
 describe('generateWeeklyReport', () => {
   it('gathers activity, analyses, writes, and publishes a report for a week with activity', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db, 'Igreja da Colina');
-    await db.insert(prayerRequests).values({ churchId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
+    const church = await seedOrganization(db, 'Igreja da Colina');
+    await db.insert(prayerRequests).values({ organizationId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
 
     const result = await generateWeeklyReport(
       {
@@ -67,7 +67,7 @@ describe('generateWeeklyReport', () => {
         analystModel: await findingsModel(),
         writerModel: await textModel('## Resumo da Semana\n\nUm pedido de oração.'),
       },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result.status).toBe('published');
@@ -84,7 +84,7 @@ describe('generateWeeklyReport', () => {
   // than merely checking the result, since it proves neither agent was ever reached.
   it('skips with zero model calls, and publishes nothing, when the week has no activity at all', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     const analystDoGenerate = vi.fn().mockRejectedValue(
       new Error('analyst must not be called for a week with no activity'),
@@ -97,7 +97,7 @@ describe('generateWeeklyReport', () => {
 
     const result = await generateWeeklyReport(
       { db, analystModel, writerModel },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result).toEqual({ status: 'skipped-no-activity' });
@@ -108,9 +108,9 @@ describe('generateWeeklyReport', () => {
 
   it('publishes a cost-only week so the digest accounts for what the church spent', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     await db.insert(usageLedger).values({
-      churchId: church.id,
+      organizationId: church.id,
       feature: 'chat.reply',
       model: 'test/model',
       inputTokens: 1,
@@ -125,7 +125,7 @@ describe('generateWeeklyReport', () => {
         analystModel: await findingsModel(),
         writerModel: await textModel('## Resumo\n\nCusto semanal registrado.'),
       },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result.status).toBe('published');
@@ -134,8 +134,8 @@ describe('generateWeeklyReport', () => {
 
   it('fails and publishes nothing when the analyst fails', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    await db.insert(prayerRequests).values({ churchId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
+    const church = await seedOrganization(db);
+    await db.insert(prayerRequests).values({ organizationId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { MockLanguageModelV3 } = await import('ai/test');
     const writerDoGenerate = vi.fn().mockRejectedValue(
@@ -148,7 +148,7 @@ describe('generateWeeklyReport', () => {
         analystModel: await throwingModel('analyst outage'),
         writerModel: new MockLanguageModelV3({ doGenerate: writerDoGenerate }),
       },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result.status).toBe('failed');
@@ -161,8 +161,8 @@ describe('generateWeeklyReport', () => {
 
   it('fails and publishes nothing (no report row with an empty body) when the writer fails after a successful analysis', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    await db.insert(prayerRequests).values({ churchId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
+    const church = await seedOrganization(db);
+    await db.insert(prayerRequests).values({ organizationId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await generateWeeklyReport(
@@ -171,7 +171,7 @@ describe('generateWeeklyReport', () => {
         analystModel: await findingsModel(),
         writerModel: await throwingModel('writer outage'),
       },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result.status).toBe('failed');
@@ -183,16 +183,16 @@ describe('generateWeeklyReport', () => {
 
   it('replaces rather than duplicates when the same week is generated twice', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    await db.insert(prayerRequests).values({ churchId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
+    const church = await seedOrganization(db);
+    await db.insert(prayerRequests).values({ organizationId: church.id, request: 'peço oração', createdAt: IN_WINDOW });
 
     const first = await generateWeeklyReport(
       { db, analystModel: await findingsModel(), writerModel: await textModel('Primeira versão.') },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
     const second = await generateWeeklyReport(
       { db, analystModel: await findingsModel(), writerModel: await textModel('Segunda versão.') },
-      { churchId: church.id, churchName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: church.id, organizationName: church.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(first.status).toBe('published');
@@ -204,10 +204,10 @@ describe('generateWeeklyReport', () => {
 
   it('generating for church A never reads church B’s activity', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
-    await db.insert(tickets).values({ churchId: a.id, topic: 'TICKET_MARCADOR_A', createdAt: IN_WINDOW });
-    await db.insert(tickets).values({ churchId: b.id, topic: 'TICKET_MARCADOR_B', createdAt: IN_WINDOW });
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
+    await db.insert(tickets).values({ organizationId: a.id, topic: 'TICKET_MARCADOR_A', createdAt: IN_WINDOW });
+    await db.insert(tickets).values({ organizationId: b.id, topic: 'TICKET_MARCADOR_B', createdAt: IN_WINDOW });
 
     const { MockLanguageModelV3 } = await import('ai/test');
     const capturingModel = new MockLanguageModelV3({
@@ -224,7 +224,7 @@ describe('generateWeeklyReport', () => {
 
     const result = await generateWeeklyReport(
       { db, analystModel: capturingModel, writerModel: await textModel('resumo') },
-      { churchId: a.id, churchName: a.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
+      { organizationId: a.id, organizationName: a.name, periodStart: PERIOD_START, periodEnd: PERIOD_END },
     );
 
     expect(result.status).toBe('published');

@@ -1,6 +1,7 @@
 import { convertToModelMessages, stepCountIs, streamText, tool } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
+import { formatLocalWallClock } from '@/agent/time-convention';
 import type { Embedder } from '@/ai/embedder';
 import { CHAT_MODEL } from '@/ai/pricing';
 import { recordUsage } from '@/ai/usage';
@@ -8,7 +9,6 @@ import type { IncomingChat } from '@/core/channel';
 import { searchKnowledgeBase } from '@/core/retrieval';
 import type { Db } from '@/db/client';
 import { listUpcomingEvents } from '@/db/repo/events';
-import { formatLocalWallClock } from '@/agent/time-convention';
 import { createPrayerRequest } from '@/db/repo/prayer';
 import { createTicket } from '@/db/repo/tickets';
 
@@ -17,11 +17,11 @@ export type SecretaryDeps = { db: Db; embedder: Embedder; model?: LanguageModel 
 // no transport can supply on its own: the display name to greet the visitor with. Every
 // adapter (web today, WhatsApp later) constructs an IncomingChat and hands it here —
 // see src/core/channel.ts for what that seam is and isn't responsible for.
-export type SecretaryInput = IncomingChat & { churchName: string };
+export type SecretaryInput = IncomingChat & { organizationName: string };
 
-function systemPrompt(churchName: string): string {
+function systemPrompt(organizationName: string): string {
   return [
-    `You are the virtual secretary ("Secretária Virtual") of ${churchName}, a Brazilian church.`,
+    `You are the virtual secretary ("Secretária Virtual") of ${organizationName}, a Brazilian church.`,
     'Always reply in the language the visitor writes in. Church content is in Portuguese; translate naturally when needed.',
     'Ground every factual claim about the church (schedules, addresses, events, ministries, contacts) in results from the searchKnowledge or getCalendar tools. If the tools do not support an answer, say you do not know and offer to connect the visitor with a person. Never invent facts.',
     'When a visitor shares a prayer need and wants the church to pray, use createPrayerRequest (ask for their name, but it is optional).',
@@ -31,19 +31,19 @@ function systemPrompt(churchName: string): string {
   ].join('\n');
 }
 
-export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; conversationId: string }) {
+export function secretaryTools(deps: SecretaryDeps, ctx: { organizationId: string; conversationId: string }) {
   return {
     searchKnowledge: tool({
       description: 'Search the church knowledge base (schedules, bulletins, ministries, FAQs). Returns source excerpts to cite.',
       inputSchema: z.object({ query: z.string().describe('Search query in Portuguese') }),
       execute: async ({ query }) => {
-        const { sources, embeddingTokens } = await searchKnowledgeBase(deps.db, deps.embedder, ctx.churchId, query);
+        const { sources, embeddingTokens } = await searchKnowledgeBase(deps.db, deps.embedder, ctx.organizationId, query);
         // A ledger write failing here must not discard a successful search: the visitor
         // still gets a grounded answer, and we just lose one usage record instead of
         // falsely claiming "I don't know" on top of an unrelated infra hiccup.
         try {
           await recordUsage(deps.db, {
-            churchId: ctx.churchId,
+            organizationId: ctx.organizationId,
             feature: 'chat.retrieval',
             model: deps.embedder.model,
             inputTokens: embeddingTokens,
@@ -51,7 +51,7 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
           });
         } catch (err) {
           console.error('searchKnowledge: failed to record usage ledger entry', {
-            churchId: ctx.churchId,
+            organizationId: ctx.organizationId,
             conversationId: ctx.conversationId,
             model: deps.embedder.model,
             embeddingTokens,
@@ -64,22 +64,17 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
     getCalendar: tool({
       description: 'List the next upcoming church events with dates and locations.',
       inputSchema: z.object({}),
-      // Returns a JSON-safe, model-shaped list — never the raw rows. A raw row carries
-      // `startsAt` as a Date, which the UI stream serializes happily but the SDK REJECTS
-      // when it rebuilds the next model step ("messages do not match the ModelMessage[]
-      // schema"): the visitor got a tool call, then "An error occurred", and no answer —
-      // every time anyone asked for upcoming events (2026-09-07, found by asking). The
-      // model is also handed local wall-clock text so it never converts UTC itself; see
-      // src/agent/time-convention.ts for why that matters.
+      // Raw rows contain Date values, which the AI SDK rejects while rebuilding the
+      // next model step. Return a JSON-safe shape and one local wall-clock label.
       execute: async () => {
-        const rows = await listUpcomingEvents(deps.db, ctx.churchId, 10);
+        const rows = await listUpcomingEvents(deps.db, ctx.organizationId, 10);
         return {
-          events: rows.map((e) => ({
-            title: e.title,
-            when: formatLocalWallClock(e.startsAt.toISOString()),
-            startsAt: e.startsAt.toISOString(),
-            location: e.location ?? null,
-            description: e.description ?? null,
+          events: rows.map((event) => ({
+            title: event.title,
+            when: formatLocalWallClock(event.startsAt.toISOString()),
+            startsAt: event.startsAt.toISOString(),
+            location: event.location ?? null,
+            description: event.description ?? null,
           })),
         };
       },
@@ -91,7 +86,7 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
         name: z.string().optional().describe('Visitor name, if given'),
       }),
       execute: async ({ request, name }) => {
-        await createPrayerRequest(deps.db, { churchId: ctx.churchId, conversationId: ctx.conversationId, request, name });
+        await createPrayerRequest(deps.db, { organizationId: ctx.organizationId, conversationId: ctx.conversationId, request, name });
         return { saved: true };
       },
     }),
@@ -99,7 +94,7 @@ export function secretaryTools(deps: SecretaryDeps, ctx: { churchId: string; con
       description: 'Open a ticket for the church staff to contact the visitor personally.',
       inputSchema: z.object({ topic: z.string().describe('Short summary of what the visitor needs') }),
       execute: async ({ topic }) => {
-        const ticket = await createTicket(deps.db, { churchId: ctx.churchId, conversationId: ctx.conversationId, topic });
+        const ticket = await createTicket(deps.db, { organizationId: ctx.organizationId, conversationId: ctx.conversationId, topic });
         return { ticketId: ticket.id, note: 'Staff will follow up in this conversation.' };
       },
     }),
@@ -122,9 +117,9 @@ export async function runSecretary(deps: SecretaryDeps, input: SecretaryInput) {
   const pricedModel = priceableModelId(model);
   return streamText({
     model,
-    system: systemPrompt(input.churchName),
+    system: systemPrompt(input.organizationName),
     messages: await convertToModelMessages(input.uiMessages),
-    tools: secretaryTools(deps, { churchId: input.churchId, conversationId: input.conversationId }),
+    tools: secretaryTools(deps, { organizationId: input.organizationId, conversationId: input.conversationId }),
     stopWhen: stepCountIs(5),
     onFinish: async ({ usage }) => {
       // Mirrors the searchKnowledge tool's ledger-write guard above — a failed insert must
@@ -134,7 +129,7 @@ export async function runSecretary(deps: SecretaryDeps, input: SecretaryInput) {
       // never happens) and invisible (nothing anywhere says it didn't).
       try {
         await recordUsage(deps.db, {
-          churchId: input.churchId,
+          organizationId: input.organizationId,
           feature: 'chat.reply',
           model: pricedModel,
           inputTokens: usage.inputTokens ?? 0,
@@ -142,7 +137,7 @@ export async function runSecretary(deps: SecretaryDeps, input: SecretaryInput) {
         });
       } catch (err) {
         console.error('runSecretary: failed to record usage ledger entry', {
-          churchId: input.churchId,
+          organizationId: input.organizationId,
           conversationId: input.conversationId,
           model: pricedModel,
           inputTokens: usage.inputTokens ?? 0,

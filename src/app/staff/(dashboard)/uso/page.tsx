@@ -85,10 +85,10 @@ function UsageCapCard({
 }
 
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists before
-// this renders; `requireStaffContext()` here is what supplies `churchId` for the tenant query
+// this renders; `requireStaffContext()` here is what supplies `organizationId` for the tenant query
 // below — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function UsoPage() {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const db = getDb();
 
   // Two independent gates, per src/ai/usage.ts's `checkBudget`: a per-tenant monthly cap
@@ -96,15 +96,15 @@ export default async function UsoPage() {
   // showed the tenant figure — with a low `DEMO_GLOBAL_MONTHLY_USD_CAP`, that meant a green,
   // nowhere-near-full bar here while every AI call was actually being refused with 402/
   // `budget_exhausted` for reasons this page gave staff no way to see (M6). `monthSpendUsd(db)`
-  // with no `churchId` is the same aggregate-across-every-tenant query `checkBudget` itself
+  // with no `organizationId` is the same aggregate-across-every-tenant query `checkBudget` itself
   // runs for the global check.
   const retentionDays = parseRetentionDays(process.env.RETENTION_DAYS);
   const [usage, globalSpentUsd, retention] = await Promise.all([
-    usageSummary(db, churchId),
+    usageSummary(db, organizationId),
     monthSpendUsd(db),
     // Preview only — this page never deletes. It shows what the nightly job would remove,
     // so the policy is visible before and after anyone turns it on.
-    previewRetention(db, { churchId, retentionDays, previewDays: 90 }),
+    previewRetention(db, { organizationId, retentionDays, previewDays: 90 }),
   ]);
   const globalCapUsd = parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP);
 

@@ -4,7 +4,7 @@ export const STAFF_COOKIE_NAME = 'ccb_staff';
 export const SESSION_TTL_SECONDS = 60 * 60 * 8;
 
 export type StaffSession = {
-  churchId: string;
+  organizationId: string;
   issuedAt: number;
   expiresAt: number;
 };
@@ -55,12 +55,12 @@ export function verifySession(
 
   try {
     const parsed = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as StaffSession;
-    if (typeof parsed?.churchId !== 'string') return null;
+    if (typeof parsed?.organizationId !== 'string') return null;
     if (!Number.isFinite(parsed?.expiresAt)) return null;
     if (!Number.isFinite(parsed?.issuedAt)) return null;
     if (parsed.expiresAt <= now.getTime()) return null;
     return {
-      churchId: parsed.churchId,
+      organizationId: parsed.organizationId,
       issuedAt: parsed.issuedAt,
       expiresAt: parsed.expiresAt,
     };

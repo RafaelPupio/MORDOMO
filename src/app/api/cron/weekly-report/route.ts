@@ -3,7 +3,7 @@ import { isAuthorizedCron } from '@/core/cron-auth';
 import { checkBudget } from '@/ai/usage';
 import { parseGlobalCapUsd } from '@/core/config';
 import { getDb } from '@/db/client';
-import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
+import { DEMO_ORGANIZATION_SLUG, getOrganizationBySlug } from '@/db/repo/organizations';
 
 // Node runtime only: getDb()/Neon and the AI SDK calls the analyst/writer agents make
 // are not edge-safe here. Deliberately do NOT export `runtime = 'edge'`.
@@ -29,7 +29,7 @@ export async function GET(req: Request) {
 
   try {
     const db = getDb();
-    const church = await getChurchBySlug(db, DEMO_CHURCH_SLUG);
+    const church = await getOrganizationBySlug(db, DEMO_ORGANIZATION_SLUG);
     if (!church) return Response.json({ code: 'not_seeded' }, { status: 500 });
 
     // The cron has a secret rather than a staff session, but it still spends the same two
@@ -50,8 +50,8 @@ export async function GET(req: Request) {
     const result = await generateWeeklyReport(
       { db },
       {
-        churchId: church.id,
-        churchName: church.name,
+        organizationId: church.id,
+        organizationName: church.name,
         periodStart,
         periodEnd,
       },

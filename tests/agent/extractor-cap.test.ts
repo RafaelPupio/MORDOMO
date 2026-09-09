@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { extractEvents, MAX_EXTRACTED_EVENTS } from '@/agent/extractor';
 import { MAX_CANDIDATES } from '@/core/ingest';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 const generateObjectMock = vi.hoisted(() => vi.fn());
 vi.mock('ai', async (importOriginal) => {
@@ -32,12 +32,12 @@ async function objectModel(payload: unknown) {
 describe('the extractor is asked for a bounded list', () => {
   it('states the cap in its prompt, with the same number the verifier stage keeps', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockClear();
 
     await extractEvents(
       { db, model: await objectModel({ events: [] }) },
-      { churchId: church.id, documentId: church.id, text: '## Culto — 12/12\n\nÀs 19h30.', referenceDate: '2026-09-05' },
+      { organizationId: church.id, documentId: church.id, text: '## Culto — 12/12\n\nÀs 19h30.', referenceDate: '2026-09-05' },
     );
 
     const system = String((generateObjectMock.mock.calls[0][0] as { system?: string }).system);

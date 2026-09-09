@@ -3,16 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isAuthorizedCron: vi.fn(),
   getDb: vi.fn(),
-  getChurchBySlug: vi.fn(),
+  getOrganizationBySlug: vi.fn(),
   checkBudget: vi.fn(),
   generateWeeklyReport: vi.fn(),
 }));
 
 vi.mock('@/core/cron-auth', () => ({ isAuthorizedCron: mocks.isAuthorizedCron }));
 vi.mock('@/db/client', () => ({ getDb: mocks.getDb }));
-vi.mock('@/db/repo/churches', () => ({
-  DEMO_CHURCH_SLUG: 'igreja-da-colina',
-  getChurchBySlug: mocks.getChurchBySlug,
+vi.mock('@/db/repo/organizations', () => ({
+  DEMO_ORGANIZATION_SLUG: 'igreja-da-colina',
+  getOrganizationBySlug: mocks.getOrganizationBySlug,
 }));
 vi.mock('@/ai/usage', () => ({ checkBudget: mocks.checkBudget }));
 vi.mock('@/core/weekly-report', () => ({
@@ -27,7 +27,7 @@ describe('GET /api/cron/weekly-report', () => {
     vi.clearAllMocks();
     mocks.isAuthorizedCron.mockReturnValue(true);
     mocks.getDb.mockReturnValue({});
-    mocks.getChurchBySlug.mockResolvedValue({ id: 'church-1', name: 'Igreja da Colina' });
+    mocks.getOrganizationBySlug.mockResolvedValue({ id: 'church-1', name: 'Igreja da Colina' });
   });
 
   it('rejects an unauthorized request before opening the database', async () => {

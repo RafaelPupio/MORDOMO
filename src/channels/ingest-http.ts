@@ -10,7 +10,7 @@ import { parseDocument, EmptyDocumentError, UnsupportedMediaTypeError } from '@/
 import { checkRateLimit } from '@/core/rate-limit';
 import { hasUnstorableChars } from '@/core/text-safety';
 import type { Db } from '@/db/client';
-import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
+import { DEMO_ORGANIZATION_SLUG, getOrganizationBySlug } from '@/db/repo/organizations';
 import { createDocument, getDocument } from '@/db/repo/documents';
 
 export type IngestChannelDeps = {
@@ -104,9 +104,9 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
 
   // Optional `documentId` field: its presence is how a caller expresses "re-ingest this
   // document" rather than "upload a new one" — the only way to reach that path, since
-  // `createDocument` otherwise always inserts a fresh row (see the church-scoped ownership
+  // `createDocument` otherwise always inserts a fresh row (see the organization-scoped ownership
   // check below for the other half of this fix). Malformed input is rejected here, before
-  // any DB round trip; ownership is checked after the church is resolved below.
+  // any DB round trip; ownership is checked after the organization is resolved below.
   const documentIdRaw = form.get('documentId');
   const documentId = typeof documentIdRaw === 'string' && documentIdRaw.trim() !== ''
     ? documentIdRaw.trim()
@@ -122,34 +122,34 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
   // instead of an uncaught rejection that would either crash the handler or leak a stack
   // trace. Auth and body validation above stay OUTSIDE it so a 401/400 always stays a
   // 401/400, never getting reclassified as a 500.
-  let churchId: string | undefined;
+  let organizationId: string | undefined;
   try {
-    const church = await getChurchBySlug(deps.db, DEMO_CHURCH_SLUG);
-    if (!church) return Response.json({ code: 'not_seeded' }, { status: 500 });
-    // A session signed for a church that was later re-seeded (a fresh `churches` row with
+    const organization = await getOrganizationBySlug(deps.db, DEMO_ORGANIZATION_SLUG);
+    if (!organization) return Response.json({ code: 'not_seeded' }, { status: 500 });
+    // A session signed for a organization that was later re-seeded (a fresh `organizations` row with
     // a new id, same demo slug) must not be silently admitted just because the cookie
     // still verifies — same reasoning, and the same check, as `requireStaffContext` in
     // `src/core/staff-context.ts`.
-    if (session.churchId !== church.id) {
+    if (session.organizationId !== organization.id) {
       return Response.json({ code: 'unauthorized' }, { status: 401 });
     }
-    churchId = church.id;
+    organizationId = organization.id;
 
-    // A re-ingest target must belong to THIS church. `getDocument` already scopes its
-    // query by churchId, so a documentId that exists but belongs to another tenant comes
+    // A re-ingest target must belong to THIS organization. `getDocument` already scopes its
+    // query by organizationId, so a documentId that exists but belongs to another tenant comes
     // back exactly the same as one that doesn't exist at all — undefined either way —
     // and gets the same 404, never distinguishing the two. Checked before the rate limit
     // and budget gates, same reasoning as those gates' own ordering: a request that will
     // be rejected anyway should not consume either.
     if (documentId !== undefined) {
-      const existing = await getDocument(deps.db, church.id, documentId);
+      const existing = await getDocument(deps.db, organization.id, documentId);
       if (!existing) return Response.json({ code: 'not_found' }, { status: 404 });
     }
 
-    const rate = await checkRateLimit(deps.db, `ingest:${church.id}`, INGEST_LIMIT);
+    const rate = await checkRateLimit(deps.db, `ingest:${organization.id}`, INGEST_LIMIT);
     if (!rate.allowed) return Response.json({ code: 'rate_limited' }, { status: 429 });
 
-    const budget = await checkBudget(deps.db, church.id, deps.globalCapUsd);
+    const budget = await checkBudget(deps.db, organization.id, deps.globalCapUsd);
     if (!budget.allowed) {
       return Response.json({ code: 'budget_exhausted', reason: budget.reason }, { status: 402 });
     }
@@ -195,13 +195,13 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
       return Response.json({ code: 'bad_request' }, { status: 400 });
     }
 
-    // `documentId` present (and already confirmed to belong to this church, above) means
+    // `documentId` present (and already confirmed to belong to this organization, above) means
     // re-ingest: reuse it instead of `createDocument`, which would otherwise insert a
     // fresh row every time — the ONLY caller of `runIngest` reachable over HTTP, so
     // without this branch, re-uploading the same bulletin always duplicated it instead of
     // replacing it, no matter how carefully `runIngest` itself implements replace.
     const targetDocumentId = documentId ?? (await createDocument(deps.db, {
-      churchId: church.id, title, kind: 'upload', sourcePath: file.name,
+      organizationId: organization.id, title, kind: 'upload', sourcePath: file.name,
     })).id;
 
     const result = await runIngest(
@@ -209,7 +209,7 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
         db: deps.db, embedder: deps.embedder,
         extractorModel: deps.extractorModel, verifierModel: deps.verifierModel,
       },
-      { churchId: church.id, documentId: targetDocumentId, bytes, mimeType },
+      { organizationId: organization.id, documentId: targetDocumentId, bytes, mimeType },
     );
 
     // `runIngest` never throws — it fails closed internally and returns a normal
@@ -224,10 +224,10 @@ export async function handleIngestRequest(deps: IngestChannelDeps, req: Request)
     // runIngest itself already fails closed internally (it parks the document as
     // `failed` and returns a normal IngestResult rather than throwing) — this catch is
     // the backstop for every failure that can happen outside that contract: the three DB
-    // gates above (church lookup, rate limit, budget), reading the upload body, or
+    // gates above (organization lookup, rate limit, budget), reading the upload body, or
     // createDocument itself. Log the real error server-side; the client only ever sees
     // a generic code, never a stack trace or raw SQL.
-    console.error('handleIngestRequest: unexpected failure', { churchId, error });
+    console.error('handleIngestRequest: unexpected failure', { organizationId, error });
     return Response.json({ code: 'internal_error' }, { status: 500 });
   }
 }

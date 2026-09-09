@@ -1,5 +1,5 @@
 {
-  "id": "6f8dbacd-f99c-4c68-8052-bb8ae519a236",
+  "id": "55b31ce8-ee09-4b99-ada4-79b9c89a2422",
   "prevId": "fd82f2c7-ec66-4666-9de4-2d06ea707cef",
   "version": "7",
   "dialect": "postgresql",
@@ -8,8 +8,8 @@
       "name": "budgets",
       "schema": "",
       "columns": {
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": true,
           "notNull": true
@@ -23,12 +23,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "budgets_church_id_churches_id_fk": {
-          "name": "budgets_church_id_churches_id_fk",
+        "budgets_organization_id_organizations_id_fk": {
+          "name": "budgets_organization_id_organizations_id_fk",
           "tableFrom": "budgets",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -54,8 +54,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -86,11 +86,11 @@
         }
       },
       "indexes": {
-        "chunks_church_idx": {
-          "name": "chunks_church_idx",
+        "chunks_organization_idx": {
+          "name": "chunks_organization_idx",
           "columns": [
             {
-              "expression": "church_id",
+              "expression": "organization_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -103,12 +103,12 @@
         }
       },
       "foreignKeys": {
-        "chunks_church_id_churches_id_fk": {
-          "name": "chunks_church_id_churches_id_fk",
+        "chunks_organization_id_organizations_id_fk": {
+          "name": "chunks_organization_id_organizations_id_fk",
           "tableFrom": "chunks",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -136,53 +136,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.churches": {
-      "name": "churches",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "churches_slug_unique": {
-          "name": "churches_slug_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.conversations": {
       "name": "conversations",
       "schema": "",
@@ -193,8 +146,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -222,12 +175,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "conversations_church_id_churches_id_fk": {
-          "name": "conversations_church_id_churches_id_fk",
+        "conversations_organization_id_organizations_id_fk": {
+          "name": "conversations_organization_id_organizations_id_fk",
           "tableFrom": "conversations",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -253,8 +206,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -300,12 +253,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "documents_church_id_churches_id_fk": {
-          "name": "documents_church_id_churches_id_fk",
+        "documents_organization_id_organizations_id_fk": {
+          "name": "documents_organization_id_organizations_id_fk",
           "tableFrom": "documents",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -331,8 +284,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -402,12 +355,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "events_church_id_churches_id_fk": {
-          "name": "events_church_id_churches_id_fk",
+        "events_organization_id_organizations_id_fk": {
+          "name": "events_organization_id_organizations_id_fk",
           "tableFrom": "events",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -446,8 +399,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -525,12 +478,12 @@
         }
       },
       "foreignKeys": {
-        "messages_church_id_churches_id_fk": {
-          "name": "messages_church_id_churches_id_fk",
+        "messages_organization_id_organizations_id_fk": {
+          "name": "messages_organization_id_organizations_id_fk",
           "tableFrom": "messages",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -558,6 +511,161 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.organization_profiles": {
+      "name": "organization_profiles",
+      "schema": "",
+      "columns": {
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "industry": {
+          "name": "industry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "default_locale": {
+          "name": "default_locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_name": {
+          "name": "assistant_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reply_tone": {
+          "name": "reply_tone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "greeting": {
+          "name": "greeting",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "escalation_copy": {
+          "name": "escalation_copy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled_capabilities": {
+          "name": "enabled_capabilities",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "organization_profiles_organization_id_organizations_id_fk": {
+          "name": "organization_profiles_organization_id_organizations_id_fk",
+          "tableFrom": "organization_profiles",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.organizations": {
+      "name": "organizations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clerk_organization_id": {
+          "name": "clerk_organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owner_clerk_user_id": {
+          "name": "owner_clerk_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "organizations_slug_unique": {
+          "name": "organizations_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        },
+        "organizations_clerk_organization_id_unique": {
+          "name": "organizations_clerk_organization_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "clerk_organization_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.prayer_requests": {
       "name": "prayer_requests",
       "schema": "",
@@ -569,8 +677,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -610,12 +718,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "prayer_requests_church_id_churches_id_fk": {
-          "name": "prayer_requests_church_id_churches_id_fk",
+        "prayer_requests_organization_id_organizations_id_fk": {
+          "name": "prayer_requests_organization_id_organizations_id_fk",
           "tableFrom": "prayer_requests",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -685,8 +793,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -721,23 +829,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "generated_at": {
-          "name": "generated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
         }
       },
       "indexes": {},
       "foreignKeys": {
-        "reports_church_id_churches_id_fk": {
-          "name": "reports_church_id_churches_id_fk",
+        "reports_organization_id_organizations_id_fk": {
+          "name": "reports_organization_id_organizations_id_fk",
           "tableFrom": "reports",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -748,11 +849,11 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "reports_church_period_key": {
-          "name": "reports_church_period_key",
+        "reports_organization_period_key": {
+          "name": "reports_organization_period_key",
           "nullsNotDistinct": false,
           "columns": [
-            "church_id",
+            "organization_id",
             "period_start"
           ]
         }
@@ -772,8 +873,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -813,12 +914,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "tickets_church_id_churches_id_fk": {
-          "name": "tickets_church_id_churches_id_fk",
+        "tickets_organization_id_organizations_id_fk": {
+          "name": "tickets_organization_id_organizations_id_fk",
           "tableFrom": "tickets",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"
@@ -857,8 +958,8 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "church_id": {
-          "name": "church_id",
+        "organization_id": {
+          "name": "organization_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -903,12 +1004,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "usage_ledger_church_id_churches_id_fk": {
-          "name": "usage_ledger_church_id_churches_id_fk",
+        "usage_ledger_organization_id_organizations_id_fk": {
+          "name": "usage_ledger_organization_id_organizations_id_fk",
           "tableFrom": "usage_ledger",
-          "tableTo": "churches",
+          "tableTo": "organizations",
           "columnsFrom": [
-            "church_id"
+            "organization_id"
           ],
           "columnsTo": [
             "id"

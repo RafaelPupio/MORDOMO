@@ -21,12 +21,12 @@ const REPORT_GENERATE_LIMIT = { limit: 10, windowSeconds: 3600 };
 /**
  * Runs the SAME `generateWeeklyReport` pipeline the Monday cron job uses
  * (src/app/api/cron/weekly-report/route.ts), on demand, for LAST week — so staff (and a
- * portfolio viewer) do not have to wait for Monday to see a digest. `churchId`/`churchName`
+ * portfolio viewer) do not have to wait for Monday to see a digest. `organizationId`/`organizationName`
  * come ONLY from `requireStaffContext()`; there is no id or period in `formData` for a
  * caller to point at another tenant's data or a different week — the only week this action
  * can ever generate is "last week for MY church", the same boundary `weekStart(now)`
  * (src/core/weekly-report.ts) gives the cron job, so a staff click and Monday's cron run
- * converge on the identical `(churchId, periodStart)` row (`upsertReport`'s replace key)
+ * converge on the identical `(organizationId, periodStart)` row (`upsertReport`'s replace key)
  * rather than ever disagreeing about which week "last week" means.
  *
  * Rate-limited and budget-gated the same way `documentos/actions.ts`'s upload and
@@ -49,7 +49,7 @@ const REPORT_GENERATE_LIMIT = { limit: 10, windowSeconds: 3600 };
  * same way `Array.prototype.map`'s callback is allowed to ignore `index`/`array`.
  */
 export async function generateReportNow(): Promise<GenerateReportState> {
-  const { churchId, churchName } = await requireStaffContext();
+  const { organizationId, organizationName } = await requireStaffContext();
   const db = getDb();
 
   const now = new Date();
@@ -57,21 +57,21 @@ export async function generateReportNow(): Promise<GenerateReportState> {
   const periodEnd = weekStart(now, 0); // start of the CURRENT week = end of last week
 
   try {
-    const rate = await checkRateLimit(db, `report-generate:${churchId}`, REPORT_GENERATE_LIMIT);
+    const rate = await checkRateLimit(db, `report-generate:${organizationId}`, REPORT_GENERATE_LIMIT);
     if (!rate.allowed) return { error: 'Muitas gerações nesta hora. Tente novamente mais tarde.' };
 
-    const budget = await checkBudget(db, churchId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
+    const budget = await checkBudget(db, organizationId, parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP));
     if (!budget.allowed) return { error: 'O limite de uso do mês foi atingido.' };
 
     const result = await generateWeeklyReport(
       { db },
-      { churchId, churchName, periodStart, periodEnd },
+      { organizationId, organizationName, periodStart, periodEnd },
     );
 
     revalidatePath('/staff/relatorios');
     return buildGenerateReportState(result, periodStart, periodEnd);
   } catch (error) {
-    console.error('generateReportNow: unexpected failure', { churchId, error });
+    console.error('generateReportNow: unexpected failure', { organizationId, error });
     return { error: 'Não foi possível gerar o relatório agora. Tente novamente mais tarde.' };
   }
 }

@@ -42,18 +42,18 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists before
-// this renders; `requireStaffContext()` here is what supplies `churchId` for the query below
+// this renders; `requireStaffContext()` here is what supplies `organizationId` for the query below
 // — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function OracoesPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const { status: statusParam } = await searchParams;
   const status = isPrayerStatus(statusParam) ? statusParam : undefined;
 
-  const requests = await listPrayerRequests(getDb(), churchId, status);
+  const requests = await listPrayerRequests(getDb(), organizationId, status);
 
   return (
     <div className="flex flex-col gap-6">
