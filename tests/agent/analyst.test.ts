@@ -3,7 +3,7 @@ import { analyzeWeek } from '@/agent/analyst';
 import { CHAT_MODEL } from '@/ai/pricing';
 import type { WeekActivity } from '@/core/week-activity';
 import { usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // generateObject is mocked at the module level, by default delegating to the real
 // implementation, so most tests below still exercise the SDK's actual parsing/validation
@@ -64,7 +64,7 @@ const FINDINGS_PAYLOAD = {
 describe('analyzeWeek', () => {
   it('returns parsed findings for a normal week and meters one report.analyze call', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await findingsModel(FINDINGS_PAYLOAD);
 
     const week = activity({
@@ -74,7 +74,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 10, visitorMessages: 42, prayerRequests: 5, tickets: 2 },
     });
 
-    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: church.id, activity: week });
 
     expect(out).toEqual(FINDINGS_PAYLOAD);
     const ledger = await db.select().from(usageLedger);
@@ -85,7 +85,7 @@ describe('analyzeWeek', () => {
 
   it('returns null and logs, without throwing, when the model call fails', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockRejectedValueOnce(new Error('network unreachable'));
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -94,7 +94,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 1, prayerRequests: 0, tickets: 0 },
     });
 
-    const out = await analyzeWeek({ db }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db }, { organizationId: church.id, activity: week });
 
     expect(out).toBeNull();
     expect(spy).toHaveBeenCalled();
@@ -108,7 +108,7 @@ describe('analyzeWeek', () => {
   // a stronger assertion than merely checking the returned findings are empty.
   it('returns empty findings without calling the model when the week has no activity at all', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const { MockLanguageModelV3 } = await import('ai/test');
     const doGenerate = vi.fn().mockRejectedValue(
       new Error('generateObject must not be called for a week with no activity'),
@@ -117,7 +117,7 @@ describe('analyzeWeek', () => {
 
     const week = activity();
 
-    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: church.id, activity: week });
 
     expect(out).toEqual({
       topQuestions: [],
@@ -141,10 +141,10 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 1, prayerRequests: 0, tickets: 0 },
     });
 
-    // churchId never seeded -> usage_ledger insert violates the FK on church_id ->
+    // organizationId never seeded -> usage_ledger insert violates the FK on organization_id ->
     // recordUsage throws, same trigger tests/agent/extractor.test.ts uses for its
     // equivalent case.
-    const out = await analyzeWeek({ db, model }, { churchId: crypto.randomUUID(), activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: crypto.randomUUID(), activity: week });
 
     expect(out).toEqual(FINDINGS_PAYLOAD);
     expect(spy).toHaveBeenCalled();
@@ -159,7 +159,7 @@ describe('analyzeWeek', () => {
   // identifying string must never reach the returned findings, in any form.
   it('a theme that leaks identifying detail (the reviewer\'s exact probe) cannot reach the returned findings — fails closed to null', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const leaking = 'Maria pede oração porque o marido dela tem câncer';
     const model = await findingsModel({
       ...FINDINGS_PAYLOAD,
@@ -172,7 +172,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 0, prayerRequests: 1, tickets: 0 },
     });
 
-    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: church.id, activity: week });
 
     expect(out).toBeNull();
     expect(spy).toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe('analyzeWeek', () => {
   // NoObjectGeneratedError precedent already in src/agent/extractor.ts.
   it('rejects an off-vocabulary theme by failing closed to null, and still meters the real usage spent on the failed call', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await findingsModel({
       ...FINDINGS_PAYLOAD,
       prayerThemes: [{ theme: 'clima', count: 1 }], // not a member of PRAYER_THEME_VALUES
@@ -200,7 +200,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 0, prayerRequests: 1, tickets: 0 },
     });
 
-    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: church.id, activity: week });
 
     expect(out).toBeNull();
     const ledger = await db.select().from(usageLedger);
@@ -217,7 +217,7 @@ describe('analyzeWeek', () => {
   // src/agent/extractor.ts.
   it('clamps negative, absurd, and non-integer counts to non-negative integers', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const model = await findingsModel({
       ...FINDINGS_PAYLOAD,
       topQuestions: [
@@ -234,7 +234,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 3, prayerRequests: 1, tickets: 0 },
     });
 
-    const out = await analyzeWeek({ db, model }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model }, { organizationId: church.id, activity: week });
 
     expect(out).not.toBeNull();
     expect(out!.topQuestions.every((q) => Number.isInteger(q.count) && q.count >= 0)).toBe(true);
@@ -246,7 +246,7 @@ describe('analyzeWeek', () => {
 
   it('prices the ledger row under the actual string model id passed via deps.model, not the FAST_MODEL default', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockResolvedValueOnce({
       object: FINDINGS_PAYLOAD,
       usage: { inputTokens: 42, outputTokens: 7 },
@@ -257,7 +257,7 @@ describe('analyzeWeek', () => {
       counts: { conversations: 1, visitorMessages: 1, prayerRequests: 0, tickets: 0 },
     });
 
-    const out = await analyzeWeek({ db, model: CHAT_MODEL }, { churchId: church.id, activity: week });
+    const out = await analyzeWeek({ db, model: CHAT_MODEL }, { organizationId: church.id, activity: week });
 
     expect(out).toEqual(FINDINGS_PAYLOAD);
     const ledger = await db.select().from(usageLedger);

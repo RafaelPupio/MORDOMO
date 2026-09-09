@@ -9,8 +9,8 @@ import type { Db } from '@/db/client';
 
 export type ReportWriterDeps = { db: Db; model?: LanguageModel };
 export type ReportWriterInput = {
-  churchId: string;
-  churchName: string;
+  organizationId: string;
+  organizationName: string;
   findings: WeekFindings;
   activity: WeekActivity;
 };
@@ -38,11 +38,10 @@ function formatList(items: string[]): string {
 // prose fodder would reintroduce exactly the identifiable detail the analyst's privacy
 // rule exists to strip out — see the PRIVACY line in SYSTEM below.
 function buildPrompt(input: ReportWriterInput): string {
-  const { churchName, findings, activity } = input;
+  const { organizationName, findings, activity } = input;
   return [
-    `IGREJA: ${churchName}`,
-    // The heading above the report renders this exact string; handing the model the raw
-    // half-open `periodEnd` instead made the prose claim a week one day longer.
+    `IGREJA: ${organizationName}`,
+    // The UI renders this inclusive label; periodEnd itself is a half-open bound.
     `PERÍODO: ${formatPeriodLabel(activity.periodStart, activity.periodEnd)}`,
     `CONTAGENS DA SEMANA: ${JSON.stringify(activity.counts)}`,
     `CUSTO DE IA DA SEMANA (USD): US$ ${activity.costUsd.toFixed(4)}`,
@@ -106,7 +105,7 @@ export async function writeReport(deps: ReportWriterDeps, input: ReportWriterInp
 
     try {
       await recordUsage(deps.db, {
-        churchId: input.churchId,
+        organizationId: input.organizationId,
         feature: 'report.write',
         model: priceableModelId(model, CHAT_MODEL),
         inputTokens: usage.inputTokens ?? 0,
@@ -116,7 +115,7 @@ export async function writeReport(deps: ReportWriterDeps, input: ReportWriterInp
       // A ledger-write failure must not discard a report body the model already
       // produced — the digest is still worth publishing even if this one accounting
       // write was lost.
-      console.error('report.write usage not recorded', { churchId: input.churchId, error });
+      console.error('report.write usage not recorded', { organizationId: input.organizationId, error });
     }
 
     return text.trim();
@@ -125,7 +124,7 @@ export async function writeReport(deps: ReportWriterDeps, input: ReportWriterInp
     // empty or broken one, so a total failure here returns '' instead of throwing —
     // never a caller's problem to catch.
     console.error('report.write: generateText failed, returning an empty body', {
-      churchId: input.churchId, error,
+      organizationId: input.organizationId, error,
     });
     return '';
   }

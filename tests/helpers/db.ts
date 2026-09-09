@@ -3,7 +3,7 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import type { Db } from '@/db/client';
-import { churches } from '@/db/schema';
+import { organizations } from '@/db/schema';
 
 export async function createTestDb(): Promise<Db> {
   const client = new PGlite({ extensions: { vector } });
@@ -12,9 +12,9 @@ export async function createTestDb(): Promise<Db> {
   return db as unknown as Db;
 }
 
-export async function seedChurch(db: Db, name = 'Igreja Teste') {
+export async function seedOrganization(db: Db, name = 'Igreja Teste') {
   const [row] = await db
-    .insert(churches)
+    .insert(organizations)
     .values({ slug: `t-${crypto.randomUUID().slice(0, 8)}`, name })
     .returning();
   return row;

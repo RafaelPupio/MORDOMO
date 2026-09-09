@@ -8,12 +8,12 @@ import { listUpcomingEvents } from '@/db/repo/events';
 export const metadata = { title: 'Agenda — Secretaria' };
 
 export default async function AgendaPage() {
-  const { churchId } = await requireStaffContext();
+  const { organizationId } = await requireStaffContext();
   const db = getDb();
 
   const [events, docs] = await Promise.all([
-    listUpcomingEvents(db, churchId, 50),
-    listDocuments(db, churchId),
+    listUpcomingEvents(db, organizationId, 50),
+    listDocuments(db, organizationId),
   ]);
   const titleByDocumentId = new Map(docs.map((d) => [d.id, d.title]));
 

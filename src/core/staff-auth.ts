@@ -1,6 +1,6 @@
 import { verifySession, type StaffSession } from '@/core/staff-session';
 
-export type StaffContext = { churchId: string; churchName: string };
+export type StaffContext = { organizationId: string; organizationName: string };
 
 /**
  * Reads a staff session from a raw cookie value. Kept free of `next/headers` so it can be

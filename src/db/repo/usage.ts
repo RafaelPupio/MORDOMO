@@ -10,7 +10,7 @@ export type UsageSummary = {
 
 /** Month-to-date spend for one tenant, grouped by feature, plus its configured cap. */
 export async function usageSummary(
-  db: Db, churchId: string, now: Date = new Date(),
+  db: Db, organizationId: string, now: Date = new Date(),
 ): Promise<UsageSummary> {
   const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
@@ -21,14 +21,14 @@ export async function usageSummary(
       calls: sql<number>`count(*)`,
     })
     .from(usageLedger)
-    .where(and(eq(usageLedger.churchId, churchId), gte(usageLedger.createdAt, start)))
+    .where(and(eq(usageLedger.organizationId, organizationId), gte(usageLedger.createdAt, start)))
     .groupBy(usageLedger.feature);
 
   const byFeature = rows
     .map((r) => ({ feature: r.feature, costUsd: Number(r.costUsd), calls: Number(r.calls) }))
     .sort((a, b) => b.costUsd - a.costUsd);
 
-  const [budget] = await db.select().from(budgets).where(eq(budgets.churchId, churchId));
+  const [budget] = await db.select().from(budgets).where(eq(budgets.organizationId, organizationId));
 
   return {
     totalUsd: byFeature.reduce((sum, f) => sum + f.costUsd, 0),

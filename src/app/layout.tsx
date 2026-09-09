@@ -1,4 +1,6 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,20 +15,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MORDOMO",
-  description: "AI church secretary — a portfolio project (fictional demo church).",
+  title: 'MORDOMO — accountable AI secretary',
+  description: 'A multilingual AI secretary for organizations that answers from verified knowledge and keeps people in control.',
 };
 
-// Typed explicitly rather than with Next's generated `LayoutProps<"/">` global: that
-// type only exists in .next/types after a build, so `tsc --noEmit` on a clean clone
-// (CI, or a fresh checkout) fails on it while passing locally where .next lingers.
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ClerkProvider>{children}</ClerkProvider>
+      </body>
     </html>
   );
 }

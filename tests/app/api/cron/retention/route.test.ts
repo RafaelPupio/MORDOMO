@@ -22,7 +22,7 @@ describe('GET /api/cron/retention', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isAuthorizedCron.mockReturnValue(true);
-    // The route only does `db.select({...}).from(churches)`; two churches is enough.
+    // The route only does `db.select({...}).from(organizations)`; two organizations is enough.
     mocks.getDb.mockReturnValue({ select: () => ({ from: async () => [{ id: 'c1', slug: 'one' }, { id: 'c2', slug: 'two' }] }) });
     mocks.parseRetentionDays.mockReturnValue(null);
     mocks.runRetention.mockResolvedValue({ dryRun: true, retentionDays: null, cutoff: null, counts });
@@ -54,9 +54,9 @@ describe('GET /api/cron/retention', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.dryRun).toBe(true);
-    expect(body.churches.map((c: { church: string }) => c.church)).toEqual(['one', 'two']);
+    expect(body.organizations.map((c: { church: string }) => c.church)).toEqual(['one', 'two']);
     expect(mocks.runRetention).toHaveBeenCalledTimes(2);
-    expect(mocks.runRetention.mock.calls[0][1]).toMatchObject({ churchId: 'c1', retentionDays: null, previewDays: 90 });
+    expect(mocks.runRetention.mock.calls[0][1]).toMatchObject({ organizationId: 'c1', retentionDays: null, previewDays: 90 });
   });
 
   it('passes the configured period through, unchanged, to every church', async () => {
@@ -75,7 +75,7 @@ describe('GET /api/cron/retention', () => {
     mocks.runRetention.mockResolvedValue({ dryRun: false, retentionDays: 120, cutoff, counts: { ...counts, conversations: 3 } });
     const res = await GET(new Request('http://test/api/cron/retention'));
     const body = await res.json();
-    expect(body.churches[0]).toEqual({ church: 'one', dryRun: false, retentionDays: 120, cutoff: cutoff.toISOString(), counts: { ...counts, conversations: 3 } });
+    expect(body.organizations[0]).toEqual({ church: 'one', dryRun: false, retentionDays: 120, cutoff: cutoff.toISOString(), counts: { ...counts, conversations: 3 } });
   });
 
   it('answers 500 internal_error when a purge itself fails mid-loop', async () => {

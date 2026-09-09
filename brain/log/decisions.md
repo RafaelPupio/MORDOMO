@@ -14,22 +14,34 @@ next to this file. Open the quarter you need, never the whole history.
 - `2026-08-20` decisions forced by building Plan 1
 - `2026-08-20` Plan 2, Task 6: `POST /api/ingest` gated by a placeholder shared secret
 - `2026-08-20` Plan 2
-- `2026-08-20` Plan 2 whole-branch review: fail-closed is not fail-destructive, and
+- `2026-08-20` Plan 2 whole-branch review: fail-closed is not fail-destructive
 - `2026-08-20` Plan 3: staff operations, and retiring `INGEST_TOKEN`
-- `2026-08-20` Plan 3 whole-branch review: a staff reply now actually reaches the visit…
-- `2026-08-20` Plan 4, Task 5: cron route, and a note on `vercel.json`'s schedule
+- `2026-08-20` Plan 3 whole-branch review: a staff reply reaches the visitor
+- `2026-08-20` Plan 4, Task 5: cron route and `vercel.json` schedule
 - `2026-08-24` Plan 4: reporting pipeline and portfolio front door
-- `2026-08-31` Repo hygiene after the rename: tooling artifacts out, `.env.example` protected, links follow the rename
-- `2026-08-31` The project is MORDOMO: renamed everywhere except V1 references and the Vercel project
-- `2026-08-31` Correction: the Vercel project is renamed, deployments already existed, and the URL stays churchchatboxv2.vercel.app
-- `2026-08-31` Correction: Neon terms were already accepted; the blocker was stale, and cloud state must be checked live
-- `2026-09-04` The Neon database attached to the mordomo project belongs to another app — do not migrate into it
-- `2026-09-04` MORDOMO deployed on its own Neon database; 10/10 retrieval with real embeddings; only Vercel Auth remains
-- `2026-09-05` Correction: the demo was already public — `all_except_custom_domains` exempts the production domain, and every smoke test had probed a protected deployment URL
-- `2026-09-05` Acceptance pass: the two-agent ingest pipeline had never worked — the verifier was never told the extractor's UTC convention and rejected 100% of correct events
-- `2026-09-05` Typecheck, lint and tests all passed on a commit `next build` rejected; two prod deploys sat in ERROR behind a healthy alias — CI now builds
-- `2026-09-05` Review pass: static reviewers refuted the midnight-crossing bug 0/3, a live probe hit it 2/2; the verifier now gets local time rendered in code and never sees UTC (0/27)
-- `2026-09-05` Afternoon pass: PDF upload had never worked on Vercel (untransferable buffer), the AI draft never landed (lazy updater vs advanced ref), the extractor failed on long docs — and a 40-minute chase that was skew protection
-- `2026-09-07` The first unattended cron report ran and replaced the on-demand row in place; scanned PDFs now get an OCR hint (422 empty_document) instead of the generic failure
-- `2026-09-08` Inventory-driven pass: a `Date` in `getCalendar`'s output killed every upcoming-events answer; Next's 1 MB Server Action cap sat under a 5 MB form; budget gate, rate limit, session expiry and status workflows proven live
-- `2026-09-09` Data retention shipped inert by default (30..3650 days, resolved rows age by updated_at, protective reference checks unscoped, deletes re-checked); two review passes, 31 findings; turning it on is a one-variable choice
+- `2026-08-25` AI Secretary SaaS beta: Clerk and organization-first design
+- `2026-08-27` MORDOMO identity and five-language public presentation
+- `2026-08-28` Bilingual Studio Task 1: strict non-sensitive profile and EN/PT boundary
+- `2026-08-28` Corporate and Personal Secretary beta boundary
+- `2026-08-30` Bilingual Studio foundation verified
+- `2026-08-31` Bilingual Studio review repair: locale safety and transaction-locked controls
+- `2026-08-31` Organization public research: grounded facts with mandatory human review
+- `2026-08-31` Browserbase strict sessions replace Firecrawl
+- `2026-08-31` Repo hygiene after the rename
+- `2026-08-31` The project is MORDOMO
+- `2026-08-31` Correction: Vercel project state and production URL
+- `2026-08-31` Correction: Neon terms were already accepted
+- `2026-09-01` Usage metering owns its UTC write clock
+- `2026-09-01` Browserbase no-proxy contract corrected
+- `2026-09-01` Browserbase retention gate passed
+- `2026-09-04` Attached Neon database belonged to another app; do not migrate it
+- `2026-09-04` MORDOMO deployed on its own Neon database with real retrieval
+- `2026-09-05` Correction: the production demo was already public
+- `2026-09-05` Acceptance pass repaired the ingest verifier's time convention
+- `2026-09-05` CI now builds; tests and typecheck alone were insufficient
+- `2026-09-05` Live probe exposed midnight crossing; verifier now receives local time
+- `2026-09-05` PDF, AI draft, long-document extraction, and skew-protection repairs
+- `2026-09-07` Unattended cron report ran; scanned PDFs return an OCR hint
+- `2026-09-08` Inventory-driven acceptance pass closed user-reachable gaps
+- `2026-09-09` Data retention shipped inert by default with protective reference checks
+- `2026-09-09` Merge migration histories chronologically and catch main-derived databases up with an idempotent bridge

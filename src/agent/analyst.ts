@@ -7,7 +7,7 @@ import type { WeekActivity } from '@/core/week-activity';
 import type { Db } from '@/db/client';
 
 export type AnalystDeps = { db: Db; model?: LanguageModel };
-export type AnalystInput = { churchId: string; activity: WeekActivity };
+export type AnalystInput = { organizationId: string; activity: WeekActivity };
 
 // C1 (privacy): prayer themes are the one field that can leak an identifiable detail
 // (a name, a diagnosis, a relationship) straight into a church office's digest, and the
@@ -177,7 +177,7 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
     // generateObject throws NoObjectGeneratedError for the whole payload, and we land
     // here — no findings, so nothing can reach a church office.
     console.error('report.analyze: generateObject failed, declining to publish findings for this week', {
-      churchId: input.churchId, error,
+      organizationId: input.organizationId, error,
     });
     // I2: NoObjectGeneratedError sometimes still carries `usage` for the failed attempt
     // (the call was made and billed even though the output was unusable, e.g. a
@@ -188,7 +188,7 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
     if (failureUsage && ((failureUsage.inputTokens ?? 0) > 0 || (failureUsage.outputTokens ?? 0) > 0)) {
       try {
         await recordUsage(deps.db, {
-          churchId: input.churchId,
+          organizationId: input.organizationId,
           feature: 'report.analyze',
           model: pricedModel,
           inputTokens: failureUsage.inputTokens ?? 0,
@@ -196,12 +196,12 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
         });
       } catch (usageError) {
         console.error('report.analyze usage not recorded after generateObject failure', {
-          churchId: input.churchId, error: usageError,
+          organizationId: input.organizationId, error: usageError,
         });
       }
     } else {
       console.error('report.analyze call went unmetered: generateObject failed with no usage to record', {
-        churchId: input.churchId,
+        organizationId: input.organizationId,
       });
     }
     return null;
@@ -209,7 +209,7 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
 
   try {
     await recordUsage(deps.db, {
-      churchId: input.churchId,
+      organizationId: input.organizationId,
       feature: 'report.analyze',
       model: pricedModel,
       inputTokens: usage.inputTokens ?? 0,
@@ -219,7 +219,7 @@ export async function analyzeWeek(deps: AnalystDeps, input: AnalystInput): Promi
     // A ledger-write failure must not discard findings the model already produced —
     // the digest is still worth publishing even if this one accounting write was lost.
     console.error('report.analyze usage not recorded', {
-      churchId: input.churchId, error,
+      organizationId: input.organizationId, error,
     });
   }
 

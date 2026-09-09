@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { HashEmbedder } from '@/ai/embedder';
 import { recordUsage } from '@/ai/usage';
 import { usageLedger } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
@@ -43,18 +43,18 @@ describe('HashEmbedder', () => {
 describe('recordUsage with HashEmbedder', () => {
   it('does not throw and records zero cost with the test embedder', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     const embedder = new HashEmbedder();
 
     await recordUsage(db, {
-      churchId: church.id,
+      organizationId: church.id,
       feature: 'embed',
       model: embedder.model,
       inputTokens: 100,
       outputTokens: 0,
     });
 
-    const [row] = await db.select({ costUsd: usageLedger.costUsd }).from(usageLedger).where(eq(usageLedger.churchId, church.id));
+    const [row] = await db.select({ costUsd: usageLedger.costUsd }).from(usageLedger).where(eq(usageLedger.organizationId, church.id));
     expect(row.costUsd).toBe(0);
   });
 });

@@ -7,7 +7,7 @@ import {
   checkStaffPassword, SESSION_TTL_SECONDS, signSession, STAFF_COOKIE_NAME,
 } from '@/core/staff-session';
 import { getDb } from '@/db/client';
-import { DEMO_CHURCH_SLUG, getChurchBySlug } from '@/db/repo/churches';
+import { DEMO_ORGANIZATION_SLUG, getOrganizationBySlug } from '@/db/repo/organizations';
 
 export async function signIn(_prev: { error?: string }, formData: FormData) {
   const password = String(formData.get('password') ?? '');
@@ -20,22 +20,20 @@ export async function signIn(_prev: { error?: string }, formData: FormData) {
   const secret = process.env.STAFF_SESSION_SECRET;
   if (!secret) return { error: 'Senha inválida.' };
 
-  // /staff/login sits outside the dashboard's error boundary, so a DB failure here — a
-  // Neon cold start surfacing as "connection terminated unexpectedly" is the realistic one
-  // — would be an uncaught Server Action rejection and Next's bare error page, on the one
-  // screen a secretary sees before anything else. Same posture as every other action.
-  let church: Awaited<ReturnType<typeof getChurchBySlug>>;
+  // This page is outside the dashboard error boundary, so a transient database
+  // failure becomes an actionable message instead of an uncaught action rejection.
+  let organization: Awaited<ReturnType<typeof getOrganizationBySlug>>;
   try {
-    church = await getChurchBySlug(getDb(), DEMO_CHURCH_SLUG);
+    organization = await getOrganizationBySlug(getDb(), DEMO_ORGANIZATION_SLUG);
   } catch (error) {
-    console.error('signIn: could not load the demo church', { error });
+    console.error('signIn: could not load the demo organization', { error });
     return { error: 'Não foi possível entrar agora. Tente novamente em instantes.' };
   }
-  if (!church) return { error: 'A igreja demo ainda não foi carregada.' };
+  if (!organization) return { error: 'A organização demo ainda não foi carregada.' };
 
   const issuedAt = Date.now();
   const token = signSession(
-    { churchId: church.id, issuedAt, expiresAt: issuedAt + SESSION_TTL_SECONDS * 1000 },
+    { organizationId: organization.id, issuedAt, expiresAt: issuedAt + SESSION_TTL_SECONDS * 1000 },
     secret,
   );
   (await cookies()).set(STAFF_COOKIE_NAME, token, staffCookieOptions(SESSION_TTL_SECONDS));

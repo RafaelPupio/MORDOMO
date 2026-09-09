@@ -1,64 +1,48 @@
-# Handoff — 2026-08-31T17:26:31Z — from claude-code
+# Handoff — 2026-09-09T17:48:22Z — from codex
 
 ## Task
-Ship MORDOMO (MORDOMO): an AI church secretary built as a public portfolio
-piece demonstrating ten AI capabilities. All four product plans are built and merged;
-the only work left is the first real deployment.
+
+Merge `codex/ai-secretary-saas-beta` into `main` through `feat/merge-saas-beta`, preserve
+both histories and behaviors, verify the result, push it, and open a GitHub PR.
 
 ## Done
-- Renamed the project to **MORDOMO** everywhere — folder, package, docs, brain, UI, and
-  the design spec filename. Bare "ChurchChatBox" left intact: that is V1. (`231c83b`)
-- Plans 1–4 all merged to `main`: visitor chat with cited RAG, document ingest
-  (extractor → verifier), staff area, weekly reporting + portfolio front door.
-  318 tests, typecheck and lint clean.
-- Stopped the Neon skills installer from re-ignoring `.env.example`: it appends a bare
-  `.env*` after the `!.env.example` negation. Only harmless because the file was
-  already tracked — a fresh clone would have dropped it. (`12b2627`)
-- Repo was renamed on GitHub to `RafaelPupio/MORDOMO`; the landing page's four
-  hardcoded links now point there instead of relying on GitHub's rename redirect.
-  (`91c4efd`)
 
-## Gotchas discovered late
-- The GitHub integration auto-deploys every push; `vercel ls` shows ~20 builds. They are
-  NOT a demo — `ssoProtection` redirects every deployment URL to a Vercel login, and
-  there is no database. Do not claim deployment state without running `vercel ls`.
-- The Vercel project is `mordomo`, but its domain stays `churchchatboxv2.vercel.app`;
-  `mordomo.vercel.app` belongs to an unrelated app. A custom domain is the only fix.
-- `ssoProtection: all_except_custom_domains` protects the per-deployment URLs but NOT the
-  project's production domain. Smoke-test `churchchatboxv2.vercel.app`, never a
-  `mordomo-<hash>-rafael-e2fe.vercel.app` — the latter only ever proves the protected side.
+- The merge branch preserves main at `92dcd5d` and all 61 linear feature commits through
+  `2820fe9`; no rebase, squash, force push, or history rewrite was used.
+- All ten source conflicts are resolved with organization tenancy plus main's retention,
+  timestamp, error-handling, and bounded-ingest behavior preserved.
+- Public docs and brain conflicts are unioned and deduplicated; `CLAUDE.md` remains below
+  3 KB.
+- Rafael approved the chronological journal union plus idempotent `0010_merge_saas_beta`
+  compatibility bridge. All five historical SQL files remain byte-for-byte intact.
+- The focused main-derived PGlite regression passes, Drizzle metadata validation passes,
+  all 591 tests across 73 files pass, and typecheck passes. No external migration ran.
 
 ## Next action
-**Nothing is blocking.** Data retention shipped on 2026-09-09, inert by default: nothing
-is deleted until `RETENTION_DAYS` is set in Vercel. That choice is Rafael's; 365 is the
-sensible default. The `/staff/uso` card shows the policy state and what the first night
-would remove; the nightly job logs "dry run" with counts until then.
 
-377 tests / 43 files, CI green, production READY. Migrations 0005 (`reports.generated_at`)
-and 0006 (`tickets/prayer_requests.updated_at`) are applied to production; legacy resolved
-rows carry the migration timestamp on purpose (see the decisions log).
-
-The "Next" list in [[status]] is a choice plus two deliberate gaps, not work in progress.
+Create the merge commit, push both configured origin URLs, and open the GitHub PR against
+`main` with the migration evidence and approved decision in its body.
 
 ## Files in play
-- `brain/status.md` — the live picture of what runs; read this before anything else.
-- `scripts/retrieval-benchmark.ts` — the 10/10 score in the docs is offline-only
-  (`HashEmbedder`). Re-running it against the real embedder is a launch gate.
-- `src/app/page.tsx` — public front door; every capability claim must map to real code.
+
+- `drizzle/0010_merge_saas_beta.sql` — approved main-derived compatibility bridge.
+- `drizzle/meta/_journal.json`, `0005_snapshot.json` through `0010_snapshot.json` — linear
+  chronological history and final schema metadata.
+- `brain/log/decisions/2026-Q3.md` — records the chosen migration strategy.
+- `brain/status.md` — current merged product state.
 
 ## Ruled out
-- Provisioning Neon unattended — `vercel integration add neon` returns
-  `integration_terms_acceptance_required` and will not proceed without a browser.
-  Do not retry it from the CLI expecting a different result.
-- Accepting those marketplace terms on Rafael's behalf — a legal agreement, his to make.
-- `db.transaction(...)` for ingest atomicity — the `neon-http` driver throws
-  "No transactions support"; ingest uses careful delete/insert ordering instead.
-- Committing `.agents/` and `skills-lock.json` — local agent-tooling artifacts, now
-  gitignored so the public repo stays product-only.
+
+- Rebasing, squashing, force pushing, or recreating the removed worktree.
+- Deleting either side's migrations merely to clear the conflict.
+- Renumbering or editing a migration already applied to any database.
+- Running `db:migrate` against any database during this merge.
 
 ## Verify
+
 ```bash
-cd ~/Desktop/Tech/MORDOMO && npm test && npm run typecheck && npm run build
+npm test && npm run typecheck
 ```
-Expected: 318 tests pass across 36 files, `tsc --noEmit` silent, build succeeds with
-`/`, `/chat`, `/staff/*` and `/api/cron/weekly-report` in the route table.
+
+Good means 591 tests pass across 73 files, TypeScript exits 0, `git diff --check` is clean,
+and no unmerged paths remain.

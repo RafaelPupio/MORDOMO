@@ -29,25 +29,25 @@ function Tile({
 }
 
 // The guard in `(dashboard)/layout.tsx` already ensures a valid staff session exists
-// before this renders; `requireStaffContext()` here is what supplies `churchId` for every
+// before this renders; `requireStaffContext()` here is what supplies `organizationId` for every
 // query below — never a form field or query parameter (see src/core/staff-context.ts).
 export default async function StaffHome() {
-  const { churchId, churchName } = await requireStaffContext();
+  const { organizationId, organizationName } = await requireStaffContext();
   const db = getDb();
 
   const [tickets, newPrayerRequests, docs, usage, upcomingEvents, reports] = await Promise.all([
-    listTickets(db, churchId),
-    listPrayerRequests(db, churchId, 'new'),
-    listDocuments(db, churchId),
-    usageSummary(db, churchId),
+    listTickets(db, organizationId),
+    listPrayerRequests(db, organizationId, 'new'),
+    listDocuments(db, organizationId),
+    usageSummary(db, organizationId),
     // Same query and limit the agenda page itself uses (src/app/staff/(dashboard)/agenda/
     // page.tsx) — this tile's count is exactly what clicking through to Agenda shows, not a
     // separate figure that could disagree with it.
-    listUpcomingEvents(db, churchId, 50),
+    listUpcomingEvents(db, organizationId, 50),
     // Same limit the relatórios page itself uses (src/app/staff/(dashboard)/relatorios/
     // page.tsx) — this tile's count can never claim more reports exist than that page
     // actually lists.
-    listReports(db, churchId, 12),
+    listReports(db, organizationId, 12),
   ]);
 
   const openTickets = tickets.filter((t) => t.status === 'open').length;
@@ -64,7 +64,7 @@ export default async function StaffHome() {
     <div className="flex flex-col gap-6">
       <div>
         <h2 className="text-base font-semibold">Início</h2>
-        <p className="mt-1 text-sm text-neutral-600">{churchName} — visão geral da secretaria.</p>
+        <p className="mt-1 text-sm text-neutral-600">{organizationName} — visão geral da secretaria.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

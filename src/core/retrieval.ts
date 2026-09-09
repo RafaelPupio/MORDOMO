@@ -92,7 +92,7 @@ export function selectExcerpt(content: string, query: string): string {
 export async function searchKnowledgeBase(
   db: Db,
   embedder: Embedder,
-  churchId: string,
+  organizationId: string,
   query: string,
   opts: { k?: number; minScore?: number } = {},
 ): Promise<SearchResult> {
@@ -109,7 +109,7 @@ export async function searchKnowledgeBase(
     })
     .from(chunks)
     .innerJoin(documents, eq(chunks.documentId, documents.id))
-    .where(and(eq(chunks.churchId, churchId), eq(documents.churchId, churchId)))
+    .where(and(eq(chunks.organizationId, organizationId), eq(documents.organizationId, organizationId)))
     .orderBy(desc(similarity))
     .limit(k);
 

@@ -5,14 +5,14 @@ import { usageSummary } from '@/db/repo/usage';
 import { recordUsage } from '@/ai/usage';
 import { CHAT_MODEL, FAST_MODEL } from '@/ai/pricing';
 import { budgets } from '@/db/schema';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 describe('prayer inbox', () => {
   it('moves a request through statuses, scoped to its church', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
-    const req = await createPrayerRequest(db, { churchId: a.id, request: 'Pela minha avó' });
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
+    const req = await createPrayerRequest(db, { organizationId: a.id, request: 'Pela minha avó' });
 
     await setPrayerStatus(db, a.id, req.id, 'praying');
     expect((await listPrayerRequests(db, a.id))[0].status).toBe('praying');
@@ -24,9 +24,9 @@ describe('prayer inbox', () => {
 
   it('filters by status when asked', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
-    const one = await createPrayerRequest(db, { churchId: church.id, request: 'Um' });
-    await createPrayerRequest(db, { churchId: church.id, request: 'Dois' });
+    const church = await seedOrganization(db);
+    const one = await createPrayerRequest(db, { organizationId: church.id, request: 'Um' });
+    await createPrayerRequest(db, { organizationId: church.id, request: 'Dois' });
     await setPrayerStatus(db, church.id, one.id, 'done');
     expect(await listPrayerRequests(db, church.id, 'new')).toHaveLength(1);
     expect(await listPrayerRequests(db, church.id, 'done')).toHaveLength(1);
@@ -37,9 +37,9 @@ describe('prayer inbox', () => {
 describe('ticket inbox', () => {
   it('stores a suggested reply and moves status, scoped to its church', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
-    const ticket = await createTicket(db, { churchId: a.id, topic: 'Agendar batismo' });
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
+    const ticket = await createTicket(db, { organizationId: a.id, topic: 'Agendar batismo' });
 
     await saveSuggestedReply(db, a.id, ticket.id, 'Olá! Podemos agendar...');
     expect((await getTicket(db, a.id, ticket.id))?.suggestedReply).toContain('agendar');
@@ -56,13 +56,13 @@ describe('ticket inbox', () => {
 describe('usageSummary', () => {
   it('totals this month per feature for one tenant only', async () => {
     const db = await createTestDb();
-    const a = await seedChurch(db, 'A');
-    const b = await seedChurch(db, 'B');
-    await db.insert(budgets).values({ churchId: a.id, monthlyUsd: 40 });
+    const a = await seedOrganization(db, 'A');
+    const b = await seedOrganization(db, 'B');
+    await db.insert(budgets).values({ organizationId: a.id, monthlyUsd: 40 });
 
-    await recordUsage(db, { churchId: a.id, feature: 'chat.reply', model: CHAT_MODEL, inputTokens: 1_000_000, outputTokens: 0 }); // $3
-    await recordUsage(db, { churchId: a.id, feature: 'ingest.extract', model: FAST_MODEL, inputTokens: 1_000_000, outputTokens: 0 }); // $1
-    await recordUsage(db, { churchId: b.id, feature: 'chat.reply', model: CHAT_MODEL, inputTokens: 1_000_000, outputTokens: 0 });
+    await recordUsage(db, { organizationId: a.id, feature: 'chat.reply', model: CHAT_MODEL, inputTokens: 1_000_000, outputTokens: 0 }); // $3
+    await recordUsage(db, { organizationId: a.id, feature: 'ingest.extract', model: FAST_MODEL, inputTokens: 1_000_000, outputTokens: 0 }); // $1
+    await recordUsage(db, { organizationId: b.id, feature: 'chat.reply', model: CHAT_MODEL, inputTokens: 1_000_000, outputTokens: 0 });
 
     const summary = await usageSummary(db, a.id);
     expect(summary.totalUsd).toBeCloseTo(4);
@@ -75,7 +75,7 @@ describe('usageSummary', () => {
 
   it('reports a null budget when the tenant has no budget row', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     expect((await usageSummary(db, church.id)).monthlyUsd).toBeNull();
   });
 });

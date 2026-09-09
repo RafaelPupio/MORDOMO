@@ -5,9 +5,11 @@ import { eq, inArray } from 'drizzle-orm';
 import { GatewayEmbedder, HashEmbedder, type Embedder } from '@/ai/embedder';
 import { recordUsage } from '@/ai/usage';
 import { chunkMarkdown } from '@/core/chunking';
+import { DEFAULT_ORGANIZATION_PROFILE } from '@/core/organization-profile';
 import { getDb } from '@/db/client';
-import { DEMO_CHURCH_SLUG } from '@/db/repo/churches';
-import { budgets, chunks, churches, conversations, documents, events, messages, prayerRequests, tickets, usageLedger } from '@/db/schema';
+import { DEMO_ORGANIZATION_SLUG } from '@/db/repo/organizations';
+import { upsertOrganizationProfile } from '@/db/repo/organization-profiles';
+import { budgets, chunks, organizationProfiles, organizations, conversations, documents, events, messages, prayerRequests, tickets, usageLedger } from '@/db/schema';
 
 config({ path: '.env.local' });
 
@@ -27,31 +29,33 @@ async function main() {
   console.log(`Seeding with ${embedder.model}`);
 
   // Wipe the demo tenant only, children first (idempotent re-seed).
-  const [existing] = await db.select().from(churches).where(eq(churches.slug, DEMO_CHURCH_SLUG));
+  const [existing] = await db.select().from(organizations).where(eq(organizations.slug, DEMO_ORGANIZATION_SLUG));
   if (existing) {
-    const docIds = (await db.select({ id: documents.id }).from(documents).where(eq(documents.churchId, existing.id))).map((d) => d.id);
+    const docIds = (await db.select({ id: documents.id }).from(documents).where(eq(documents.organizationId, existing.id))).map((d) => d.id);
     if (docIds.length) await db.delete(chunks).where(inArray(chunks.documentId, docIds));
     for (const table of [events, messages, prayerRequests, tickets, usageLedger, conversations, documents, budgets]) {
-      await db.delete(table).where(eq(table.churchId, existing.id));
+      await db.delete(table).where(eq(table.organizationId, existing.id));
     }
-    await db.delete(churches).where(eq(churches.id, existing.id));
+    await db.delete(organizationProfiles).where(eq(organizationProfiles.organizationId, existing.id));
+    await db.delete(organizations).where(eq(organizations.id, existing.id));
   }
 
-  const [church] = await db.insert(churches).values({ slug: DEMO_CHURCH_SLUG, name: 'Igreja da Colina' }).returning();
-  await db.insert(budgets).values({ churchId: church.id, monthlyUsd: 40 });
+  const [organization] = await db.insert(organizations).values({ slug: DEMO_ORGANIZATION_SLUG, name: 'Igreja da Colina' }).returning();
+  await upsertOrganizationProfile(db, organization.id, DEFAULT_ORGANIZATION_PROFILE);
+  await db.insert(budgets).values({ organizationId: organization.id, monthlyUsd: 40 });
 
   for (const file of readdirSync(SEED_DIR).filter((f) => f.endsWith('.md'))) {
     const markdown = readFileSync(path.join(SEED_DIR, file), 'utf8');
     const title = markdown.split('\n')[0].replace(/^#\s*/, '');
     const kind = DOC_KINDS[file] ?? 'bulletin';
-    const [doc] = await db.insert(documents).values({ churchId: church.id, title, kind, sourcePath: `content/seed/${file}` }).returning();
+    const [doc] = await db.insert(documents).values({ organizationId: organization.id, title, kind, sourcePath: `content/seed/${file}` }).returning();
     const pieces = chunkMarkdown(markdown);
     const { embeddings, tokens } = await embedder.embed(pieces.map((p) => p.content));
     await db.insert(chunks).values(
-      pieces.map((p, i) => ({ churchId: church.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })),
+      pieces.map((p, i) => ({ organizationId: organization.id, documentId: doc.id, seq: p.seq, content: p.content, embedding: embeddings[i] })),
     );
     if (tokens > 0) {
-      await recordUsage(db, { churchId: church.id, feature: 'ingest.embed', model: embedder.model, inputTokens: tokens, outputTokens: 0 });
+      await recordUsage(db, { organizationId: organization.id, feature: 'ingest.embed', model: embedder.model, inputTokens: tokens, outputTokens: 0 });
     }
     console.log(`  ${file}: ${pieces.length} chunks`);
   }
@@ -61,7 +65,7 @@ async function main() {
     events: { title: string; startsAt: string; location?: string; description?: string }[];
   };
   await db.insert(events).values(
-    eventsFile.events.map((e) => ({ churchId: church.id, title: e.title, startsAt: new Date(e.startsAt), location: e.location, description: e.description, verified: true })),
+    eventsFile.events.map((e) => ({ organizationId: organization.id, title: e.title, startsAt: new Date(e.startsAt), location: e.location, description: e.description, verified: true })),
   );
   console.log(`  events.json: ${eventsFile.events.length} events`);
   console.log('Seed complete.');

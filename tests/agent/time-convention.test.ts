@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { extractEvents } from '@/agent/extractor';
 import { CHURCH_TIMEZONE_NOTE, formatLocalWallClock, UNTRUSTED_DOCUMENT_NOTE } from '@/agent/time-convention';
 import { verifyEvents } from '@/agent/verifier';
-import { createTestDb, seedChurch } from '../helpers/db';
+import { createTestDb, seedOrganization } from '../helpers/db';
 
 // Same module-level mock as extractor.test.ts / verifier.test.ts: generateObject delegates
 // to the real implementation, so the calls below still run through the SDK. What these
@@ -48,11 +48,11 @@ const lastPrompt = () => String(calls().at(-1)?.prompt ?? '');
 
 async function runVerifier(startsAt: string) {
   const db = await createTestDb();
-  const church = await seedChurch(db);
+  const church = await seedOrganization(db);
   generateObjectMock.mockClear();
   await verifyEvents(
     { db, model: await objectModel({ decision: 'confirmed', note: 'ok' }) },
-    { churchId: church.id, documentId: church.id, text: TEXT, events: [{ ...CANDIDATE, startsAt }] },
+    { organizationId: church.id, documentId: church.id, text: TEXT, events: [{ ...CANDIDATE, startsAt }] },
   );
 }
 
@@ -86,12 +86,12 @@ describe('formatLocalWallClock', () => {
 describe('the extractor is told the UTC rule', () => {
   it('states the conversion, including the calendar-day rollover, in its prompt', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockClear();
 
     await extractEvents(
       { db, model: await objectModel({ events: [CANDIDATE] }) },
-      { churchId: church.id, documentId: church.id, text: TEXT, referenceDate: '2026-09-05' },
+      { organizationId: church.id, documentId: church.id, text: TEXT, referenceDate: '2026-09-05' },
     );
 
     expect(lastSystem()).toContain(CHURCH_TIMEZONE_NOTE);
@@ -122,12 +122,12 @@ describe('the verifier is shown local time and never UTC', () => {
 
   it('rejects an unrenderable startsAt without spending a model call', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockClear();
 
     const out = await verifyEvents(
       { db, model: await objectModel({ decision: 'confirmed', note: 'would have confirmed' }) },
-      { churchId: church.id, documentId: church.id, text: TEXT, events: [{ ...CANDIDATE, startsAt: 'domingo de manhã' }] },
+      { organizationId: church.id, documentId: church.id, text: TEXT, events: [{ ...CANDIDATE, startsAt: 'domingo de manhã' }] },
     );
 
     expect(out[0].verdict.decision).toBe('rejected');
@@ -142,16 +142,16 @@ describe('the verifier is shown local time and never UTC', () => {
 describe('both agents treat the document as data', () => {
   it('carry the untrusted-document note, worded without any UTC vocabulary to latch onto', async () => {
     const db = await createTestDb();
-    const church = await seedChurch(db);
+    const church = await seedOrganization(db);
     generateObjectMock.mockClear();
 
     await extractEvents(
       { db, model: await objectModel({ events: [CANDIDATE] }) },
-      { churchId: church.id, documentId: church.id, text: TEXT, referenceDate: '2026-09-05' },
+      { organizationId: church.id, documentId: church.id, text: TEXT, referenceDate: '2026-09-05' },
     );
     await verifyEvents(
       { db, model: await objectModel({ decision: 'confirmed', note: 'ok' }) },
-      { churchId: church.id, documentId: church.id, text: TEXT, events: [CANDIDATE] },
+      { organizationId: church.id, documentId: church.id, text: TEXT, events: [CANDIDATE] },
     );
 
     for (const call of calls()) {
