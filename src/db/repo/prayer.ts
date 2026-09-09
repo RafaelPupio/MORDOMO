@@ -30,6 +30,6 @@ export async function setPrayerStatus(
 ): Promise<void> {
   await db
     .update(prayerRequests)
-    .set({ status })
+    .set({ status, updatedAt: new Date() })
     .where(and(eq(prayerRequests.churchId, churchId), eq(prayerRequests.id, id)));
 }

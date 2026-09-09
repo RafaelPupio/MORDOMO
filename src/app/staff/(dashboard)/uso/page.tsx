@@ -1,5 +1,6 @@
 import { monthSpendUsd } from '@/ai/usage';
 import { parseGlobalCapUsd } from '@/core/config';
+import { parseRetentionDays, previewRetention, RETENTION_MIN_DAYS, type RetentionResult } from '@/core/retention';
 import { formatUsd4 } from '@/core/format';
 import { requireStaffContext } from '@/core/staff-context';
 import { getDb } from '@/db/client';
@@ -97,9 +98,13 @@ export default async function UsoPage() {
   // `budget_exhausted` for reasons this page gave staff no way to see (M6). `monthSpendUsd(db)`
   // with no `churchId` is the same aggregate-across-every-tenant query `checkBudget` itself
   // runs for the global check.
-  const [usage, globalSpentUsd] = await Promise.all([
+  const retentionDays = parseRetentionDays(process.env.RETENTION_DAYS);
+  const [usage, globalSpentUsd, retention] = await Promise.all([
     usageSummary(db, churchId),
     monthSpendUsd(db),
+    // Preview only — this page never deletes. It shows what the nightly job would remove,
+    // so the policy is visible before and after anyone turns it on.
+    previewRetention(db, { churchId, retentionDays, previewDays: 90 }),
   ]);
   const globalCapUsd = parseGlobalCapUsd(process.env.DEMO_GLOBAL_MONTHLY_USD_CAP);
 
@@ -127,6 +132,8 @@ export default async function UsoPage() {
           overCapMessage="O limite global do demo foi atingido — toda chamada de IA está sendo recusada até o próximo mês, mesmo que esta igreja ainda tenha saldo próprio."
         />
       </div>
+
+      <RetentionCard retentionDays={retentionDays} result={retention} cronConfigured={Boolean(process.env.CRON_SECRET)} />
 
       <div>
         <h3 className="text-sm font-semibold">Uso por funcionalidade</h3>
@@ -176,6 +183,40 @@ export default async function UsoPage() {
           ))}
         </dl>
       </div>
+    </div>
+  );
+}
+
+function RetentionCard({ retentionDays, result, cronConfigured }: { retentionDays: number | null; result: RetentionResult; cronConfigured: boolean }) {
+  const c = result.counts;
+  const total = c.tickets + c.prayerRequests + c.conversations;
+  const horizon = retentionDays ?? 90;
+  return (
+    <div className="rounded-xl border p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">Retenção de dados</h3>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${retentionDays === null ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+          {retentionDays === null ? 'desativada' : `${retentionDays} dias`}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-neutral-600">
+        {retentionDays === null
+          ? `Nada é apagado automaticamente. Se a retenção fosse de ${horizon} dias, a limpeza noturna removeria hoje:`
+          : cronConfigured
+            ? `Todo dia, conversas encerradas há mais de ${retentionDays} dias são apagadas. Hoje seriam removidos:`
+            : `Retenção de ${retentionDays} dias configurada, mas a limpeza noturna não está autenticada (CRON_SECRET ausente) e por isso não roda. Hoje seriam removidos:`}
+      </p>
+      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+        <div><dt className="text-xs text-neutral-500">Conversas</dt><dd className="font-medium">{c.conversations} <span className="text-xs text-neutral-500">({c.messages} mensagens)</span></dd></div>
+        <div><dt className="text-xs text-neutral-500">Atendimentos resolvidos</dt><dd className="font-medium">{c.tickets}</dd></div>
+        <div><dt className="text-xs text-neutral-500">Pedidos de oração concluídos</dt><dd className="font-medium">{c.prayerRequests}</dd></div>
+        <div><dt className="text-xs text-neutral-500">Janelas de limite antigas</dt><dd className="font-medium">{c.rateLimitWindows}</dd></div>
+      </dl>
+      <p className="mt-3 text-xs text-neutral-500">
+        Atendimentos abertos e pedidos ainda não concluídos nunca são removidos, por mais antigos que sejam.
+        Documentos, agenda, relatórios e o registro de uso também não. Mínimo configurável: {RETENTION_MIN_DAYS} dias
+        ({total === 0 ? 'nada a remover hoje' : `${total} registro(s) elegíveis hoje`}).
+      </p>
     </div>
   );
 }

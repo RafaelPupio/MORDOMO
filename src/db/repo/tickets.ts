@@ -29,7 +29,7 @@ export async function setTicketStatus(
 ): Promise<void> {
   await db
     .update(tickets)
-    .set({ status })
+    .set({ status, updatedAt: new Date() })
     .where(and(eq(tickets.churchId, churchId), eq(tickets.id, id)));
 }
 
@@ -41,6 +41,6 @@ export async function saveSuggestedReply(
 ): Promise<void> {
   await db
     .update(tickets)
-    .set({ suggestedReply: reply })
+    .set({ suggestedReply: reply, updatedAt: new Date() })
     .where(and(eq(tickets.churchId, churchId), eq(tickets.id, id)));
 }

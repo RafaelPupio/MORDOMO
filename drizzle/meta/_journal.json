@@ -36,6 +36,20 @@
       "when": 1787272919142,
       "tag": "0004_brief_landau",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788829316979,
+      "tag": "0005_past_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788893486478,
+      "tag": "0006_tickets_prayers_updated_at",
+      "breakpoints": true
     }
   ]
 }

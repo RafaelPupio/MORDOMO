@@ -90,6 +90,9 @@ export const prayerRequests = pgTable('prayer_requests', {
   request: text('request').notNull(),
   status: text('status').notNull().default('new'), // Plan 3: inbox workflow
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  // Bumped on every status change. Retention ages a resolved row by this, not by
+  // created_at: an old thread answered yesterday is yesterday's work, not old data.
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
 export const tickets = pgTable('tickets', {
@@ -100,6 +103,9 @@ export const tickets = pgTable('tickets', {
   status: text('status').notNull().default('open'), // Plan 3: inbox workflow
   suggestedReply: text('suggested_reply'), // Plan 3: AI-suggested replies
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  // Bumped on every status change. Retention ages a resolved row by this, not by
+  // created_at: an old thread answered yesterday is yesterday's work, not old data.
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
 export const usageLedger = pgTable('usage_ledger', {
@@ -132,4 +138,8 @@ export const reports = pgTable('reports', {
   findings: jsonb('findings').notNull(),
   body: text('body').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  // Refreshed on every upsert. `createdAt` is when the week first got a report; this is
+  // when the text a reader sees was actually written — the Monday cron rewrites the row
+  // an on-demand click created on Saturday, and the page used to date it Saturday.
+  generatedAt: timestamp('generated_at').notNull().defaultNow(),
 }, (t) => [unique('reports_church_period_key').on(t.churchId, t.periodStart)]);
