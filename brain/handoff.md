@@ -1,4 +1,4 @@
-# Handoff — 2026-09-09T17:48:22Z — from codex
+# Handoff — 2026-09-09T18:07:30Z — from codex
 
 ## Task
 
@@ -18,11 +18,14 @@ both histories and behaviors, verify the result, push it, and open a GitHub PR.
 - Focused main-derived and feature-derived PGlite regressions pass, Drizzle metadata
   validation passes, all 592 tests across 73 files pass, and typecheck passes. No external
   migration ran.
+- Review fixes landed in `861b5e1`; `feat/merge-saas-beta` is pushed to GitHub and the GitLab
+  mirror. GitHub PR #1 is open against `main` with the approved migration decision:
+  `https://github.com/RafaelPupio/MORDOMO/pull/1`.
 
 ## Next action
 
-Push both configured origin URLs and open the GitHub PR against `main` with the migration
-evidence and approved decision in its body.
+Review and merge GitHub PR #1 when its remote checks are green. Do not run the compatibility
+migration manually; the normal deployment migration workflow owns eventual application.
 
 ## Files in play
 

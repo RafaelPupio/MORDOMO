@@ -83,6 +83,7 @@ Billing and self-serve production onboarding are intentionally absent.
 
 ## Merge completion
 
-Merge commit `f39df9c` preserves both parents and is ready to push through origin's GitHub and
-GitLab URLs. The remaining step is opening the PR against `main` with the migration evidence
-and approved decision in its body.
+Merge commit `f39df9c` preserves both parents. Review fixes landed in `861b5e1`; the branch is
+pushed through origin's GitHub and GitLab URLs. GitHub PR #1 is open against `main` with the
+migration evidence and approved decision in its body:
+`https://github.com/RafaelPupio/MORDOMO/pull/1`.
